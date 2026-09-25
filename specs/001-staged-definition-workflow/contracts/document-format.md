@@ -1,0 +1,289 @@
+# Contract: story package and document format
+
+What the helper reads and writes, precisely enough to implement and test. Rationale is in [research.md](../research.md); entity fields are in [data-model.md](../data-model.md).
+
+## Package
+
+```text
+specs/<NNN>-<slug>/
+├── s00-README.md            generated overview
+├── s01-requirements.md … s08-completion.md
+├── spec.md   -> s04-ai-spec.md      alias (symlink, else read-only mirror)
+├── plan.md   -> s05-plan.md         alias
+├── tasks.md  -> s06-tasks.md        alias
+└── assets/                          exported artefact files, created by the first `artifact register`
+```
+
+- Exactly these document names. `s0`–`s8` are literal; the helper matches `^s0[0-8]-` and never a bare number (FR-070).
+- `assets/` holds only files named by an `eil:artifact` record. Anything else there is reported as `orphan-asset`.
+- An alias exists only while its target exists. No other alias is ever created (FR-049, FR-050).
+- A directory is **governed** iff it contains `s00-README.md` (FR-069).
+
+## Stage document layout
+
+Each stage document is ordinary Markdown. The helper only interprets four things: **item lines**, **record blocks**, **marked regions** and **tags**.
+
+### Marked regions
+
+```markdown
+<!-- eil:begin approval -->
+```json
+{ … }
+```
+<!-- eil:end approval -->
+```
+
+Region names: `approval`, `assessment`, `comprehension`. All three are **excluded from the fingerprint**. The begin and end markers each sit on their own line; nesting is not allowed. A document with an unmatched marker is reported as `malformed-region` and treated as changed.
+
+### Record blocks (fingerprinted)
+
+Challenges, overrides, abbreviation and artefact export records are fenced JSON blocks whose info string starts `eil:` :
+
+````markdown
+```eil:challenge
+{"id": "CH-002", "stage": "functional", "raised_by": "ai", "target": "FR-007",
+ "text": "…", "status": "open"}
+```
+````
+
+Info strings: `eil:challenge`, `eil:override`, `eil:abbreviation`, `eil:artifact`. One JSON object per block. The helper rewrites a block in place when it changes state (for example closing a challenge) and preserves everything else byte for byte.
+
+### Item lines
+
+An item is defined by a line matching:
+
+```text
+^\s*(?:[-*]\s+)?\*\*(REQ|UC|FR|NFR|DEC|AIS|EVD|OQ|OVR|CH|ART)-(\d{3})\*\*\s*[:.]\s*(.+)$
+```
+
+and an optional trailing clause on the same line or continuation lines up to the next item or blank line:
+
+```text
+(traces: ID[, ID…])        upstream sources
+(code: <sha>|PR#<n>[, …])  code changes (s06, s07 only)
+(status: open|resolved|accepted)   OQ only
+(material: yes|no)         OQ only; an OQ with no `material` clause counts as material
+(accepted-by: <name>)      OQ only; required when a material OQ is `accepted` (FR-023)
+(store: <label>)           ART of an ER diagram only: the data store it describes
+[ai-draft]                 unreviewed AI-authored item (D-16)
+[pending-clarification]    AIS only (FR-067)
+```
+
+Rules the parser enforces and reports (never silently ignores):
+- An ID defined twice in a story, or reused after removal → `duplicate-id`.
+- A `traces:` reference to an ID that does not exist upstream → `dangling-trace`.
+- A line that starts `**REQ-`, `**FR-` and so on but does not match the item grammar → `malformed-item` (R-5: parse failures are findings, not silent drops).
+- Tasks in `s06` are Spec Kit task lines (`- [ ] T012 …`); the helper reads `T###` from them and the `traces:` clause from the same line.
+
+### Definition location by stage
+
+| Stage | Defines | Must reference |
+|---|---|---|
+| s01 | `REQ`, `UC`, `OQ`, `ART` (context) | none (`ART`: `REQ`/`UC`) |
+| s02 | `FR`, `NFR`, `ART` (sequence, wireframe) | `REQ`/`UC` |
+| s03 | `DEC`, `ART` (container, component, sequence, ER) | `FR`/`NFR` (`ART`: `FR`/`NFR`/`DEC`) |
+| s04 | `AIS` | `REQ`/`FR`/`NFR`/`DEC`/`ART` |
+| s05 | (sections only) | `DEC` in section headings via `(traces: …)` |
+| s06 | `T###` | `AIS`/`DEC` |
+| s07 | `EVD` and verification rows | `REQ`/`FR`/`ART`, task, code |
+| s08 | none | summarises; no new items |
+
+## Artefacts in documents
+
+An artefact is an `ART` item line followed by exactly one **attachment**: a ` ```mermaid ` fence (inline form) or an ` ```eil:artifact ` block (file form). The attachment belongs to the nearest preceding `ART` line with no other item line between. Blank lines and a heading-free run of prose are allowed between them; another item line or a heading ends the association.
+
+````markdown
+**ART-003**: Container view of duplicate analysis (traces: FR-007, DEC-004)
+
+```mermaid
+C4Container
+  Person(analyst, "Data Analyst", "Reviews duplicates")
+  System_Boundary(s, "Customer Platform") {
+    Container(api, "Import API", "REST", "[changed] Accepts imports")
+    ContainerDb(db, "Customer DB", "PostgreSQL", "[existing] Customer records")
+  }
+  Rel(analyst, api, "Uploads files")
+  Rel(api, db, "Reads and writes")
+```
+
+**ART-009**: Customer duplicate data (traces: DEC-004) (store: Customer DB)
+
+```mermaid
+erDiagram
+  CUSTOMER ||--o{ DUPLICATE_MATCH : "has"
+```
+
+**ART-011**: Duplicate review screen (traces: FR-007, UC-002)
+
+```eil:artifact
+{"file": "assets/duplicate-review.png", "sha256": "sha256:…", "kind": "wireframe",
+ "source": {"tool": "figma", "url": "https://www.figma.com/design/…?node-id=12-345",
+            "exported_at": "2026-09-25", "exported_by": "Ada Dev"}}
+```
+````
+
+**Kind derivation** (inline): first non-blank, non-comment line of the fence, after any leading `---` frontmatter block. `C4Context` → `c4-context`, `C4Container` → `c4-container`, `C4Component` → `c4-component`, `sequenceDiagram` → `sequence` (functional in s02, technical in s03), `erDiagram` → `er`. Anything else → `diagram-unparseable`. File form: the record's `kind`.
+
+**Accepted Mermaid subset** (isolated in `diagrams.py`, pinned by fixtures; risk R-10):
+
+| Diagram | Recognised constructs |
+|---|---|
+| C4 | Elements `Person`, `System`, `Container`, `Component`, each with optional `Db` or `Queue` and optional `_Ext` (for example `SystemQueue_Ext`, `ContainerDb_Ext`, `ComponentDb`); boundaries `Boundary`, `Enterprise_Boundary`, `System_Boundary`, `Container_Boundary`, each opening a `{` block closed by `}`; relations `Rel`, `BiRel`, `Rel_U`/`Rel_Up`, `Rel_D`/`Rel_Down`, `Rel_L`/`Rel_Left`, `Rel_R`/`Rel_Right`, `Rel_Back`, `RelIndex`. An element is `(alias, label, …)`; the label is the name and may be quoted or a bare word; `$name="value"` arguments are read and ignored except `$descr` and `$techn`. `C4Dynamic` and `C4Deployment` are outside the subset. |
+| sequence | `participant A`, `participant A as Label`, `actor A as Label`, the configured form `participant A@{ … } as Label`, `create participant`/`create actor`, `destroy`; messages `A->>B: text` with the arrows `->>`, `-->>`, `->`, `-->`, `-x`, `--x`, `-)`, `--)`, `<<->>`, `<<-->>` and the `+`/`-` activation shorthand after the arrow; blocks `alt`/`opt`/`loop`/`par`/`critical`/`break`/`rect`/`box` closed by `end`, with `else`/`and`/`option`; `Note left of\|right of\|over X[,Y]: text`; `autonumber`, `activate`, `deactivate`, `title`. A participant used only in a message is implied, with its alias as its name. |
+| ER | Entity blocks `NAME {` … `}` whose lines are `type name [PK\|FK\|UK …] ["comment"]`; entity aliases `id[Label]` and `id["Label"]`; a bare entity name; `:::class` suffixes; relationships `A [cardinality]--[cardinality] B : label` and the dotted form `..`, where a cardinality is two of `\|`, `o`, `{`, `}` (for example `\|\|--o{`); `direction`, `style`, `classDef`, `class`, and `subgraph` … `end`. Relationships written in words are outside the subset. |
+
+Every diagram may begin with a `---` frontmatter block and `%%` comment lines. Element names come from the display label, so an alias that differs between diagrams is not a mismatch.
+
+Constructs outside the subset are ignored only if they are known presentation directives (`title`, `UpdateElementStyle`/`updateElementStyle`, `UpdateRelStyle`, `UpdateLayoutConfig`, `style`, `classDef`, `direction`, frontmatter, comments `%%`); any other unrecognised line is reported as `diagram-unparseable` with its line number in the document, and so is a diagram with no recognisable elements. The subset was widened after reading the Mermaid documentation examples (fixtures in `tests/fixtures/mermaid`, `VERSION.md`).
+
+**Named lists** read by the consistency rules: bullet lines under a heading whose text is `Users and Stakeholders`, `Dependencies` (s01) or `Actors` (s02); the name is the first bold span, else the text before `:` or ` — `. Names compare case-insensitively with whitespace collapsed.
+
+**Findings** (reported by `check`, never silently dropped; each maps to the gate criterion of its stage):
+
+| Code | Meaning |
+|---|---|
+| `artifact-unregistered` | a `mermaid` fence or `eil:artifact` block with no `ART` line, or an `ART` line with no attachment |
+| `artifact-untraced` | an `ART` line with no `traces:` clause |
+| `artifact-wrong-level` | kind not permitted in this stage, or a functional sequence diagram naming a non-actor (FR-081) |
+| `diagram-unparseable` | no recognisable elements, or an unrecognised line (FR-080) |
+| `diagram-inconsistent` | a FR-079 rule broke; the message names the rule (a–f in D-20) and the elements |
+| `artifact-missing-file` | the record's `file` does not exist |
+| `artifact-hash-mismatch` | the file's SHA-256 differs from the record (FR-078) |
+| `artifact-no-provenance` | file form without `source.url`, `exported_at` or `exported_by`, or a Figma URL without `node-id=` (FR-077) |
+| `artifact-format-not-allowed` | extension not in `png`, `svg`, `pdf`, `jpg`, `jpeg` |
+| `artifact-changed-since-approval` | item hash differs from the owning stage's approval (FR-082) |
+| `artifact-uncovered` | in scope in `s04` but reached by no task (FR-083) |
+| `orphan-asset` | a file in `assets/` named by no record |
+
+## Approval record (inside the `approval` region)
+
+```json
+{
+  "stage": "functional",
+  "by": "Ada Lovelace",
+  "at": "2026-09-25T10:14:03Z",
+  "fingerprint": "sha256:9f2c…",
+  "attestation": "Yes, this is the behaviour we require. Played back to Sam and Priya on 24 Sep.",
+  "played_back_to": "Sam (business), Priya (QA)",
+  "upstream": {"requirements": "sha256:41ab…"},
+  "items": {"FR-001": "sha256:…", "FR-002": "sha256:…"},
+  "overrides_used": ["OVR-001"],
+  "comprehension": {"understood": 3, "coached": 1, "revealed": 0, "skipped": 1, "not_applicable": 0}
+}
+```
+
+Absent region or empty JSON ⇒ no approval. Unparseable JSON ⇒ `malformed-approval`, treated as no approval and reported.
+
+## Assessment record (inside the `assessment` region)
+
+```json
+{
+  "stage": "functional",
+  "evaluated_at": "2026-09-25T10:02:41Z",
+  "fingerprint": "sha256:9f2c…",
+  "criteria": [
+    {"id": "FUN-G03", "kind": "traceability", "status": "not-met",
+     "reason": "FR-009 traces to no requirement or use case"},
+    {"id": "FUN-G09", "kind": "judgment", "status": "met",
+     "reason": "AI assessment: all acceptance criteria are observable"}
+  ],
+  "assessment": {"ambiguity": [], "missing": [], "contradictions": [],
+                 "unsupported_assumptions": [], "untestable": []},
+  "findings": [{"code": "dangling-trace", "where": "FR-014", "message": "…"}]
+}
+```
+
+The assessment carries the `fingerprint` of the document version it evaluated. A stage is `in-review` only while that equals the document's current fingerprint and every criterion is `met` or `overridden`; after any content change the assessment is stale and the stage is a `draft` again until `check` is re-run.
+
+## Comprehension record (inside the `comprehension` region, `functional` and `technical` only)
+
+```json
+{
+  "stage": "functional",
+  "fingerprint": "sha256:9f2c…",
+  "taken_by": "Ada Lovelace",
+  "started_at": "2026-09-25T09:41:10Z",
+  "updated_at": "2026-09-25T09:58:33Z",
+  "levels": [
+    {"level": "recognise", "outcome": "understood", "attempts": 1, "items": ["FR-003"]},
+    {"level": "explain",   "outcome": "coached",    "attempts": 3, "items": ["FR-007"]},
+    {"level": "apply",     "outcome": "skipped",    "attempts": 1, "items": ["FR-009", "FR-012"]},
+    {"level": "trace",     "outcome": "revealed",   "attempts": 2, "items": ["REQ-003", "FR-007", "ART-011"]},
+    {"level": "evaluate",  "outcome": "not-applicable", "reason": "one-screen story, no trade-off", "attempts": 0, "items": []}
+  ]
+}
+```
+
+Rules:
+- **Allowed keys only.** `levels[].level` is one of `recognise`, `explain`, `apply`, `trace`, `evaluate`; `outcome` is one of `understood`, `coached`, `revealed`, `skipped`, `not-applicable`; `reason` only with `not-applicable` and then required. No key holds a question, an answer, a hint or a score, and the writer rejects any other key (FR-092).
+- `items` are ids that exist in the document or its approved upstream, listing every item asked about across attempts.
+- **Current** ⇔ `fingerprint` equals the document's current fingerprint (formatting-only differences ignored, FR-044). A record for a different fingerprint is **stale**; the next `comprehension record` replaces it whole rather than merging.
+- **Complete** ⇔ current and all five levels present, each with any outcome (FR-093). Passing is not required.
+- A region that holds unparseable JSON or any key outside the allowed set is `malformed-comprehension`: reported, and treated as no record (like `malformed-approval`).
+- `check` reports `comprehension-missing` (no record), `comprehension-stale` (record for another fingerprint) or `comprehension-incomplete` (fewer than five levels), each as the reason `FUN-G16` or `TEC-G19` is not met.
+- Summary counts (`understood`, `coached`, `revealed`, `skipped`, `not_applicable`) are derived and copied into the approval record's `comprehension` field.
+
+### Technical decision fields (FR-032, FR-033)
+
+A `DEC` item is its defining line followed by labelled fields, one label per line (bullets, `**bold**` and `Label:` or `**Label:**` are all accepted), the value on the same line or on the lines after it:
+
+```markdown
+**DEC-004**: Use asynchronous processing (traces: FR-007, NFR-002)
+Decision: Customer duplicate analysis runs asynchronously in a worker.
+Reason: The analysis may exceed the synchronous API latency requirement.
+Rejected alternative: Analyse inside the import request.
+Trade-off: Results are not immediately available to the caller.
+Owner: Ada Dev
+```
+
+The labels are `Decision`, `Reason`, `Rejected alternative` (also `Rejected alternatives`), `Trade-off` and `Owner`, matched case-insensitively. Unlike other items, a `DEC` continues over blank lines when the next text is another field, or the value of a label whose value is still empty, so the standard's own layout (a blank line between fields) parses. It ends at the next heading, item line or task line. Every field is part of the item's text and therefore of its hash and of the document fingerprint. `TEC-G02` reports each missing or empty field by name (`DEC-004 has no reason`), an `Owner` that names the AI (`identity.is_ai_actor`, attestation-level like FR-012), and a `DEC` whose `traces:` names no `FR` or `NFR`.
+
+### Verification rows and completion lines (FR-059 to FR-065, FR-084)
+
+A verification row is an `EVD` item that traces to what it verifies (a `REQ`, `FR`, `NFR`, `ART`, task id or code) and carries `(status: verified|failed|unverified|excepted)` and optionally `(code: sha|PR#n)`, followed by labelled lines `Kind` (`automated` or `manual`), `Evidence`, and for an exception `Accepted by` and `Reason` (same label rules as decision fields, but a row ends at the first blank line). A verified or failed row needs `Kind` and `Evidence`; an excepted row needs `Accepted by` (a person, never the AI) and `Reason`. A row covers every id it traces to; a target takes the worst status of its rows (`failed` > `unverified` > `excepted` > `verified`); a target with no row is `unverified`; an excepted row missing who or why counts as `unverified`. A task id (`T012`) is a valid trace target, so evidence can trace to a task.
+
+`s07` sections: `Automated Evidence`, `Manual Evidence`, `Exceptions`, `Open Tasks` (required), and optionally `Failed Evidence` and `Acceptance Criteria`. Every task of `s06` that is not done must be named (by id) under `Open Tasks`. The document must not say the story is complete (`VER-G06`: a `Completion` heading, or a sentence such as "the story is complete", or an approval record).
+
+`s08` `Diagram Currency` has one line per approved `ART`: `- ART-004: current`, or `- ART-007: deviation, accepted by NAME, because REASON`; a deviation is also named under `Accepted Deviations`. Approved means the owning stage's approval is current.
+
+### Question targets (deterministic selection, FR-089)
+
+`comprehension plan` chooses, for level *L* and attempt *k* (default 1), one target from the eligible ids, sorted ascending: index = `int(sha256(f"{fingerprint}|{L}|{k}")[:8], 16) mod len(eligible)`. An id already chosen for an earlier level in the same plan is skipped, unless nothing else is eligible.
+
+| Level | s02 eligible | s03 eligible |
+|---|---|---|
+| recognise | `FR`, `NFR`, `UC` | `DEC`, `ART` |
+| explain | `FR`, `NFR` | `DEC` |
+| apply | `FR`, `UC` | `DEC`, `ART` (sequence, container) |
+| trace | any item with ≥ 1 `traces:`; the target is the item **and** its full upstream chain to a `REQ`/`UC`, plus any `ART` tracing to it | as s02, chain to `REQ` through `FR` |
+| evaluate | `NFR`, `FR` with a stated rule or limit | `DEC` (its trade-off and rejected alternative) |
+
+A level with an empty eligible set is reported as `no-material`, and the agent records it `not-applicable` with that reason. The agent phrases the question; it may not choose a different target.
+
+Criterion ids are `<STAGE3>-G<nn>` where `STAGE3` is `REQ`, `FUN`, `TEC`, `AIS`, `PLN`, `TSK`, `VER`, `CMP`, in template order.
+
+## Fingerprint algorithm (normative)
+
+Input: a file's bytes. Output: `sha256:` + 64 lowercase hex digits.
+
+1. Decode UTF-8; on failure, report `not-utf8` (exit 2) — no fingerprint.
+2. Replace `\r\n` and lone `\r` with `\n`.
+3. Remove every region delimited by `<!-- eil:begin approval -->` … `<!-- eil:end approval -->`, `<!-- eil:begin assessment -->` … `<!-- eil:end assessment -->` and `<!-- eil:begin comprehension -->` … `<!-- eil:end comprehension -->`, **including** the marker lines and any single blank line directly after the end marker. (The `## Approval`, `## Quality Assessment` and `## Comprehension Check` headings remain.)
+4. Strip trailing spaces and tabs from every line.
+5. Collapse every run of two or more blank lines into one blank line.
+6. Strip all leading and trailing blank lines.
+7. Append a single `\n`, encode UTF-8, SHA-256.
+
+**Test vectors** (the unit suite carries these): `"A\n\nB\n"`, `"A\r\n\r\nB"`, `"A  \n\n\n\nB\n\n"` must produce **one** identical fingerprint; `"A\nB\n"` (blank line removed) and `"A \n\nB2\n"` must each produce a different one; a file that differs only inside an approval, assessment or comprehension region must match the same file without that region.
+
+## Item hash (for impact analysis)
+
+`sha256:` of the item's normalised text: its defining line plus continuation lines (for an `ART`, also its attachment: the Mermaid fence text, or the `eil:artifact` record, which carries the file's fingerprint), with the `traces:` clause **included**, the tags `[ai-draft]`/`[pending-clarification]` excluded, whitespace normalised as steps 2, 4, 5 above. An upstream item's hash changing means every downstream item that lists it in `traces:` is reported as affected (FR-043).
+
+## Overview grammar (`s00-README.md`)
+
+Generated only. First line: `<!-- eil:generated — edit the stage documents, not this file -->`. Sections in fixed order: **Story** (title, owner), **Status** (current stage, overall status), **Documents** (nine rows: link, derived state), **Artefacts** (one row per `ART`: id, kind, owning stage, derived state, link; or "none"), **Approvals** (stage, by, at, short fingerprint, and for `functional` and `technical` the comprehension counts, for example `understood 3 · coached 1 · skipped 1`), **Outstanding** (open questions, open challenges, pending clarifications, overrides, issues), **Accepted risks** (accepted open questions), **Abbreviated stages**, **Mirrors** (each alias that is a mirror, or "none"). Only record values and fixed labels appear; no text is copied from a document's prose (FR-055). An artefact row shows its id, kind and a link, and the item line's title is a label copied verbatim, never diagram content.
+
+## Templates (contract with the preset)
+
+Each template contains the stage's required content headings (FR-014..017, 059..063), an empty Challenges, Overrides, Quality Assessment and Approval section, and a comment line naming the stage's gate. Headings are the names in the process standard so a reader and the gate share vocabulary. Templates also carry the stage's artefact section (s01 `System Context`; s02 `Sequence Diagrams` and `Wireframes`; s03 `Container View`, `Component Views`, `Sequence Diagrams` and `Data Model`; s04 `Artefacts in Scope`; s07 an artefact row group; s08 `Diagram Currency`), each with an example `ART` item and attachment as a comment, so a section that does not apply is removed with a reason like any other (FR-018, FR-075). A section not applicable to a story is removed only with a one-line reason under a `## Not applicable` heading (FR-018); the gate reports required headings that are neither present nor listed there.

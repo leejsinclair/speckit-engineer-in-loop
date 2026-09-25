@@ -1,0 +1,1 @@
+# STUB spec-template override

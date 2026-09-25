@@ -1,0 +1,5 @@
+# Honoured by `specify extension add` from this directory (not from the repository root).
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

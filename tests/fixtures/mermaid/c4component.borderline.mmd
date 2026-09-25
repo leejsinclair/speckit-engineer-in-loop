@@ -1,0 +1,12 @@
+C4Component
+  title Borderline component view
+  Container(web, "Web app", "React")
+  ContainerDb(db, "Customer DB", "PostgreSQL")
+  Container_Boundary(api, "Import API") {
+    Component(ctl, "Import Controller", "Spring MVC", "Accepts files")
+    Component(svc, "Duplicate Service", "Spring Bean")
+    ComponentDb_Ext(cache, "Cache", "Redis")
+    Rel(ctl, svc, "Uses")
+    Rel(svc, db, "Reads", "JDBC")
+  }
+  Rel(web, ctl, "Uploads", "HTTPS")

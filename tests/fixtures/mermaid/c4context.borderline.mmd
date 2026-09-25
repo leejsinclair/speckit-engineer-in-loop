@@ -1,0 +1,12 @@
+C4Context
+  title Borderline context
+  Enterprise_Boundary(b0, "Acme") {
+    Person(p1, Analyst, "Reviews duplicates", $tags="v1.0")
+    System_Boundary(b1, "Customer Platform") {
+      System(core, "Duplicate  Analysis")
+    }
+    System_Ext(crm, "CRM", "External CRM, with a comma")
+  }
+  Rel(p1, core, "Uses", "HTTPS")
+  Rel_Back(crm, core, "Feeds")
+  UpdateRelStyle(p1, core, $offsetX="5")

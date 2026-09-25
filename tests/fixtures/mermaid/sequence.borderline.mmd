@@ -1,0 +1,20 @@
+sequenceDiagram
+  autonumber
+  box Aqua Platform
+    participant W as Web app
+    participant API@{ "type": "boundary" } as Import API
+  end
+  actor Customer as Data Analyst
+  Customer->>+W: Upload file
+  W->>API: POST /imports
+  alt file is valid
+    API->>Queue: Enqueue job
+    Queue-->>API: accepted
+  else file is invalid
+    API--)W: 422
+  end
+  Note over W,API: One import, one job
+  loop every minute
+    Worker->>Queue: poll
+  end
+  W-->>-Customer: Import started

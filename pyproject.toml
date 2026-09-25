@@ -1,0 +1,30 @@
+[project]
+name = "speckit-engineer-in-the-loop"
+version = "0.1.0"
+description = "Spec Kit preset and extension: a hard-gated, staged definition workflow."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+# No runtime dependencies (research D-04, constitution Principle III).
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["extensions/eil/scripts/python", "."]
+markers = [
+    "contract: installs the preset and extension into a scratch Spec Kit project",
+    "scenario: replays a quickstart scenario end to end",
+    "slow: takes more than a few seconds",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = [".venv", "specs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# Long message strings are fine; `ruff format` owns code layout.
+ignore = ["E501"]

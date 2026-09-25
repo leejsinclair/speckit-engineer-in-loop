@@ -1,0 +1,13 @@
+erDiagram
+  direction TB
+  p[Person] {
+    string firstName PK
+    string lastName
+  }
+  a["Customer Account"] {
+    string email UK
+    int personId FK
+  }
+  LINE-ITEM
+  p ||--o| a : has
+  a }o..o{ LINE-ITEM : "buys"

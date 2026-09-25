@@ -1,0 +1,13 @@
+C4Container
+  title Borderline container view
+  Person(a, "Data Analyst")
+  System_Boundary(s, "Customer Platform") {
+    Container(api, "Import API", "REST", "[changed] Accepts imports")
+    ContainerDb(db, "Customer DB", "PostgreSQL", "[existing] Customer records")
+    ContainerQueue(q, "Job queue", "SQS")
+  }
+  System_Ext(mail, "Mail service")
+  Rel(a, api, "Uploads files")
+  Rel(api, db, "Reads and writes")
+  Rel(api, q, "Enqueues")
+  Rel_D(api, mail, "Sends mail", "SMTP")

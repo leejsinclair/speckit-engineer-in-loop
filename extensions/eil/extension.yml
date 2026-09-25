@@ -1,0 +1,69 @@
+schema_version: "1.0"
+
+extension:
+  id: eil
+  name: "Engineer in the Loop"
+  version: "0.1.0"
+  description: "Stage, approval, challenge, override and traceability commands, and the deterministic helper behind them."
+  author: "leejsinclair"
+  repository: "https://github.com/leejsinclair/speckit-engineer-in-loop"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=1.0.2.dev0"
+  tools:
+    - {name: python3, required: true}
+    - {name: git, required: false}          # identity default only
+
+provides:
+  commands:
+    - {name: speckit.eil.requirements, aliases: ["speckit.eil-1-requirements"], file: commands/speckit.eil.requirements.md, description: "Start a story and draft, challenge and gate Requirements"}
+    - {name: speckit.eil.functional, aliases: ["speckit.eil-2-functional"],   file: commands/speckit.eil.functional.md,   description: "Functional Specification stage"}
+    - {name: speckit.eil.technical, aliases: ["speckit.eil-3-technical"],    file: commands/speckit.eil.technical.md,    description: "Technical Specification stage"}
+    - {name: speckit.eil.ai-spec, aliases: ["speckit.eil-4-ai-spec"],      file: commands/speckit.eil.ai-spec.md,      description: "Assemble the AI Specification from approved stages"}
+    - {name: speckit.eil.5-plan,       file: commands/speckit.eil.5-plan.md,       description: "Plan stage: runs /speckit-plan once the AI Specification is approved"}
+    - {name: speckit.eil.6-tasks,      file: commands/speckit.eil.6-tasks.md,      description: "Tasks stage: runs /speckit-tasks once the plan is approved"}
+    - {name: speckit.eil.resolve,      file: commands/speckit.eil.resolve.md,      description: "Carry a pending clarification answer to the earliest stage it affects"}
+    - {name: speckit.eil.verify, aliases: ["speckit.eil-7-verify"],       file: commands/speckit.eil.verify.md,       description: "Record verification evidence"}
+    - {name: speckit.eil.complete, aliases: ["speckit.eil-8-complete"],     file: commands/speckit.eil.complete.md,     description: "Completion stage"}
+    - {name: speckit.eil.challenge,    file: commands/speckit.eil.challenge.md,    description: "Raise a challenge, or record a person's answer to one"}
+    - {name: speckit.eil.abbreviate,   file: commands/speckit.eil.abbreviate.md,   description: "Record that a stage is abbreviated, by whom and why"}
+    - {name: speckit.eil.trace,        file: commands/speckit.eil.trace.md,        description: "Trace the chain from requirement to evidence, and back"}
+    - {name: speckit.eil.comprehend,   file: commands/speckit.eil.comprehend.md,   description: "Comprehension check before approving Functional or Technical"}
+    - {name: speckit.eil.artifact,     file: commands/speckit.eil.artifact.md,     description: "Record an exported wireframe or diagram image with its source"}
+    - {name: speckit.eil.approve,      file: commands/speckit.eil.approve.md,      description: "Record a stage approval (human confirmation)"}
+    - {name: speckit.eil.override,     file: commands/speckit.eil.override.md,     description: "Record a named, reasoned override"}
+    - {name: speckit.eil.next,         file: commands/speckit.eil.next.md,         description: "Do the next step the story is waiting for, and stop at every human decision"}
+    - {name: speckit.eil.status, aliases: ["speckit.eil-0-status"],       file: commands/speckit.eil.status.md,       description: "Where the story is, who approved what, what is outstanding"}
+
+  scripts:
+    - {name: eil, file: scripts/python/eil, description: "Deterministic helper (fingerprints, aliases, gates, records, artifact, diagram and comprehension checks)"}
+
+  config:
+    - {name: eil-config.yml, template: config-template.yml, description: "Approvers per stage", required: false}
+
+hooks:
+  after_clarify:
+    command: speckit.eil.status
+    optional: false
+    description: "Refresh mirrors and overview after clarification"
+  after_plan:
+    command: speckit.eil.status
+    optional: false
+    description: "Refresh mirrors and overview after planning"
+  after_tasks:
+    command: speckit.eil.status
+    optional: false
+    description: "Refresh mirrors and overview after task generation"
+  after_implement:
+    command: speckit.eil.status
+    optional: false
+    description: "Refresh overview after implementation"
+
+tags: ["governance", "process", "traceability"]
+
+config:
+  defaults:
+    default_developer: null
+    approvers: {requirements: [], functional: [], technical: [], completion: []}
+    abbreviation_authorisers: []

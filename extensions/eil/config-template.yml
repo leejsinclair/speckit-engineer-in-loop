@@ -1,0 +1,18 @@
+# Engineer in the Loop: who may confirm what.
+#
+# Copy this to `eil-config.yml` in this directory to change it. A machine-local override can go in
+# `local-config.yml` (keep it out of version control). An empty list means "the story's developer",
+# who is the story's owner, `default_developer`, or the person named by `git config user.name` or
+# `user.email`. One listed person's confirmation is enough (FR-066). The same list also decides who
+# may record an override for that stage (FR-045).
+
+default_developer: null
+
+approvers:
+  requirements: []
+  functional: []
+  technical: []
+  completion: []
+
+# Who may abbreviate a stage (empty means the story's developer).
+abbreviation_authorisers: []

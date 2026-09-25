@@ -1,0 +1,18 @@
+schema_version: "1.0"
+
+preset:
+  id: "eil-preset-stub"
+  name: "EIL preset risk-spike stub"
+  version: "0.0.1"
+  description: "Stub used only by contract tests C-03 to C-05."
+
+requires:
+  speckit_version: ">=1.0.2.dev0"
+
+provides:
+  templates:
+    - {type: template, name: s01-requirements-template, file: templates/s01-requirements-template.md}
+    - {type: template, name: spec-template, file: templates/spec-template.md, replaces: spec-template}
+    - {type: command, name: speckit.plan, file: commands/speckit.plan.md, strategy: wrap}
+
+tags: ["stub"]

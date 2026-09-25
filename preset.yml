@@ -1,0 +1,37 @@
+schema_version: "1.0"
+
+preset:
+  id: "engineer-in-the-loop"
+  name: "Engineer in the Loop"
+  version: "0.1.0"
+  description: "Rigorous, hard-gated staged definition workflow: Requirements, Functional, Technical and AI Specification, each closed by developer approval."
+  author: "leejsinclair"
+  repository: "https://github.com/leejsinclair/speckit-engineer-in-loop"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=1.0.2.dev0"
+
+provides:
+  templates:
+    # ---- new document skeletons (research D-02, risk R-1, confirmed by contract test C-03)
+    - {type: template, name: s00-readme-template,          file: templates/s00-readme-template.md}
+    - {type: template, name: s01-requirements-template,    file: templates/s01-requirements-template.md}
+    - {type: template, name: s02-functional-spec-template, file: templates/s02-functional-spec-template.md}
+    - {type: template, name: s03-technical-spec-template,  file: templates/s03-technical-spec-template.md}
+    - {type: template, name: s07-verification-template,    file: templates/s07-verification-template.md}
+    - {type: template, name: s08-completion-template,      file: templates/s08-completion-template.md}
+    # ---- overrides of core templates (the three aliased documents)
+    - {type: template, name: spec-template,  file: templates/spec-template.md,  replaces: spec-template}
+    - {type: template, name: plan-template,  file: templates/plan-template.md,  replaces: plan-template}
+    - {type: template, name: tasks-template, file: templates/tasks-template.md, replaces: tasks-template}
+    # ---- command overrides (research D-13)
+    - {type: command, name: speckit.specify,   file: commands/speckit.specify.md,   strategy: replace, replaces: speckit.specify}
+    - {type: command, name: speckit.clarify,   file: commands/speckit.clarify.md,   strategy: wrap}
+    - {type: command, name: speckit.plan,      file: commands/speckit.plan.md,      strategy: wrap}
+    - {type: command, name: speckit.tasks,     file: commands/speckit.tasks.md,     strategy: wrap}
+    - {type: command, name: speckit.analyze,   file: commands/speckit.analyze.md,   strategy: wrap}
+    - {type: command, name: speckit.checklist, file: commands/speckit.checklist.md, strategy: wrap}
+    - {type: command, name: speckit.implement, file: commands/speckit.implement.md, strategy: wrap}
+
+tags: ["governance", "process", "traceability", "human-in-the-loop"]

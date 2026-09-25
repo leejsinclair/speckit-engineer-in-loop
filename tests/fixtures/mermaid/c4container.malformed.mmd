@@ -1,0 +1,7 @@
+C4Container
+  Person(a, "Data Analyst")
+  System_Boundary(s, "Customer Platform") {
+    Container(api, "Import API", "REST")
+    ContainerDb(db "Customer DB")
+  }
+  Rel(a, api, "Uploads files")
