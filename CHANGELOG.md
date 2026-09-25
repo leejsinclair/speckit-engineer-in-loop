@@ -7,6 +7,7 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- Release workflow: pushing a `v*` tag builds the extension and preset zips and attaches them to a GitHub release; `tools/stage.py --tag` refuses a tag that does not match the manifest versions. Added a CI workflow (lint and unit tests).
 - Numbered command names that match the document numbers: `/speckit-eil-0-status`, `-1-requirements`,
   `-2-functional`, `-3-technical`, `-4-ai-spec`, `-5-plan`, `-6-tasks`, `-7-verify` and `-8-complete`. They are
   Spec Kit aliases (or, for plan and tasks, thin commands that run `/speckit-plan` and `/speckit-tasks`); the

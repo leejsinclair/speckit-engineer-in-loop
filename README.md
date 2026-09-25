@@ -94,7 +94,7 @@ The number in each command is the number in the document's file name, and `/spec
 
 **The helper** is `python3 .specify/extensions/eil/scripts/python/eil <command> [--json]`. You rarely call it yourself, but `status`, `check --stage S`, `check --chain`, `trace --report` and `artifact list` are safe to run at any time and change nothing but the generated assessment and overview.
 
-**Released archives.** `python3 tools/stage.py DIR --archives` writes `eil-extension-<version>.zip` and `engineer-in-the-loop-preset-<version>.zip`. Install them with `specify extension add eil --from <url>` (it asks you to confirm the source) and `specify preset add --from <url>`, extension first.
+**Released archives.** `python3 tools/stage.py DIR --archives` writes `eil-extension-<version>.zip` and `engineer-in-the-loop-preset-<version>.zip`. Pushing a tag such as `v0.1.0` builds them in GitHub Actions and attaches both to a release (`.github/workflows/release.yml`); the build refuses if `preset.yml` and `extension.yml` do not carry the tag's version. Install them with `specify extension add eil --from <url>` (it asks you to confirm the source) and `specify preset add --from <url>`, extension first.
 
 ## Remove
 

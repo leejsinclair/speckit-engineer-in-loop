@@ -45,11 +45,27 @@ def stage_extension(destination: Path) -> Path:
     return destination
 
 
-def _version() -> str:
-    for line in (REPO_ROOT / "preset.yml").read_text(encoding="utf-8").splitlines():
+def _read_version(manifest: Path) -> str:
+    for line in manifest.read_text(encoding="utf-8").splitlines():
         if line.strip().startswith("version:"):
             return line.split(":", 1)[1].strip().strip('"')
     return "0.0.0"
+
+
+def _version() -> str:
+    return _read_version(REPO_ROOT / "preset.yml")
+
+
+def check_release_tag(tag: str) -> str | None:
+    """Return why ``tag`` (for example ``v0.1.0``) cannot release this tree, or None when it can:
+    the preset and the extension must both carry the version the tag names."""
+    wanted = tag.removeprefix("v")
+    found = {
+        "preset.yml": _read_version(REPO_ROOT / "preset.yml"),
+        "extensions/eil/extension.yml": _read_version(REPO_ROOT / "extensions" / "eil" / "extension.yml"),
+    }
+    wrong = [f"{name} says {version}" for name, version in found.items() if version != wanted]
+    return f"tag {tag} does not match: " + ", ".join(wrong) if wrong else None
 
 
 def make_archives(directory: Path) -> tuple[Path, Path]:
@@ -78,7 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Stage the extension and preset for installation.")
     parser.add_argument("directory", type=Path, help="where to write extension/ and preset/")
     parser.add_argument("--archives", action="store_true", help="also write the release .zip archives")
+    parser.add_argument("--tag", help="refuse unless the manifests carry this tag's version")
     args = parser.parse_args(argv)
+    if args.tag and (problem := check_release_tag(args.tag)):
+        print(problem, file=sys.stderr)
+        return 1
     if args.archives:
         extension, preset = make_archives(args.directory)
         print(f"Wrote {extension} and {preset}")
