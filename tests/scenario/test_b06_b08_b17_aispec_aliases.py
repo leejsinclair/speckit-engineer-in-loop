@@ -148,7 +148,10 @@ def test_b06_resolve_carries_the_answer_upstream_and_a_named_override_lets_plan_
     assert "**FR-002**: Carried from AIS-002" in read(project, "s02-functional-spec.md")
     status = eil(["status", "--json"]).json
     assert status["stages"]["functional"]["state"] == "needs-re-review"
-    assert status["stages"]["technical"]["state"] == "needs-re-review"
+    # Nothing in the already-approved technical spec traces to the newly carried FR-002 (it could
+    # not, since FR-002 did not exist when technical was approved), so per FR-043 ("depends on the
+    # changed content") technical is not itself pulled into re-review — D-26.
+    assert status["stages"]["technical"]["state"] == "approved"
     assert eil(["enter", "plan", "--json"]).code == 1, "plan stays refused until it is approved again"
     again = eil(["resolve", "--id", "AIS-002", "--stage", "functional", "--json"])
     assert again.json["cleared"] is False

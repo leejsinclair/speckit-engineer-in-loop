@@ -377,9 +377,10 @@ def test_resolve_carries_the_answer_to_the_earliest_stage_and_marks_it_for_re_re
     result = resolve(Package(story_dir.root), "AIS-002", "functional")
     assert result["created"] and not result["cleared"] and result["carried_to"] == "FR-002"
     assert Package(story_dir.root).state("functional").state == "needs-re-review"
-    assert (
-        Package(story_dir.root).state("technical").state == "needs-re-review"
-    )  # it follows the change upstream
+    # Nothing in the already-approved technical spec traces to the newly carried FR-002 (it could
+    # not, since FR-002 did not exist when technical was approved), so per FR-043 ("depends on the
+    # changed content") technical is not itself pulled into re-review — D-26.
+    assert Package(story_dir.root).state("technical").state == "approved"
     assert Package(story_dir.root).state("requirements").state == "approved"
     functional = story_dir.read("functional")
     assert "**FR-002**: Carried from AIS-002: Retention is 90 days. [ai-draft]" in functional
@@ -440,8 +441,9 @@ def test_a_clearing_leaves_the_ai_specification_needing_the_technical_stage_re_a
     resolve(Package(story_dir.root), "AIS-002", "functional")
     result = gate(story_dir, "ai-spec")
     assert status_of(result)["AIS-G03"] == "met"
-    assert status_of(result)["AIS-G02"] == "not-met", "technical is still waiting for its own re-approval"
-    approve_stages(story_dir, "technical")
+    # Technical was never pulled into re-review by this carry (D-26: nothing in it traces to the
+    # newly carried FR-002), so its own AIS items still trace to an approved stage.
+    assert status_of(result)["AIS-G02"] == "met"
     assert gate(story_dir, "ai-spec").ok
 
 

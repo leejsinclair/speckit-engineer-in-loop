@@ -81,6 +81,7 @@ provides:
     - {name: speckit.eil.challenge,    file: commands/speckit.eil.challenge.md,    description: "Raise or answer a challenge"}
     - {name: speckit.eil.approve,      file: commands/speckit.eil.approve.md,      description: "Record a stage approval (human confirmation)"}
     - {name: speckit.eil.override,     file: commands/speckit.eil.override.md,     description: "Record a named, reasoned override"}
+    - {name: speckit.eil.amend,        file: commands/speckit.eil.amend.md,        description: "Re-sign an approval covered entirely by cited human decisions"}
     - {name: speckit.eil.abbreviate,   file: commands/speckit.eil.abbreviate.md,   description: "Record an abbreviated stage"}
     - {name: speckit.eil.resolve,      file: commands/speckit.eil.resolve.md,      description: "Carry a pending clarification upstream"}
     - {name: speckit.eil.trace,        file: commands/speckit.eil.trace.md,        description: "Traceability chain and gaps"}

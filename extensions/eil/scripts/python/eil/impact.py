@@ -18,7 +18,8 @@ from .trace import ParseResult, build_graph, item_hash, parse_document
 DEFINITION = ("requirements", "functional", "technical")
 
 
-def _parsed(pkg: Package) -> dict[str, ParseResult]:
+def parsed_story(pkg: Package) -> dict[str, ParseResult]:
+    """Every existing stage's document, parsed and scanned (diagrams and exports attached)."""
     parsed: dict[str, ParseResult] = {}
     for stage in pkg.existing_stages():
         try:
@@ -30,11 +31,22 @@ def _parsed(pkg: Package) -> dict[str, ParseResult]:
     return parsed
 
 
+def _approval(pkg: Package, stage: str) -> dict | None:
+    """The stage's raw recorded approval, read directly (never through ``Package.state``, which
+    this module itself feeds — D-26)."""
+    try:
+        doc = pkg.doc(stage)
+    except (OSError, UnicodeDecodeError):
+        return None
+    read = doc.read_region("approval")
+    return read.obj if not read.error and isinstance(read.obj, dict) else None
+
+
 def changed_items(pkg: Package, parsed: dict[str, ParseResult]) -> list[str]:
     """Ids whose text differs from what an approval covered, that were added since, or were removed."""
     changed: list[str] = []
     for stage in DEFINITION:
-        approval = pkg.state(stage).approval if stage in parsed else None
+        approval = _approval(pkg, stage) if stage in parsed else None
         recorded = approval.get("items") if approval else None
         if not isinstance(recorded, dict):
             continue
@@ -44,9 +56,34 @@ def changed_items(pkg: Package, parsed: dict[str, ParseResult]) -> list[str]:
     return changed
 
 
+def current_item_hashes(pkg: Package) -> dict[str, str]:
+    """A flat ``{id: item_hash}`` over every item and task of every existing stage, current on disk.
+
+    Used to check a stage's own recorded ``upstream_items`` (D-26): a per-consumer snapshot is
+    stage-pairwise correct even across an upstream stage's later, unrelated re-approval, which a
+    check against only upstream's *latest* approval baseline (``changed_items`` above) is not.
+    """
+    parsed = parsed_story(pkg)
+    hashes: dict[str, str] = {}
+    for result in parsed.values():
+        hashes.update({item.id: item_hash(item) for item in result.items})
+    return hashes
+
+
+def upstream_item_hashes(pkg: Package, stage: str, parsed: dict[str, ParseResult]) -> dict[str, str]:
+    """The current hash of every id that ``stage``'s own items trace to, directly or not, anywhere
+    upstream (D-26). Recorded in that stage's approval so a later check is stage-pairwise, not
+    dependent on whatever an upstream stage's own approval history says."""
+    graph = build_graph(parsed)
+    own_ids = [item.id for item in parsed.get(stage, ParseResult()).items]
+    closure = set(graph.upstream(own_ids)) - set(own_ids)
+    current = current_item_hashes(pkg)
+    return {i: current[i] for i in closure if i in current}
+
+
 def affected(pkg: Package) -> dict[str, list[str]]:
     """``stage -> ids`` of the items that changed or depend on one that did, in document order."""
-    parsed = _parsed(pkg)
+    parsed = parsed_story(pkg)
     changed = changed_items(pkg, parsed)
     if not changed:
         return {}

@@ -24,6 +24,7 @@ GOVERNED_ONLY: list[list[str]] = [
     ["challenge", "answer", "CH-001", "--response", "accepted", "--by", "Ada"],
     ["approve", "requirements", "--by", "Ada", "--attestation", "yes"],
     ["override", "requirements", "--criterion", "REQ-G01", "--by", "Ada", "--reason", "r"],
+    ["amend", "requirements", "--from", "CH-001", "--by", "Ada", "--attestation", "yes"],
     ["abbreviate", "requirements", "--by", "Ada", "--reason", "r"],
     ["resolve", "--id", "AIS-001", "--stage", "requirements"],
     [

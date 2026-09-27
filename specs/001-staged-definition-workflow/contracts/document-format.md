@@ -65,6 +65,8 @@ and an optional trailing clause on the same line or continuation lines up to the
 (material: yes|no)         OQ only; an OQ with no `material` clause counts as material
 (accepted-by: <name>)      OQ only; required when a material OQ is `accepted` (FR-023)
 (store: <label>)           ART of an ER diagram only: the data store it describes
+(decided: CH-###|OQ-###|AIS-###)  text is a human's own words, copied verbatim from that
+                            recorded decision (D-24); write it untagged instead of [ai-draft]
 [ai-draft]                 unreviewed AI-authored item (D-16)
 [pending-clarification]    AIS only (FR-067)
 ```
@@ -72,6 +74,7 @@ and an optional trailing clause on the same line or continuation lines up to the
 Rules the parser enforces and reports (never silently ignores):
 - An ID defined twice in a story, or reused after removal → `duplicate-id`.
 - A `traces:` reference to an ID that does not exist upstream → `dangling-trace`.
+- A `decided:` clause whose value is not shaped `CH-###`, `OQ-###` or `AIS-###` → `malformed-item`; one whose id does not exist anywhere in the story, or exists but is not in an eligible state (a `CH` not `accepted`; an `OQ` not `resolved`/`accepted`; anything other than an `AIS` item) → `decided-source-invalid` (`provenance.decided_findings`, D-24). Both are integrity findings: they cannot be overridden, because unverifiable provenance is worse than an ordinary unmet criterion.
 - A line that starts `**REQ-`, `**FR-` and so on but does not match the item grammar → `malformed-item` (R-5: parse failures are findings, not silent drops).
 - Tasks in `s06` are Spec Kit task lines (`- [ ] T012 …`); the helper reads `T###` from them and the `traces:` clause from the same line.
 
@@ -167,10 +170,16 @@ Constructs outside the subset are ignored only if they are known presentation di
   "played_back_to": "Sam (business), Priya (QA)",
   "upstream": {"requirements": "sha256:41ab…"},
   "items": {"FR-001": "sha256:…", "FR-002": "sha256:…"},
+  "prose_fingerprint": "sha256:7ac1…",
+  "upstream_items": {"REQ-001": "sha256:…", "UC-001": "sha256:…"},
   "overrides_used": ["OVR-001"],
   "comprehension": {"understood": 3, "coached": 1, "revealed": 0, "skipped": 1, "not_applicable": 0}
 }
 ```
+
+- `prose_fingerprint`: the document's fingerprint with every item's lines and every `eil:` record block blanked out (`trace.non_item_fingerprint`). Only `eil amend` reads it, to refuse when anything outside an item changed (D-25).
+- `upstream_items`: the current hash, at approval time, of every id this stage's own items trace to, directly or not, anywhere upstream (`impact.upstream_item_hashes`). A later `check`/`status` compares each against its **current** hash to decide `needs-re-review`, per item, regardless of how many times the upstream stage has itself been re-approved since (D-26). An approval recorded before this field existed carries none; a later check then falls back to the whole-document `upstream` fingerprints.
+- An amendment (`eil amend`) additionally carries `"amended": true` and `"amends": ["CH-004", …]`, the cited human decisions, alongside the same fields above.
 
 Absent region or empty JSON ⇒ no approval. Unparseable JSON ⇒ `malformed-approval`, treated as no approval and reported.
 
@@ -269,16 +278,19 @@ Input: a file's bytes. Output: `sha256:` + 64 lowercase hex digits.
 1. Decode UTF-8; on failure, report `not-utf8` (exit 2) — no fingerprint.
 2. Replace `\r\n` and lone `\r` with `\n`.
 3. Remove every region delimited by `<!-- eil:begin approval -->` … `<!-- eil:end approval -->`, `<!-- eil:begin assessment -->` … `<!-- eil:end assessment -->` and `<!-- eil:begin comprehension -->` … `<!-- eil:end comprehension -->`, **including** the marker lines and any single blank line directly after the end marker. (The `## Approval`, `## Quality Assessment` and `## Comprehension Check` headings remain.)
-4. Strip trailing spaces and tabs from every line.
-5. Collapse every run of two or more blank lines into one blank line.
-6. Strip all leading and trailing blank lines.
-7. Append a single `\n`, encode UTF-8, SHA-256.
+4. Remove every literal `[ai-draft]` tag, and one preceding space if there is one. Reviewing and untagging a human's own words is not a content change (research D-23); this matches the item hash below, which already excludes the tag. `[pending-clarification]` is **not** removed here: clearing it is a human decision made through `eil resolve`, not a formatting no-op.
+5. Strip trailing spaces and tabs from every line.
+6. Collapse every run of two or more blank lines into one blank line.
+7. Strip all leading and trailing blank lines.
+8. Append a single `\n`, encode UTF-8, SHA-256.
 
-**Test vectors** (the unit suite carries these): `"A\n\nB\n"`, `"A\r\n\r\nB"`, `"A  \n\n\n\nB\n\n"` must produce **one** identical fingerprint; `"A\nB\n"` (blank line removed) and `"A \n\nB2\n"` must each produce a different one; a file that differs only inside an approval, assessment or comprehension region must match the same file without that region.
+**Test vectors** (the unit suite carries these): `"A\n\nB\n"`, `"A\r\n\r\nB"`, `"A  \n\n\n\nB\n\n"` must produce **one** identical fingerprint; `"A\nB\n"` (blank line removed) and `"A \n\nB2\n"` must each produce a different one; a file that differs only inside an approval, assessment or comprehension region must match the same file without that region; `"**REQ-001**: text [ai-draft]\n"` must match `"**REQ-001**: text\n"`, but `"**AIS-001**: text [pending-clarification]\n"` must **not** match `"**AIS-001**: text\n"`.
+
+Because `eil approve` already refuses while any `[ai-draft]` tag remains (`unreviewed-ai-content`), an already-approved document never had the tag in its hashed text, so this step does not change any recorded approval's fingerprint retroactively — no migration or version flag is needed. Only an `assessment` or `comprehension` record taken while tags still remained on the document can go stale across an upgrade; that is cheap to retake and never blocks an approval.
 
 ## Item hash (for impact analysis)
 
-`sha256:` of the item's normalised text: its defining line plus continuation lines (for an `ART`, also its attachment: the Mermaid fence text, or the `eil:artifact` record, which carries the file's fingerprint), with the `traces:` clause **included**, the tags `[ai-draft]`/`[pending-clarification]` excluded, whitespace normalised as steps 2, 4, 5 above. An upstream item's hash changing means every downstream item that lists it in `traces:` is reported as affected (FR-043).
+`sha256:` of the item's normalised text: its defining line plus continuation lines (for an `ART`, also its attachment: the Mermaid fence text, or the `eil:artifact` record, which carries the file's fingerprint), with the `traces:` and `decided:` clauses **included**, the tags `[ai-draft]`/`[pending-clarification]` excluded, whitespace normalised as steps 2, 5, 6 above. An upstream item's hash changing means every downstream item that lists it in `traces:` is reported as affected (FR-043).
 
 ## Overview grammar (`s00-README.md`)
 

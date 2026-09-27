@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import aliases, comprehension, impact
+from . import aliases, comprehension
 from .artifacts import artifact_state, scan_document
 from .gates import CRITERIA_BY_STAGE, INTEGRITY_CODES, check_stage
 from .package import APPROVABLE, DOC_FILES, OVERVIEW, STAGES, Package, StageState
@@ -372,12 +372,14 @@ def status(pkg: Package, template: str | None = None) -> dict[str, Any]:
     except ValueError:
         feature_dir = str(pkg.root)
     stages: dict[str, Any] = {}
-    reached = impact.affected(pkg)
+    reached = pkg.affected_items()
     for stage in STAGES:
         state = model.states[stage]
         entry: dict[str, Any] = {"state": state.state, "abbreviated": state.abbreviated}
         if state.reason:
             entry["reason"] = state.reason
+        if state.note:
+            entry["note"] = state.note
         if reached.get(stage):
             entry["affected_items"] = reached[stage]
         if state.state == "approved" and state.approval:

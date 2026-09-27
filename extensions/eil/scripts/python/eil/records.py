@@ -12,7 +12,7 @@ import difflib
 import re
 from typing import Any
 
-from . import comprehension
+from . import comprehension, impact
 from .artifacts import scan_document
 from .blocks import Doc, append_record, replace_record, write_region
 from .clock import utc_now
@@ -40,7 +40,7 @@ from .identity import (
 )
 from .package import APPROVABLE, DOC_FILES, STAGES, Package
 from .results import Refusal, refuse, usage_error
-from .trace import item_hash, parse_document
+from .trace import item_hash, non_item_fingerprint, parse_document
 
 DEFINITION_STAGES = ("requirements", "functional", "technical", "ai-spec")
 # Completion has its own refusal codes (FR-064, FR-065); each is the reason for one criterion.
@@ -248,6 +248,10 @@ def approve(
         if STAGES.index(earlier) < STAGES.index(stage) and (fp := pkg.fingerprint(earlier))
     }
     record["items"] = {item.id: item_hash(item) for item in ctx.parsed.items}
+    record["prose_fingerprint"] = non_item_fingerprint(ctx.doc, ctx.parsed.items, ctx.doc.records())
+    all_parsed = impact.parsed_story(pkg)
+    all_parsed[stage] = ctx.parsed
+    record["upstream_items"] = impact.upstream_item_hashes(pkg, stage, all_parsed)
     record["overrides_used"] = [str(o.get("id")) for o in ctx.overrides.values()]
     if stage in comprehension.ELIGIBLE_STAGES:  # copied so review sees skipped and revealed levels (FR-093)
         record["comprehension"] = comprehension.counts(ctx.doc.read_region("comprehension").obj or {})

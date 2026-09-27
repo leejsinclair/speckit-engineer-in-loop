@@ -272,8 +272,56 @@ def _require_prerequisites(pkg: Package, stage: str) -> None:
         )
 
 
+DELTA_LEVEL_CAP = 2
+
+
+def _delta_ids(pkg: Package, stage: str) -> set[str] | None:
+    """This stage's own or upstream ids affected by a change since its **last** approval, or
+    ``None`` on a first approval (there is nothing to take a delta against yet, D-27)."""
+    if pkg.state(stage).approval is None:
+        return None
+    reached = pkg.affected_items()
+    ids: set[str] = set()
+    for name in (*UPSTREAM[stage], stage):
+        ids |= set(reached.get(name, []))
+    return ids
+
+
+def _root_changed(pkg: Package, pool: set[str]) -> set[str]:
+    """Of ``pool`` (which also holds items merely *downstream* of a change), the ones that were
+    themselves actually edited — the only ones a ``(decided: ...)`` clause can sit on."""
+    from . import impact
+
+    all_parsed = impact.parsed_story(pkg)
+    return set(impact.changed_items(pkg, all_parsed)) & pool
+
+
+def _all_decided(pkg: Package, pool: set[str]) -> tuple[bool, str]:
+    """Whether every actually-edited item in ``pool`` carries a valid ``(decided: ...)`` clause."""
+    from .provenance import decided_eligible
+
+    changed = _root_changed(pkg, pool)
+    if not changed:
+        return True, "no item affecting this stage's comprehension pool changed"
+    all_parsed = {s: parse_document(pkg.doc(s)) for s in pkg.existing_stages()}
+    home = {item.id: item for result in all_parsed.values() for item in result.items}
+    decided: list[str] = []
+    for item_id in sorted(changed):
+        item = home.get(item_id)
+        if item is None or item.decided is None or decided_eligible(pkg, item.decided) is not None:
+            return False, ""
+        decided.append(item.decided)
+    return True, "every changed item is a recorded human decision: " + ", ".join(sorted(set(decided)))
+
+
 def plan(pkg: Package, stage: str, level: str | None = None, attempt: int = 1) -> dict[str, Any]:
-    """The target items for each level (or one). Ids and sections only, never a question or answer."""
+    """The target items for each level (or one). Ids and sections only, never a question or answer.
+
+    On a stage previously approved and now stale, this is a **delta** check (D-27): each level's
+    pool is restricted to what changed since that approval, at most two levels are named, and if
+    every changed item is a recorded human decision no level is named at all — the caller records
+    each as ``not-applicable`` with the given reason, asking nothing.
+    """
     _require_eligible(pkg, stage)
     if level is not None and level not in LEVELS:
         raise refuse(
@@ -283,18 +331,37 @@ def plan(pkg: Package, stage: str, level: str | None = None, attempt: int = 1) -
     fingerprint = pkg.fingerprint(stage) or ""
     world = _World(pkg, stage)
     eligible = eligible_ids(stage, world.own, world.upstream(), world.kinds)
+
+    delta_ids = _delta_ids(pkg, stage)
+    delta_payload: dict[str, Any] | None = None
+    allowed_levels = LEVELS
+    if delta_ids is not None:
+        eligible = {name: [i for i in ids if i in delta_ids] for name, ids in eligible.items()}
+        if level is None:
+            human_decided, reason = _all_decided(pkg, delta_ids)
+            delta_payload = {"changed": sorted(delta_ids), "human_decided": human_decided, "reason": reason}
+            allowed_levels = (
+                () if human_decided else tuple(n for n in LEVELS if eligible[n])[:DELTA_LEVEL_CAP]
+            )
+
     rows: list[dict[str, Any]] = []
     taken: set[str] = set()
     for name in LEVELS:
         ids = eligible[name]
         if level is not None and name != level:
             continue
+        if delta_payload is not None and name not in allowed_levels:
+            row = {"level": name, "status": "no-material", "reason": delta_payload["reason"]}
+            if not delta_payload["human_decided"]:
+                row["reason"] = "not part of this delta check (D-27): only the changed items are asked about"
+            rows.append(row)
+            continue
         if not ids:
             rows.append({"level": name, "status": "no-material"})
             continue
         target = _pick(fingerprint, name, attempt, ids, taken if level is None else set())
         taken.add(target)
-        row: dict[str, Any] = {
+        row = {
             "level": name,
             "status": "ok",
             "target": target,
@@ -304,7 +371,16 @@ def plan(pkg: Package, stage: str, level: str | None = None, attempt: int = 1) -
             row["chain"] = world.chain(target)
             row["artifacts"] = world.artifacts_tracing(target)
         rows.append(row)
-    return {"ok": True, "stage": stage, "fingerprint": fingerprint, "attempt": attempt, "levels": rows}
+    result: dict[str, Any] = {
+        "ok": True,
+        "stage": stage,
+        "fingerprint": fingerprint,
+        "attempt": attempt,
+        "levels": rows,
+    }
+    if delta_payload is not None:
+        result["delta"] = delta_payload
+    return result
 
 
 def record(

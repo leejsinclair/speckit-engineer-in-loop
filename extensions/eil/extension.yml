@@ -33,6 +33,7 @@ provides:
     - {name: speckit.eil.artifact,     file: commands/speckit.eil.artifact.md,     description: "Record an exported wireframe or diagram image with its source"}
     - {name: speckit.eil.approve,      file: commands/speckit.eil.approve.md,      description: "Record a stage approval (human confirmation)"}
     - {name: speckit.eil.override,     file: commands/speckit.eil.override.md,     description: "Record a named, reasoned override"}
+    - {name: speckit.eil.amend,        file: commands/speckit.eil.amend.md,        description: "Re-sign an approval covered entirely by cited human decisions"}
     - {name: speckit.eil.next,         file: commands/speckit.eil.next.md,         description: "Do the next step the story is waiting for, and stop at every human decision"}
     - {name: speckit.eil.status, aliases: ["speckit.eil-0-status"],       file: commands/speckit.eil.status.md,       description: "Where the story is, who approved what, what is outstanding"}
 

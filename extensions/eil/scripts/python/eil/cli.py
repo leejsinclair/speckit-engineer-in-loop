@@ -152,6 +152,12 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     p.add_argument("--by", required=True)
     p.add_argument("--reason", required=True)
 
+    p = add("amend", "re-sign an approval covered entirely by cited human decisions")
+    p.add_argument("stage")
+    p.add_argument("--from", dest="from_ids", required=True, metavar="IDS")
+    p.add_argument("--by", required=True)
+    p.add_argument("--attestation", required=True)
+
     p = add("abbreviate", "mark a stage abbreviated")
     p.add_argument("stage")
     p.add_argument("--by", required=True)
@@ -420,6 +426,16 @@ def _override(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _amend(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    from .provenance import amend
+
+    package = ctx.package()
+    from_ids = [i.strip() for i in args.from_ids.split(",") if i.strip()]
+    result = amend(package, _config(ctx, package), args.stage, from_ids, args.by, args.attestation)
+    _regenerate_overview(ctx, package)
+    return result
+
+
 def _regenerate_overview(ctx: Context, package: Package) -> bool:
     return overview.write(package, load_template(package.project_root or ctx.cwd, "s00-readme-template"))
 
@@ -622,6 +638,7 @@ HANDLERS.update(
         "check": _check,
         "approve": _approve,
         "override": _override,
+        "amend": _amend,
         "sync": _sync,
         "enter": _enter,
         "resolve": _resolve,

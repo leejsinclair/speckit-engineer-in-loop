@@ -1,7 +1,7 @@
 """C-01, C-02 and C-04 against the real preset and extension (task T034).
 
 The counts follow the manifests, so this file does not change as commands are added. Two tests that
-need the finished command set (18 commands, 4 hooks) switch themselves on once the manifest lists
+need the finished command set (19 commands, 4 hooks) switch themselves on once the manifest lists
 them (task T129).
 """
 
@@ -186,9 +186,9 @@ def test_c01_removal_restores_a_project_without_the_preset_or_extension(scratch_
     assert json.loads(resolved.stdout)["TEMPLATE_CONTENT"] == core
 
 
-@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 18, reason="the last command arrives in task T129")
-def test_the_finished_extension_registers_eighteen_commands_and_four_hooks(installed: Path) -> None:
-    assert len(EXTENSION_COMMANDS) == 18
+@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 19, reason="the last command arrives in task T129")
+def test_the_finished_extension_registers_nineteen_commands_and_four_hooks(installed: Path) -> None:
+    assert len(EXTENSION_COMMANDS) == 19
     hooks = (installed / ".specify" / "extensions.yml").read_text(encoding="utf-8")
     for name in ("after_clarify", "after_plan", "after_tasks", "after_implement"):
         assert name in hooks

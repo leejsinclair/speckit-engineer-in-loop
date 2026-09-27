@@ -189,6 +189,33 @@ Rules, each a finding with a stable code and overridable (FR-045): (a) L2 extern
 **Alternatives**: Pass required (rejected by the user: makes AI the gatekeeper of the human's competence); advisory and unrecorded (no evidence, cannot support a gate criterion); a comprehension check on every stage (not asked for; Requirements and AI Specification can be added later).
 ---
 
+### D-23 Fingerprint neutrality for `[ai-draft]` (FR-095)
+**Decision**: The document fingerprint (contracts/document-format.md §Fingerprint algorithm) removes every `[ai-draft]` tag before hashing, the same way the item hash already does. Reviewing and untagging a human's own text is not a content change, so it no longer invalidates an existing `assessment`, `comprehension` record or approval-fingerprint comparison.
+**Rationale**: A dogfooding session found untagging alone (no wording changed) forcing a fresh comprehension check and re-judgment, because the whole-document fingerprint moved on the tag alone even though `trace.item_hash` already treated it as neutral. `[pending-clarification]` stays content: clearing it is a human decision made through `eil resolve` (FR-067), not a formatting no-op, and must still trigger re-review.
+**Migration**: none needed. `eil approve` already refuses while any `[ai-draft]` tag remains, so an already-approved document's hashed text never contained the tag; its recorded fingerprint is unaffected retroactively. Only a live `assessment`/`comprehension` record taken while tags still remained can go stale across the upgrade — cheap to retake, never blocking.
+**Alternatives**: A fingerprint format-version field (rejected: unnecessary given the migration argument above, and it would require every caller to carry a version); leaving item hash and document fingerprint inconsistent (rejected: it was exactly the inconsistency causing the churn).
+
+### D-24 Human-decided provenance: the `(decided: ID)` clause (FR-096)
+**Decision**: Text copied verbatim from a recorded human decision — an accepted challenge (`CH-###`), a resolved open question (`OQ-###`), or a clarify answer (`AIS-###`) — is written **untagged**, carrying `(decided: ID)` instead of `[ai-draft]`. The helper checks the cited id exists and is in an eligible state (challenge accepted; question resolved or accepted; an `AIS` item); it cannot check that the marked text is a faithful transcription, which stays attestation-level like every other gate (Principle II).
+**Rationale**: The `[ai-draft]` tag exists to flag *AI judgement calls* for review. Text that is the human's own words, already reviewed once when they said it, does not need a second review cycle just because the AI is the one typing it into the document.
+**Alternatives**: Trusting any untagged text near a `traces:` reference to a human item (rejected: too weak a check, no explicit marker to point review at); requiring the human to type the text themselves (rejected: reintroduces the exact friction being removed).
+
+### D-25 `eil amend`: re-signing an approval covered by cited decisions (FR-097)
+**Decision**: `eil amend <stage> --from <ids> --by <name> --attestation <text>` re-signs an approval that is `needs-re-review`, in place of a full `/speckit-eil-approve`, but only when every item that changed since the last approval carries a `(decided: ID)` clause naming one of the cited ids, and no `[ai-draft]` tag remains. It writes a new approval record marked `"amended": true` with the cited ids, visible in the overview exactly as an override is.
+**Rationale**: A stage needing re-review after nothing but a carried, human-decided change should not need the full first-approval ceremony (gate walk-through, playback, fresh attestation) repeated; the human already decided, and amend simply re-confirms that stage's approval covers it.
+**Alternatives**: Silently keeping the stage approved when the changes are all decided (rejected: an approval is a recorded confirmation event, and no new confirmation would exist at all); re-running the full approval unconditionally (the status quo, and the friction being fixed).
+
+### D-26 Downstream re-review is item-level, not document-level (FR-043, FR-098, FR-099)
+**Decision**: `package.state()` marks a stage `needs-re-review` because of an upstream change only when `impact.affected()` shows one of the stage's own items actually traces to something that changed upstream — not whenever any upstream document's whole fingerprint differs from what its approval recorded. When upstream moved but nothing traced is affected, the stage stays `approved` with a visible, non-blocking note.
+**Rationale**: `impact.py` already computed the finer answer for `eil trace`/review; `state()` was not using it, so an edit to an unrelated part of an upstream document (a different requirement, a typo in Background) forced re-review of everything downstream regardless of relevance.
+**Alternatives**: Leaving the document-level rule (the status quo, and one of the two biggest contributors to the reported churn); re-reviewing downstream stages automatically without a note (rejected: silently loses the visibility a reviewer needs to know something moved at all).
+
+### D-27 Delta comprehension on re-approval (FR-100)
+**Decision**: The comprehension check taken for a stage's *first* approval keeps all five levels. On re-approval (the stage was previously approved and is now `needs-re-review`), `comprehension plan` restricts each level's eligible items to what actually changed and returns at most two levels. If every changed item carries a valid `(decided: ID)` clause, the plan reports so and the check is recorded `not-applicable` for those levels with that reason, with no question asked at all.
+**Rationale**: The check exists so a person demonstrates they understood what they are approving; on a delta approval that is a much smaller document (what changed), and nothing left to demonstrate at all when every change was the human's own prior decision.
+**Alternatives**: Always running the full five levels on every re-approval (the status quo, and the largest single contributor to the reported churn — 8 runs to finish 3); dropping the comprehension requirement on re-approval entirely (rejected: a re-approval can still contain new AI-authored content that deserves the same check).
+---
+
 ## Risks and tests
 
 | ID | Risk | Effect | Mitigation / test |

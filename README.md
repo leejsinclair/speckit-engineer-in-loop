@@ -53,7 +53,7 @@ abbreviation_authorisers: []     # who may abbreviate a stage; [] means the stor
 ```
 
 - **One listed person's confirmation is enough** (there is no two-person rule here; require two approvers on the pull request in your repository settings if you want one).
-- The same list decides who may **override** a criterion and who may **answer a challenge** for that stage.
+- The same list decides who may **override** a criterion, who may **answer a challenge**, and who may **amend** an approval for that stage.
 - A machine-local `local-config.yml` in the same directory overrides the shared file key by key. Keep it out of version control.
 - A configuration file that cannot be read is an error, never a silent default.
 - `abbreviate` records that a small story shortened a stage, who authorised it and why. A stage is abbreviated, never skipped, and it still passes its gate.
@@ -88,6 +88,7 @@ The number in each command is the number in the document's file name, and `/spec
 - `/speckit-eil-artifact`: you export a wireframe from Figma (PNG, SVG, PDF or JPG) and the helper records the file, its SHA-256 and the link to the exact frame. The AI never draws or edits one.
 - `/speckit-clarify` then `/speckit-eil-resolve`: an answer collected during clarification is written into the AI Specification as *pending* and must be carried to the earliest stage it affects. Plan and Tasks are refused while any is pending.
 - `/speckit-eil-override`: a configured person waives one criterion, naming the reason. It stays visible in every later stage.
+- `/speckit-eil-amend`: re-signs a stage's approval when it needs re-review only because of a change already covered by a recorded human decision (an accepted challenge, a resolved open question, a carried clarify answer) — in place of a full re-approval. It refuses if anything else changed, or if any `[ai-draft]` tag remains.
 - `/speckit-eil-abbreviate`, `/speckit-eil-trace`, `/speckit-eil-status`, `/speckit-analyze` (which also checks the whole traceability chain) and `/speckit-checklist`.
 
 **Diagrams** are Mermaid text inside the stage document (C4 context, container and component; sequence; ER), so a change to a diagram is a change to the document. The helper reads them line by line and checks them against each other (an external system must have the same name in the context and container views; a technical sequence's participants must be C4 elements; an ER diagram names its data store). **It never renders them**, and Mermaid's C4 support is experimental, so a construct outside the accepted subset is reported, not skipped. A diagram from another tool can be attached as an image and is then not structurally checked.

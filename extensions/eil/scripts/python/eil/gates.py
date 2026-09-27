@@ -62,6 +62,7 @@ INTEGRITY_CODES = frozenset(
         "malformed-item",
         "duplicate-id",
         "dangling-trace",
+        "decided-source-invalid",
     }
 )
 # Checks an override may waive besides the criteria of the stage's table.
@@ -1539,6 +1540,8 @@ def _overrides(doc: Doc, stage: str) -> dict[str, dict[str, Any]]:
 
 
 def build_context(pkg: Package, stage: str, text: str, doc: Doc | None = None) -> GateContext:
+    from .provenance import decided_findings  # deferred: provenance imports this module
+
     doc = doc or Doc(text, path=DOC_FILES[stage])
     parsed = parse_document(doc)
     scan = scan_document(doc, stage, parsed, root=pkg.root)
@@ -1554,7 +1557,7 @@ def build_context(pkg: Package, stage: str, text: str, doc: Doc | None = None) -
                 continue
     for finding in [*doc.findings, *parsed.findings, *_story_findings_for(pkg, stage, parsed)]:
         ctx.note(finding)
-    for finding in [*scan.findings, *orphan_findings(pkg)]:
+    for finding in [*scan.findings, *orphan_findings(pkg), *decided_findings(pkg, stage, parsed)]:
         ctx.note(finding)
     return ctx
 

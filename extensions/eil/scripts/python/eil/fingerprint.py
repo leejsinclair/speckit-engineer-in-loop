@@ -6,10 +6,13 @@ The algorithm is the normative one in contracts/document-format.md:
 2. ``\\r\\n`` and lone ``\\r`` become ``\\n``;
 3. remove every ``approval``, ``assessment`` and ``comprehension`` region, including its marker
    lines and any single blank line directly after the end marker;
-4. strip trailing spaces and tabs from each line;
-5. collapse each run of two or more blank lines into one;
-6. strip leading and trailing blank lines;
-7. append one ``\\n``, encode UTF-8, SHA-256.
+4. remove every ``[ai-draft]`` tag (and one preceding space): reviewing and untagging a human's
+   own text is not a content change (research D-23; matches ``trace.item_hash``, which already
+   excludes it from the item hash);
+5. strip trailing spaces and tabs from each line;
+6. collapse each run of two or more blank lines into one;
+7. strip leading and trailing blank lines;
+8. append one ``\\n``, encode UTF-8, SHA-256.
 
 A region whose end marker never appears is not removed, so the document reads as changed
 (``malformed-region`` is reported separately, by ``blocks``).
@@ -18,12 +21,14 @@ A region whose end marker never appears is not removed, so the document reads as
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 EXCLUDED_REGIONS = ("approval", "assessment", "comprehension")
 
 _BEGIN = {f"<!-- eil:begin {name} -->": name for name in EXCLUDED_REGIONS}
 _END = {name: f"<!-- eil:end {name} -->" for name in EXCLUDED_REGIONS}
+_AI_DRAFT_TAG = re.compile(r"\s*\[ai-draft\]")
 
 
 class NotUtf8(Exception):
@@ -51,9 +56,10 @@ def _strip_regions(lines: list[str]) -> list[str]:
 
 
 def normalise_lines(text: str) -> list[str]:
-    """Steps 2 to 6 as a list of lines (no trailing newline element)."""
+    """Steps 2 to 7 as a list of lines (no trailing newline element)."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    return _collapse(_strip_regions(text.split("\n")))
+    stripped = _strip_regions(text.split("\n"))
+    return _collapse([_AI_DRAFT_TAG.sub("", line) for line in stripped])
 
 
 def _collapse(lines: list[str]) -> list[str]:
@@ -71,7 +77,7 @@ def _collapse(lines: list[str]) -> list[str]:
 
 
 def normalise(text: str) -> str:
-    """The exact text that is hashed (steps 2 to 7, before encoding)."""
+    """The exact text that is hashed (steps 2 to 8, before encoding)."""
     return "\n".join(normalise_lines(text)) + "\n"
 
 
@@ -92,7 +98,8 @@ def fingerprint_file(path: Path | str) -> str:
 
 
 def normalise_fragment(text: str) -> str:
-    """Whitespace normalisation only (steps 2, 4 and 5 and edge trimming), with no region removal.
+    """Whitespace normalisation only (steps 2, 5 and 6 and edge trimming), with no region removal
+    and no ``[ai-draft]`` stripping (callers, such as ``trace.item_hash``, already remove tags).
 
     Used for item hashes, which hash a fragment of a document (document-format.md §Item hash).
     """

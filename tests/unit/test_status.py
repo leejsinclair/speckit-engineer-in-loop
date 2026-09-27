@@ -10,7 +10,7 @@ from eil import overview
 from eil.fingerprint import fingerprint_file
 from eil.package import STAGES, Package
 
-from tests.helpers.package import Story, record_block, region, requirements_doc
+from tests.helpers.package import Story, item_hashes, record_block, region, requirements_doc
 
 TEMPLATE = (Path(__file__).resolve().parents[2] / "templates" / "s00-readme-template.md").read_text(
     encoding="utf-8"
@@ -35,7 +35,7 @@ def approve_requirements(story: Story) -> None:
         "fingerprint": fingerprint_file(story.path("requirements")),
         "attestation": "yes",
         "upstream": {},
-        "items": {},
+        "items": item_hashes(text),
         "overrides_used": [],
     }
     story.write(

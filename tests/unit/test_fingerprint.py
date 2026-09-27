@@ -126,6 +126,34 @@ def test_a_marker_for_another_name_is_ordinary_content() -> None:
     assert fingerprint_text(text) != fingerprint_text("A\n")
 
 
+# ---- [ai-draft] neutrality (research D-23)
+
+
+def test_removing_an_ai_draft_tag_does_not_change_the_fingerprint() -> None:
+    tagged = "**REQ-001**: text [ai-draft]\n"
+    untagged = "**REQ-001**: text\n"
+    assert fingerprint_text(tagged) == fingerprint_text(untagged)
+
+
+def test_an_ai_draft_tag_in_the_middle_of_a_line_is_also_neutral() -> None:
+    tagged = "A [ai-draft] paragraph tail\n"
+    untagged = "A paragraph tail\n"
+    assert fingerprint_text(tagged) == fingerprint_text(untagged)
+
+
+def test_a_pending_clarification_tag_still_counts_as_content() -> None:
+    """Only [ai-draft] is neutral; [pending-clarification] removal is a human decision (eil resolve)."""
+    tagged = "**AIS-001**: text [pending-clarification]\n"
+    untagged = "**AIS-001**: text\n"
+    assert fingerprint_text(tagged) != fingerprint_text(untagged)
+
+
+def test_multiple_ai_draft_tags_in_one_document_are_all_neutral() -> None:
+    tagged = "**REQ-001**: a [ai-draft]\n\n**REQ-002**: b [ai-draft]\n"
+    untagged = "**REQ-001**: a\n\n**REQ-002**: b\n"
+    assert fingerprint_text(tagged) == fingerprint_text(untagged)
+
+
 # ---- files
 
 

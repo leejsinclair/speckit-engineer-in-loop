@@ -15,6 +15,30 @@ All notable changes to this project are recorded here. The format follows
 - `/speckit-eil-next`, which does the single next step when it is drafting or checking and stops at every
   human decision. `eil status --json` gains `next_action` (`kind`, `stage`, `command`, `message`), so the
   choice is made by the helper and not by the AI.
+- Cut the re-approval churn a human-decided edit used to cost (dogfooding feedback):
+  - The document fingerprint is now neutral to `[ai-draft]` tag removal, so reviewing and untagging a
+    human's own words no longer invalidates an assessment, comprehension record or approval comparison.
+    No migration is needed: `eil approve` already refused while a tag remained, so no approved document's
+    fingerprint changes retroactively.
+  - A new `(decided: CH-###|OQ-###|AIS-###)` clause marks text copied verbatim from a recorded human
+    decision — an accepted challenge, a resolved open question, or a carried clarify answer — written
+    untagged instead of `[ai-draft]`. The helper checks the citation is real and in an eligible state.
+  - `eil amend <stage> --from <ids> --by <name> --attestation <text>` re-signs a stage's approval when
+    it is `needs-re-review` and every change since the last approval — down to the line, via a new
+    `prose_fingerprint` covering everything outside an item or a record block — is covered by a cited
+    `(decided: ...)` clause. It is visible in the overview and every report exactly as an override is.
+  - Downstream re-review is now item-level, not document-level: a stage becomes `needs-re-review` only
+    when one of its own recorded `upstream_items` actually changed, tracked per stage so a re-approval
+    elsewhere in the chain does not erase the signal. An upstream change that affects nothing traced
+    leaves the stage `approved`, with a non-blocking `note`.
+  - The comprehension check taken for a re-approval is now a **delta** check: only the changed items are
+    eligible, capped at two questions, and skipped entirely (recorded `not-applicable` with the reason,
+    asking nothing) when every change is a recorded human decision.
+  - `/speckit-eil-comprehend`'s pre-scan is now explicitly a backstop for the stage command's own
+    end-of-drafting challenge sweep, not a second full pass.
+  - Several commands now accept a batched reply covering several open challenges at once, reuse a
+    confirmer's name for the rest of the session once given, and `/speckit-eil-approve` accepts an
+    attestation already given inline in its arguments without asking again.
 
 ## [0.1.0]
 

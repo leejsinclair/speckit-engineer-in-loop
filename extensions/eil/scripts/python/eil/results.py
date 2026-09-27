@@ -53,6 +53,8 @@ REFUSAL_CODES = frozenset(
         "not-approvable",
         "stage-not-eligible",
         "tasks-missing",
+        "not-amendable",
+        "amend-not-covered",
     }
 )
 
@@ -92,6 +94,8 @@ FINDING_CODES = frozenset(
         "comprehension-missing",
         "comprehension-stale",
         "comprehension-incomplete",
+        # human-decided provenance
+        "decided-source-invalid",
     }
 )
 

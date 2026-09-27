@@ -43,6 +43,7 @@ EXTENSION_PROMPTS = [
     "resolve",
     "trace",
     "status",
+    "amend",
 ]
 WRAP_PROMPTS = ["specify", "clarify", "plan", "tasks", "analyze", "checklist", "implement"]
 ALL_PROMPTS = [EXT / f"speckit.eil.{n}.md" for n in EXTENSION_PROMPTS] + [
@@ -153,6 +154,59 @@ RULES: list[tuple[Path, str, list[str]]] = [
         [r"never remove a `\[pending-clarification\]` tag by hand", r"did not make"],
     ),
     (EXT / "speckit.eil.resolve.md", "asks the human which stage", [r"ask; do not choose for them"]),
+    # human-decided provenance (D-24): text that is the human's own words is (decided: ID), not [ai-draft]
+    (
+        EXT / "speckit.eil.requirements.md",
+        "human-decided provenance uses (decided: ID) instead of [ai-draft]",
+        [r"human-decided provenance", r"\(decided: "],
+    ),
+    (
+        EXT / "speckit.eil.functional.md",
+        "human-decided provenance uses (decided: ID) instead of [ai-draft]",
+        [r"human-decided provenance", r"\(decided: "],
+    ),
+    (
+        EXT / "speckit.eil.technical.md",
+        "human-decided provenance uses (decided: ID) instead of [ai-draft]",
+        [r"human-decided provenance", r"\(decided: "],
+    ),
+    (
+        EXT / "speckit.eil.challenge.md",
+        "an accepted challenge's dictated fix is (decided: CH-id), not [ai-draft]",
+        [r"\(decided: CH-id\)"],
+    ),
+    (
+        EXT / "speckit.eil.resolve.md",
+        "shows the human the recorded text and writes a verbatim carry untagged",
+        [r"verbatim carry", r"\(decided: AIS-###\)"],
+    ),
+    # eil amend (D-25): re-signs an approval covered by cited human decisions
+    (EXT / "speckit.eil.amend.md", "asks the human directly", [r"ask the human directly"]),
+    (EXT / "speckit.eil.amend.md", "never supplies the attestation", [r"never supply the attestation"]),
+    (
+        EXT / "speckit.eil.amend.md",
+        "never chooses the cited decisions for the human",
+        [r"never choose the decisions"],
+    ),
+    # conversational friction (D-24, D-25, D-27): reuse a known name; batch challenge answers
+    *[
+        (
+            EXT / f"speckit.eil.{name}.md",
+            "reuses the confirmer's name without re-asking",
+            [r"reuse it for every `--by`"],
+        )
+        for name in ("approve", "override", "abbreviate", "challenge", "resolve", "comprehend", "amend")
+    ],
+    (
+        EXT / "speckit.eil.challenge.md",
+        "accepts a batched reply covering several challenges at once",
+        [r"accept all", r"record each with its own"],
+    ),
+    (
+        EXT / "speckit.eil.approve.md",
+        "an attestation already given inline is used without re-asking",
+        [r"already carries their confirmation"],
+    ),
     # challenge, verify, complete, ai-spec
     (EXT / "speckit.eil.challenge.md", "never answers a challenge for the human", [r"never answer"]),
     (EXT / "speckit.eil.verify.md", "never declares completion", [r"never declare completion"]),
@@ -196,7 +250,7 @@ RULES: list[tuple[Path, str, list[str]]] = [
 
 HELPER_CALL = re.compile(
     r"\beil (sync|start|check|approve|override|stage-init|enter|challenge|artifact|comprehension|trace|status|"
-    r"resolve|abbreviate|overview)\b"
+    r"resolve|abbreviate|overview|amend)\b"
 )
 FORBIDDEN_MECHANICS = re.compile(r"\b(points?|score|scores|streak|timer|rank|reward)\b", re.IGNORECASE)
 NEGATION = re.compile(r"\b(no|never|not|without|nor)\b", re.IGNORECASE)

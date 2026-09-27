@@ -40,3 +40,4 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 - Never choose the criterion, write the reason, or override on a person's behalf without their explicit instruction in this conversation.
 - Do not override a criterion to get past a problem you could fix in the document; offer the fix first.
+- Once you know the confirming person's name in this conversation, reuse it for every `--by` this session without asking again, unless the human names someone else.

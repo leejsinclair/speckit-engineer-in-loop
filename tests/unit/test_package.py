@@ -12,7 +12,7 @@ from eil import package
 from eil.fingerprint import fingerprint_file
 from eil.package import Package, resolve_feature_dir
 
-from tests.helpers.package import DOC_NAMES, Story, record_block, region
+from tests.helpers.package import DOC_NAMES, Story, item_hashes, record_block, region
 
 # ---- feature directory resolution
 
@@ -232,6 +232,9 @@ def test_rewriting_the_assessment_does_not_disturb_an_approval(story_dir: Story)
 
 def test_a_changed_upstream_document_needs_re_review(story_dir: Story) -> None:
     story_dir.write("requirements", "# Requirements\n\n**REQ-001**: a\n")
+    approve(
+        story_dir, "requirements", items={"REQ-001": item_hashes(story_dir.read("requirements"))["REQ-001"]}
+    )
     story_dir.write("functional", "# Functional\n\n**FR-001**: b (traces: REQ-001)\n")
     approve(
         story_dir, "functional", upstream={"requirements": fingerprint_file(story_dir.path("requirements"))}

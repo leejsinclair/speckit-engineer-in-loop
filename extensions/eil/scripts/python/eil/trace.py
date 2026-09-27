@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .blocks import Doc
-from .fingerprint import hash_fragment
+from .fingerprint import fingerprint_text, hash_fragment
 from .results import Finding
 
 KINDS = ("REQ", "UC", "FR", "NFR", "DEC", "AIS", "EVD", "OQ", "OVR", "CH", "ART")
@@ -38,9 +38,12 @@ _EVD_LABEL = re.compile(
     r"(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.*?)\s*$",
     re.IGNORECASE,
 )
-_CLAUSE = re.compile(r"\((?P<name>traces|code|status|material|store|accepted-by):\s*(?P<value>[^)]*)\)")
+_CLAUSE = re.compile(
+    r"\((?P<name>traces|code|status|material|store|accepted-by|decided):\s*(?P<value>[^)]*)\)"
+)
 _TAG = re.compile(r"\s*\[(?P<tag>ai-draft|pending-clarification)\]")
 _ID = re.compile(r"^(?:[A-Z]{2,3}-\d{3}|T\d{3,})$")  # an item id, or a task id (evidence traces to tasks)
+_DECIDED_ID = re.compile(r"^(?:CH|OQ|AIS)-\d{3}$")  # a recorded human decision (decided: ...)
 _CODE_REF = re.compile(r"^(?:[0-9a-f]{7,40}|PR#\d+)$")
 _STATUSES = ("open", "resolved", "accepted", "verified", "failed", "unverified", "excepted")
 
@@ -60,6 +63,7 @@ class Item:
     material: bool | None = None
     store: str | None = None
     accepted_by: str | None = None
+    decided: str | None = None  # (decided: CH-###/OQ-###/AIS-###): a human's own words, not [ai-draft]
     tags: set[str] = field(default_factory=set)
     attachment: str | None = None  # an ART's diagram or export record, set by ``artifacts``
 
@@ -277,6 +281,18 @@ def _build_item(
         item.store = clauses["store"]
     if "accepted-by" in clauses:
         item.accepted_by = clauses["accepted-by"] or None
+    if "decided" in clauses:
+        value = clauses["decided"].strip()
+        if _DECIDED_ID.match(value):
+            item.decided = value
+        else:
+            findings.append(
+                Finding(
+                    "malformed-item",
+                    where,
+                    f"decided {value!r} is not a CH-###, OQ-### or AIS-### id",
+                )
+            )
     title = _CLAUSE.sub("", rest)
     title = _TAG.sub("", title)
     item.title = re.sub(r"\s+", " ", title).strip()
@@ -285,6 +301,26 @@ def _build_item(
 
 def parse_text(text: str, stage: str | None = None, path: str = "") -> ParseResult:
     return parse_document(Doc(text, path=path))
+
+
+def non_item_fingerprint(doc: Doc, items: list[Item], records: list[Any] = ()) -> str:
+    """The document's fingerprint with every item's lines, and every ``eil:`` record block's lines,
+    blanked out.
+
+    A change here is a change outside any item or record — a heading, prose, a ``Not applicable``
+    entry, a diagram's own fence lines — which a ``(decided: ...)`` clause on an item cannot cover,
+    however faithfully cited (``eil amend``, D-25). Record blocks (challenges, overrides,
+    abbreviation, artefacts) are excluded too: each already carries its own attestation (a `--by`
+    and a reason), independent of the item-decided mechanism, so adding or updating one is not a
+    prose change amend needs to refuse. Recorded in the approval alongside the fingerprint; `amend`
+    refuses unless it still matches, so only item- and record-level changes can ever be re-signed.
+    """
+    covered = {n for item in items for n in range(item.line, item.end_line + 1)}
+    for record in records:
+        if record.close_no is not None:
+            covered.update(range(record.open_no, record.close_no + 1))
+    lines = ["" if line.no in covered else line.raw for line in doc.lines]
+    return fingerprint_text("\n".join(lines))
 
 
 def item_hash(item: Item) -> str:

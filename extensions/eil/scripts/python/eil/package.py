@@ -73,6 +73,7 @@ class StageState:
     abbreviated: bool = False
     fingerprint: str | None = None
     findings: list[Finding] = field(default_factory=list)
+    note: str = ""  # non-blocking: upstream moved but nothing traced in this stage is affected (D-26)
 
 
 class Package:
@@ -85,6 +86,22 @@ class Package:
         # changes on disk is simply read again.
         self._docs: dict[str, tuple[str, Doc]] = {}
         self._fingerprints: dict[str, tuple[str, str]] = {}
+
+    def affected_items(self) -> dict[str, list[str]]:
+        """``impact.affected(self)`` (FR-043, FR-044; informational, shown in ``status``/overview).
+        Recomputed on every call: like the rest of this class, nothing here is stored, so a
+        document changed since the last call is picked up. Deferred import: ``impact`` already
+        imports ``Package``."""
+        from . import impact
+
+        return impact.affected(self)
+
+    def current_item_hashes(self) -> dict[str, str]:
+        """``impact.current_item_hashes(self)``, used to check a stage's own recorded
+        ``upstream_items`` (D-26). Recomputed on every call, for the same reason as above."""
+        from . import impact
+
+        return impact.current_item_hashes(self)
 
     @property
     def project_root(self) -> Path | None:
@@ -173,12 +190,32 @@ class Package:
                 for name, then in (approval.get("upstream") or {}).items()
                 if self.fingerprint(name) != then
             ]
-            if moved:
+            recorded_items = approval.get("upstream_items")
+            if isinstance(recorded_items, dict):
+                current = self.current_item_hashes()
+                changed = sorted(i for i, h in recorded_items.items() if current.get(i) != h)
+            else:
+                # An approval from before D-26 (or with nothing upstream to trace) has no snapshot
+                # to compare against; fall back to the whole-document signal so it is not silently
+                # treated as unaffected.
+                changed = list(moved)
+            if changed:
                 return StageState(
                     stage,
                     "needs-re-review",
-                    f"upstream {', '.join(moved)} changed since approval",
+                    f"traces to changed upstream item(s): {', '.join(changed)}"
+                    if isinstance(recorded_items, dict)
+                    else f"upstream {', '.join(moved)} changed since approval",
                     approval,
+                    **base,
+                )
+            if moved:
+                return StageState(
+                    stage,
+                    "approved",
+                    "",
+                    approval,
+                    note=f"upstream {', '.join(moved)} changed since approval; no traced item is affected",
                     **base,
                 )
             return StageState(stage, "approved", "", approval, **base)

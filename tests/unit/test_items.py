@@ -141,6 +141,31 @@ def test_accepted_by_clause_records_who_accepted_a_question() -> None:
     assert only("**OQ-005**: Retain? (status: open)\n").accepted_by is None
 
 
+def test_decided_clause_records_a_human_decision_id() -> None:
+    item = only("**REQ-004**: text (decided: CH-004)\n")
+    assert item.decided == "CH-004"
+    assert item.title == "text"
+    assert only("**REQ-005**: text\n").decided is None
+
+
+@pytest.mark.parametrize("value", ["CH-004", "OQ-002", "AIS-007"])
+def test_decided_clause_accepts_each_kind(value: str) -> None:
+    assert only(f"**REQ-004**: text (decided: {value})\n").decided == value
+
+
+def test_decided_clause_with_an_id_shaped_wrong_is_a_malformed_item() -> None:
+    result = parse("**REQ-004**: text (decided: FR-004)\n")
+    assert [f.code for f in result.findings] == ["malformed-item"]
+    assert result.items[0].decided is None
+
+
+def test_item_hash_includes_the_decided_clause() -> None:
+    a = item_hash(only("**REQ-004**: text (decided: CH-004)\n"))
+    b = item_hash(only("**REQ-004**: text (decided: CH-005)\n"))
+    c = item_hash(only("**REQ-004**: text\n"))
+    assert len({a, b, c}) == 3
+
+
 def test_store_clause_for_an_er_artifact() -> None:
     item = only("**ART-009**: Customer duplicate data (traces: DEC-004) (store: Customer DB)\n")
     assert item.store == "Customer DB"
@@ -272,6 +297,35 @@ def test_item_hash_includes_an_attachment() -> None:
     with_diagram = item_hash(item)
     item.attachment = 'C4Container\n  Person(a, "B")'
     assert len({bare, with_diagram, item_hash(item)}) == 3
+
+
+# ---- non_item_fingerprint (eil amend, D-25)
+
+
+def test_non_item_fingerprint_ignores_a_change_inside_an_item() -> None:
+    from eil.trace import non_item_fingerprint
+
+    def fp(text: str) -> str:
+        doc = Doc(text)
+        result = parse_text(text)
+        return non_item_fingerprint(doc, result.items)
+
+    a = "# Title\n\nprose\n\n**REQ-001**: one\n"
+    b = "# Title\n\nprose\n\n**REQ-001**: something else entirely\n"
+    assert fp(a) == fp(b)
+
+
+def test_non_item_fingerprint_notices_a_change_outside_any_item() -> None:
+    from eil.trace import non_item_fingerprint
+
+    def fp(text: str) -> str:
+        doc = Doc(text)
+        result = parse_text(text)
+        return non_item_fingerprint(doc, result.items)
+
+    a = "# Title\n\nprose\n\n**REQ-001**: one\n"
+    b = "# Title\n\nchanged prose\n\n**REQ-001**: one\n"
+    assert fp(a) != fp(b)
 
 
 def test_doc_object_can_be_parsed_directly() -> None:

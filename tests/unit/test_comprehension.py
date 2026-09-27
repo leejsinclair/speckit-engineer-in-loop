@@ -19,6 +19,7 @@ from eil.results import EilExit
 from tests.helpers.package import (
     Story,
     functional_doc,
+    item_hashes,
     record_block,
     region,
     requirements_doc,
@@ -64,7 +65,7 @@ def approve_requirements_document(story: Story) -> None:
         "fingerprint": Package(story.root).fingerprint("requirements"),
         "attestation": "yes",
         "upstream": {},
-        "items": {},
+        "items": item_hashes(text),
         "overrides_used": [],
     }
     story.write(

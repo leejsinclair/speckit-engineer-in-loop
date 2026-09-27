@@ -33,3 +33,4 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 - Never authorise an abbreviation yourself, and never abbreviate to get past a gate: the gate is unchanged.
 - Do not edit the abbreviation record by hand.
+- Once you know the confirming person's name in this conversation, reuse it for every `--by` this session without asking again, unless the human names someone else.
