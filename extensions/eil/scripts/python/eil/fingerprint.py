@@ -6,9 +6,11 @@ The algorithm is the normative one in contracts/document-format.md:
 2. ``\\r\\n`` and lone ``\\r`` become ``\\n``;
 3. remove every ``approval``, ``assessment`` and ``comprehension`` region, including its marker
    lines and any single blank line directly after the end marker;
-4. remove every ``[ai-draft]`` tag (and one preceding space): reviewing and untagging a human's
-   own text is not a content change (research D-23; matches ``trace.item_hash``, which already
-   excludes it from the item hash);
+4. remove every ``[ai-draft]`` tag (and one preceding space) that sits **outside an HTML
+   comment**: reviewing and untagging a human's own text is not a content change (research D-23;
+   matches ``trace.item_hash``, which already excludes it from the item hash). The templates'
+   own instructional comments say the word without it ever being a tag on anything, and must
+   keep counting as ordinary content;
 5. strip trailing spaces and tabs from each line;
 6. collapse each run of two or more blank lines into one;
 7. strip leading and trailing blank lines;
@@ -29,6 +31,8 @@ EXCLUDED_REGIONS = ("approval", "assessment", "comprehension")
 _BEGIN = {f"<!-- eil:begin {name} -->": name for name in EXCLUDED_REGIONS}
 _END = {name: f"<!-- eil:end {name} -->" for name in EXCLUDED_REGIONS}
 _AI_DRAFT_TAG = re.compile(r"\s*\[ai-draft\]")
+_COMMENT_OPEN = "<!--"
+_COMMENT_CLOSE = "-->"
 
 
 class NotUtf8(Exception):
@@ -55,11 +59,45 @@ def _strip_regions(lines: list[str]) -> list[str]:
     return kept
 
 
+def _strip_ai_draft(lines: list[str]) -> list[str]:
+    """Remove every ``[ai-draft]`` tag, but never inside an HTML comment (a real tag is only ever
+    written on live text). Comment state carries across lines, so a multi-line comment is covered.
+    """
+    out: list[str] = []
+    in_comment = False
+    for line in lines:
+        pieces: list[str] = []
+        i = 0
+        while i < len(line):
+            if in_comment:
+                end = line.find(_COMMENT_CLOSE, i)
+                if end == -1:
+                    pieces.append(line[i:])
+                    i = len(line)
+                else:
+                    end += len(_COMMENT_CLOSE)
+                    pieces.append(line[i:end])
+                    i = end
+                    in_comment = False
+                continue
+            start = line.find(_COMMENT_OPEN, i)
+            if start == -1:
+                pieces.append(_AI_DRAFT_TAG.sub("", line[i:]))
+                i = len(line)
+            else:
+                pieces.append(_AI_DRAFT_TAG.sub("", line[i:start]))
+                pieces.append(_COMMENT_OPEN)
+                i = start + len(_COMMENT_OPEN)
+                in_comment = True
+        out.append("".join(pieces))
+    return out
+
+
 def normalise_lines(text: str) -> list[str]:
     """Steps 2 to 7 as a list of lines (no trailing newline element)."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     stripped = _strip_regions(text.split("\n"))
-    return _collapse([_AI_DRAFT_TAG.sub("", line) for line in stripped])
+    return _collapse(_strip_ai_draft(stripped))
 
 
 def _collapse(lines: list[str]) -> list[str]:

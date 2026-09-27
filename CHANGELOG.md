@@ -16,10 +16,12 @@ All notable changes to this project are recorded here. The format follows
   human decision. `eil status --json` gains `next_action` (`kind`, `stage`, `command`, `message`), so the
   choice is made by the helper and not by the AI.
 - Cut the re-approval churn a human-decided edit used to cost (dogfooding feedback):
-  - The document fingerprint is now neutral to `[ai-draft]` tag removal, so reviewing and untagging a
-    human's own words no longer invalidates an assessment, comprehension record or approval comparison.
-    No migration is needed: `eil approve` already refused while a tag remained, so no approved document's
-    fingerprint changes retroactively.
+  - The document fingerprint is now neutral to `[ai-draft]` tag removal outside an HTML comment, so
+    reviewing and untagging a human's own words no longer invalidates an assessment, comprehension
+    record or approval comparison. (A first cut stripped the substring unconditionally; every shipped
+    template's own header comment says the word without it being a tag, so every stage document's
+    fingerprint moved on upgrade with nothing actually edited. Found via dogfooding the fix itself and
+    corrected before release — see `_strip_ai_draft` in `fingerprint.py` and research D-23.)
   - A new `(decided: CH-###|OQ-###|AIS-###)` clause marks text copied verbatim from a recorded human
     decision — an accepted challenge, a resolved open question, or a carried clarify answer — written
     untagged instead of `[ai-draft]`. The helper checks the citation is real and in an eligible state.

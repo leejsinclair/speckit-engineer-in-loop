@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 import pytest
-from eil.fingerprint import NotUtf8, fingerprint_file, fingerprint_text, normalise
+from eil.fingerprint import NotUtf8, _strip_ai_draft, fingerprint_file, fingerprint_text, normalise
 
 
 def region(name: str, body: str = "x") -> str:
@@ -152,6 +152,62 @@ def test_multiple_ai_draft_tags_in_one_document_are_all_neutral() -> None:
     tagged = "**REQ-001**: a [ai-draft]\n\n**REQ-002**: b [ai-draft]\n"
     untagged = "**REQ-001**: a\n\n**REQ-002**: b\n"
     assert fingerprint_text(tagged) == fingerprint_text(untagged)
+
+
+def test_ai_draft_stripping_is_a_true_no_op_when_the_only_mention_is_in_a_comment() -> None:
+    """The exact migration-safety property: a document with no real tag, only the templates'
+    own instructional comment mentioning the word, must be untouched by this step at all — not
+    merely 'stripped the same way on both sides of some other comparison' (found via dogfooding:
+    every shipped stage document's fingerprint moved on upgrade with nothing actually edited)."""
+    lines = ["<!-- Tag any text the AI wrote with [ai-draft] until reviewed. -->", "", "Body"]
+    assert _strip_ai_draft(lines) == lines
+
+
+def test_the_word_ai_draft_inside_a_comment_is_not_a_tag_and_stays_content() -> None:
+    with_mention = "<!-- Tag any text the AI wrote with [ai-draft] until reviewed. -->\n\nBody\n"
+    without_mention = "<!-- Tag any text the AI wrote until reviewed. -->\n\nBody\n"
+    assert fingerprint_text(with_mention) != fingerprint_text(without_mention)
+
+
+def test_a_multiline_comment_mentioning_ai_draft_also_stays_content() -> None:
+    with_mention = "<!--\n  Tag text with [ai-draft] until reviewed.\n-->\n\nBody\n"
+    without_mention = "<!--\n  Tag text until reviewed.\n-->\n\nBody\n"
+    assert fingerprint_text(with_mention) != fingerprint_text(without_mention)
+
+
+def test_a_real_tag_is_still_neutral_alongside_a_comment_mentioning_the_word() -> None:
+    header = "<!-- Tag any text the AI wrote with [ai-draft] until reviewed. -->\n\n"
+    tagged = header + "**REQ-001**: text [ai-draft]\n"
+    untagged = header + "**REQ-001**: text\n"
+    assert fingerprint_text(tagged) == fingerprint_text(untagged)
+
+
+def test_normalise_keeps_the_mention_in_a_comment_but_removes_a_real_tag() -> None:
+    text = "<!-- mentions [ai-draft] in prose -->\n\n**X-001**: body [ai-draft]\n"
+    normalised = normalise(text)
+    assert normalised.count("[ai-draft]") == 1
+    assert "body [ai-draft]" not in normalised
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "s01-requirements-template.md",
+        "s02-functional-spec-template.md",
+        "s03-technical-spec-template.md",
+        "s07-verification-template.md",
+        "s08-completion-template.md",
+    ],
+)
+def test_the_shipped_templates_own_header_is_untouched_by_ai_draft_stripping(name: str) -> None:
+    """The exact regression: each of these templates mentions '[ai-draft]' in its own header
+    comment, present in every document created from it. That mention must survive this step
+    completely unchanged, whether or not anything is ever actually tagged."""
+    root = Path(__file__).resolve().parents[2] / "templates"
+    header = (root / name).read_text(encoding="utf-8")
+    assert "[ai-draft]" in header, f"{name} no longer mentions the tag; drop this regression test"
+    lines = header.split("\n")
+    assert _strip_ai_draft(lines) == lines
 
 
 # ---- files
