@@ -82,6 +82,7 @@ provides:
     - {name: speckit.eil.approve,      file: commands/speckit.eil.approve.md,      description: "Record a stage approval (human confirmation)"}
     - {name: speckit.eil.override,     file: commands/speckit.eil.override.md,     description: "Record a named, reasoned override"}
     - {name: speckit.eil.amend,        file: commands/speckit.eil.amend.md,        description: "Re-sign an approval covered entirely by cited human decisions"}
+    - {name: speckit.eil.review,       file: commands/speckit.eil.review.md,       description: "Walk a stage's changes since approval one at a time, then re-sign it"}
     - {name: speckit.eil.abbreviate,   file: commands/speckit.eil.abbreviate.md,   description: "Record an abbreviated stage"}
     - {name: speckit.eil.resolve,      file: commands/speckit.eil.resolve.md,      description: "Carry a pending clarification upstream"}
     - {name: speckit.eil.trace,        file: commands/speckit.eil.trace.md,        description: "Traceability chain and gaps"}

@@ -86,22 +86,34 @@ class Package:
         # changes on disk is simply read again.
         self._docs: dict[str, tuple[str, Doc]] = {}
         self._fingerprints: dict[str, tuple[str, str]] = {}
+        self._parsed_story: tuple[tuple[str, ...], dict[str, Any]] | None = None
+
+    def parsed_story(self) -> dict[str, Any]:
+        """Every existing stage's document, parsed and scanned (``impact.parsed_story``), cached
+        against every stage's current fingerprint. A full parse-and-scan of every document is real
+        cost (performance budget, D-26); this is what lets one pass over all eight stages'
+        ``state()`` do it once instead of once per stage, while a real edit is still picked up
+        immediately, the same content-keyed idea as ``doc()``/``fingerprint()`` above."""
+        from . import impact
+
+        key = tuple(self.fingerprint(s) or "" for s in self.existing_stages())
+        if self._parsed_story is None or self._parsed_story[0] != key:
+            self._parsed_story = (key, impact.parsed_story(self))
+        return self._parsed_story[1]
 
     def affected_items(self) -> dict[str, list[str]]:
         """``impact.affected(self)`` (FR-043, FR-044; informational, shown in ``status``/overview).
-        Recomputed on every call: like the rest of this class, nothing here is stored, so a
-        document changed since the last call is picked up. Deferred import: ``impact`` already
-        imports ``Package``."""
+        Built from ``parsed_story()`` above, so it is cheap to call once per stage."""
         from . import impact
 
-        return impact.affected(self)
+        return impact.affected(self, self.parsed_story())
 
     def current_item_hashes(self) -> dict[str, str]:
         """``impact.current_item_hashes(self)``, used to check a stage's own recorded
-        ``upstream_items`` (D-26). Recomputed on every call, for the same reason as above."""
+        ``upstream_items`` (D-26). Built from ``parsed_story()`` above."""
         from . import impact
 
-        return impact.current_item_hashes(self)
+        return impact.current_item_hashes(self, self.parsed_story())
 
     @property
     def project_root(self) -> Path | None:

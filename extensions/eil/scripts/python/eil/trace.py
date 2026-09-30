@@ -43,7 +43,7 @@ _CLAUSE = re.compile(
 )
 _TAG = re.compile(r"\s*\[(?P<tag>ai-draft|pending-clarification)\]")
 _ID = re.compile(r"^(?:[A-Z]{2,3}-\d{3}|T\d{3,})$")  # an item id, or a task id (evidence traces to tasks)
-_DECIDED_ID = re.compile(r"^(?:CH|OQ|AIS)-\d{3}$")  # a recorded human decision (decided: ...)
+_DECIDED_ID = re.compile(r"^(?:CH|OQ|AIS|RVW)-\d{3}$")  # a recorded human decision (decided: ...)
 _CODE_REF = re.compile(r"^(?:[0-9a-f]{7,40}|PR#\d+)$")
 _STATUSES = ("open", "resolved", "accepted", "verified", "failed", "unverified", "excepted")
 
@@ -290,7 +290,7 @@ def _build_item(
                 Finding(
                     "malformed-item",
                     where,
-                    f"decided {value!r} is not a CH-###, OQ-### or AIS-### id",
+                    f"decided {value!r} is not a CH-###, OQ-###, AIS-### or RVW-### id",
                 )
             )
     title = _CLAUSE.sub("", rest)
@@ -303,24 +303,59 @@ def parse_text(text: str, stage: str | None = None, path: str = "") -> ParseResu
     return parse_document(Doc(text, path=path))
 
 
-def non_item_fingerprint(doc: Doc, items: list[Item], records: list[Any] = ()) -> str:
-    """The document's fingerprint with every item's lines, and every ``eil:`` record block's lines,
-    blanked out.
+_H2 = re.compile(r"^##\s+(?P<title>.+?)\s*#*\s*$")
+# Sections that hold nothing but record blocks and marked regions, managed by the helper, never
+# content a human drafts — excluded from section_fingerprints so recording a challenge, override
+# or review, or checking a gate, is never itself a "changed section" needing its own review (D-28).
+ADMINISTRATIVE_SECTIONS = frozenset(
+    {"reviews", "challenges", "overrides", "quality assessment", "approval", "comprehension check"}
+)
 
-    A change here is a change outside any item or record — a heading, prose, a ``Not applicable``
-    entry, a diagram's own fence lines — which a ``(decided: ...)`` clause on an item cannot cover,
-    however faithfully cited (``eil amend``, D-25). Record blocks (challenges, overrides,
-    abbreviation, artefacts) are excluded too: each already carries its own attestation (a `--by`
-    and a reason), independent of the item-decided mechanism, so adding or updating one is not a
-    prose change amend needs to refuse. Recorded in the approval alongside the fingerprint; `amend`
-    refuses unless it still matches, so only item- and record-level changes can ever be re-signed.
-    """
+
+def _covered_lines(doc: Doc, items: list[Item]) -> set[int]:
+    """Line numbers that belong to an item, a marked region (``approval``/``assessment``/
+    ``comprehension``), an ``eil:`` record block, or a Mermaid fence attached to an ``ART`` item —
+    everything a ``(decided: ...)`` clause or an ``eil:review`` record can cover, or that already
+    has its own attestation, or is excluded from the document fingerprint for the same reason a
+    marked region always is. Used by ``section_fingerprints`` (D-28, D-29)."""
     covered = {n for item in items for n in range(item.line, item.end_line + 1)}
-    for record in records:
+    for record in doc.records():
         if record.close_no is not None:
             covered.update(range(record.open_no, record.close_no + 1))
-    lines = ["" if line.no in covered else line.raw for line in doc.lines]
-    return fingerprint_text("\n".join(lines))
+    for fence in doc.fences:
+        if fence.language == "mermaid" and fence.close_no is not None:
+            covered.update(range(fence.open_no, fence.close_no + 1))
+    for region in doc.regions.values():
+        covered.update(range(region.begin_no, region.end_no + 1))
+    return covered
+
+
+def section_fingerprints(doc: Doc, items: list[Item]) -> dict[str, str]:
+    """One fingerprint per level-2 (``##``) section, with every item's lines, every attached
+    Mermaid fence's lines, every marked region's lines, and every ``eil:`` record block's lines
+    blanked out, keyed by the section's current title.
+
+    Used two ways: a judgment criterion's own verdict stays valid while only the sections it names
+    (``Criterion.headings``) are unaffected (gates.py, D-29); a guided change review (``eil review``,
+    D-28) reports exactly which named sections changed, without ever storing the document's old text
+    — only ever a fingerprint of it, the same attestation-level stance as everything else here.
+    """
+    covered = _covered_lines(doc, items)
+    headings: list[tuple[str, int]] = []
+    for line in doc.lines:
+        if line.kind == "text":
+            match = _H2.match(line.live)
+            if match:
+                headings.append((match["title"].strip(), line.no))
+    by_no = {line.no: line for line in doc.lines}
+    result: dict[str, str] = {}
+    for index, (title, start) in enumerate(headings):
+        if title.strip().casefold() in ADMINISTRATIVE_SECTIONS:
+            continue
+        end = headings[index + 1][1] if index + 1 < len(headings) else len(doc.lines) + 1
+        body = ["" if no in covered else by_no[no].raw for no in range(start, end) if no in by_no]
+        result[title] = fingerprint_text("\n".join(body))
+    return result
 
 
 def item_hash(item: Item) -> str:

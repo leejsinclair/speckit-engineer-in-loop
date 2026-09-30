@@ -56,14 +56,16 @@ def changed_items(pkg: Package, parsed: dict[str, ParseResult]) -> list[str]:
     return changed
 
 
-def current_item_hashes(pkg: Package) -> dict[str, str]:
+def current_item_hashes(pkg: Package, parsed: dict[str, ParseResult] | None = None) -> dict[str, str]:
     """A flat ``{id: item_hash}`` over every item and task of every existing stage, current on disk.
 
     Used to check a stage's own recorded ``upstream_items`` (D-26): a per-consumer snapshot is
     stage-pairwise correct even across an upstream stage's later, unrelated re-approval, which a
     check against only upstream's *latest* approval baseline (``changed_items`` above) is not.
+    ``parsed`` lets a caller that already parsed the story (``Package.parsed_story``, cached) skip
+    doing it again.
     """
-    parsed = parsed_story(pkg)
+    parsed = parsed if parsed is not None else parsed_story(pkg)
     hashes: dict[str, str] = {}
     for result in parsed.values():
         hashes.update({item.id: item_hash(item) for item in result.items})
@@ -81,9 +83,10 @@ def upstream_item_hashes(pkg: Package, stage: str, parsed: dict[str, ParseResult
     return {i: current[i] for i in closure if i in current}
 
 
-def affected(pkg: Package) -> dict[str, list[str]]:
-    """``stage -> ids`` of the items that changed or depend on one that did, in document order."""
-    parsed = parsed_story(pkg)
+def affected(pkg: Package, parsed: dict[str, ParseResult] | None = None) -> dict[str, list[str]]:
+    """``stage -> ids`` of the items that changed or depend on one that did, in document order.
+    ``parsed`` lets a caller that already parsed the story skip doing it again."""
+    parsed = parsed if parsed is not None else parsed_story(pkg)
     changed = changed_items(pkg, parsed)
     if not changed:
         return {}

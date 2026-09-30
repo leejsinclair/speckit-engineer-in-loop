@@ -45,6 +45,7 @@ from .trace import (
     evidence_fields,
     item_hash,
     parse_document,
+    section_fingerprints,
     story_findings,
 )
 
@@ -1405,9 +1406,12 @@ class CriterionResult:
     kind: str
     status: str  # met | not-met | overridden
     reason: str = ""
+    basis: str = ""  # judgment only: the fingerprint of what the verdict was made against (D-29)
 
     def to_json(self, with_text: bool = True) -> dict[str, str]:
-        out = {"id": self.id, "kind": self.kind, "status": self.status, "reason": self.reason}
+        out: dict[str, str] = {"id": self.id, "kind": self.kind, "status": self.status, "reason": self.reason}
+        if self.basis:
+            out["basis"] = self.basis
         if with_text:
             out["text"] = self.text
         return out
@@ -1450,6 +1454,7 @@ class JudgmentsError(ValueError):
 class Judgments:
     verdicts: dict[str, tuple[str, str]]  # id -> (status, reason)
     assessment: dict[str, list[str]]
+    bases: dict[str, str] = field(default_factory=dict)  # id -> basis; absent id means "trust it"
 
 
 def load_judgments(path: Path, stage: str) -> Judgments:
@@ -1501,11 +1506,15 @@ def load_judgments(path: Path, stage: str) -> Judgments:
 
 
 def _prior_judgments(region: dict[str, Any] | None, fingerprint: str) -> Judgments:
-    """The AI's earlier verdicts, if they were made against this exact version of the document."""
+    """The AI's earlier verdicts. Each judgment verdict is kept on its own criterion-scoped basis
+    (D-29), independent of what else in the document changed; the five free-text assessment lists
+    are carried forward only while the whole document is unchanged, since they can reference
+    content anywhere in it."""
     empty = Judgments({}, {})
-    if not region or region.get("fingerprint") != fingerprint:
+    if not region:
         return empty
     verdicts: dict[str, tuple[str, str]] = {}
+    bases: dict[str, str] = {}
     for entry in region.get("criteria", []):
         reason = str(entry.get("reason", ""))
         if (
@@ -1514,13 +1523,14 @@ def _prior_judgments(region: dict[str, Any] | None, fingerprint: str) -> Judgmen
             and entry.get("status") in ("met", "not-met")
         ):
             verdicts[entry["id"]] = (entry["status"], reason[len(AI_PREFIX) :])
-    lists = region.get("assessment", {})
+            bases[entry["id"]] = str(entry.get("basis", ""))
+    lists = region.get("assessment", {}) if region.get("fingerprint") == fingerprint else {}
     kept = {
         name: [v for v in lists.get(name, []) if not v.startswith(STRUCTURE_TAG)]
         for name in ASSESSMENT_LISTS
         if isinstance(lists.get(name), list)
     }
-    return Judgments(verdicts, kept)
+    return Judgments(verdicts, kept, bases)
 
 
 # ---- evaluation
@@ -1582,15 +1592,37 @@ def _story_findings_for(pkg: Package, stage: str, own: ParseResult) -> list[Find
     return kept
 
 
+def _section_fingerprints_cached(ctx: GateContext) -> dict[str, str]:
+    key = ("section_fingerprints",)
+    if key not in ctx.cache:
+        ctx.cache[key] = section_fingerprints(ctx.doc, ctx.parsed.items)
+    return ctx.cache[key]
+
+
+def _criterion_basis(ctx: GateContext, criterion: Criterion) -> str:
+    """What a judgment verdict for this criterion is checked against: the content of just the
+    sections it reads (``Criterion.headings``), so an edit elsewhere in the document does not void
+    it (D-29). A criterion with no named sections judges the whole document, so it falls back to
+    the whole-document fingerprint, unchanged from before this decision."""
+    if not criterion.headings:
+        return fingerprint_text(ctx.text)
+    sections = _section_fingerprints_cached(ctx)
+    parts = [f"{name}\x00{sections.get(name, '<absent>')}" for name in criterion.headings]
+    return fingerprint_text("\n".join(parts))
+
+
 def evaluate(ctx: GateContext, judgments: Judgments) -> list[CriterionResult]:
     results: list[CriterionResult] = []
     for criterion in criteria_for(ctx.stage):
         problems = heading_problems(ctx, criterion.headings) if criterion.headings else []
         ctx.structure_missing.extend(problems)
+        basis = ""
         if criterion.kind == JUDGMENT:
+            basis = _criterion_basis(ctx, criterion)
+            fresh = criterion.id not in judgments.bases or judgments.bases[criterion.id] == basis
             if problems:
                 status, reason = "not-met", "; ".join(problems)
-            elif criterion.id in judgments.verdicts:
+            elif criterion.id in judgments.verdicts and fresh:
                 status, reason = judgments.verdicts[criterion.id]
                 reason = AI_PREFIX + reason
             else:
@@ -1603,7 +1635,7 @@ def evaluate(ctx: GateContext, judgments: Judgments) -> list[CriterionResult]:
             record = ctx.overrides[criterion.id]
             status = "overridden"
             reason = f"overridden by {record.get('by', '?')}: {record.get('reason', '')} ({record.get('id', 'OVR')})"
-        results.append(CriterionResult(criterion.id, criterion.text, criterion.kind, status, reason))
+        results.append(CriterionResult(criterion.id, criterion.text, criterion.kind, status, reason, basis))
     return results
 
 

@@ -2,6 +2,9 @@
 under a second on a story of nine documents of about 1 MB each.
 
 The bound is generous on purpose: it catches an accidental quadratic scan, not a slow machine.
+Raised from 1.0s to 1.5s when per-stage impact tracking and per-section fingerprinting (D-26, D-28,
+D-29) added real, linear, cached-per-call work across all nine documents — not a regression in kind,
+just in the constant.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from eil.package import Package
 
 from tests.helpers.package import Story, with_verification
 
-LIMIT_SECONDS = 1.0
+LIMIT_SECONDS = 1.5
 TARGET_BYTES = 1_000_000
 
 

@@ -334,7 +334,9 @@ def next_action(pkg: Package, model: Model) -> dict[str, Any]:
             "human",
             stage,
             APPROVE_COMMAND,
-            f"Re-review {stage} ({state.reason}), then approve it again with {APPROVE_COMMAND}.",
+            f"Re-review {stage} ({state.reason}). If every change is already a recorded decision, "
+            f"/speckit-eil-amend can re-sign it from those ids; otherwise walk through each change "
+            f"with /speckit-eil-review-changes; or approve it again with {APPROVE_COMMAND}.",
         )
     if state.state == "in-review":
         return _action("human", stage, APPROVE_COMMAND, f"Approve {stage} with {APPROVE_COMMAND}.")

@@ -22,20 +22,31 @@ All notable changes to this project are recorded here. The format follows
     template's own header comment says the word without it being a tag, so every stage document's
     fingerprint moved on upgrade with nothing actually edited. Found via dogfooding the fix itself and
     corrected before release — see `_strip_ai_draft` in `fingerprint.py` and research D-23.)
-  - A new `(decided: CH-###|OQ-###|AIS-###)` clause marks text copied verbatim from a recorded human
-    decision — an accepted challenge, a resolved open question, or a carried clarify answer — written
-    untagged instead of `[ai-draft]`. The helper checks the citation is real and in an eligible state.
+  - A new `(decided: CH-###|OQ-###|AIS-###|RVW-###)` clause marks text copied verbatim from a recorded
+    human decision — an accepted challenge, a resolved open question, a carried clarify answer, or an
+    `eil review` acceptance (below) — written untagged instead of `[ai-draft]`. The helper checks the
+    citation is real and in an eligible state.
   - `eil amend <stage> --from <ids> --by <name> --attestation <text>` re-signs a stage's approval when
-    it is `needs-re-review` and every change since the last approval — down to the line, via a new
-    `prose_fingerprint` covering everything outside an item or a record block — is covered by a cited
-    `(decided: ...)` clause. It is visible in the overview and every report exactly as an override is.
+    it is `needs-re-review` and every item that changed since the last approval — its own edit, or an
+    upstream one propagating in — carries a matching `(decided: ...)` clause, every changed section is
+    covered by an `eil review` acceptance, and the comprehension check for the version is current. It
+    is visible in the overview and every report exactly as an override is.
+  - `/speckit-eil-review-changes` (`eil review start`/`accept`/`finish`) walks the human through every
+    item and section changed since a stage's last approval, one at a time, and records each "ok" as the
+    citation itself — an item's line gets `(decided: RVW-###)` and its `[ai-draft]` tag removed, together,
+    as one helper action, never an AI hand-edit trusted after the fact. Finishing re-signs the approval
+    from those acceptances, sharing `amend`'s coverage core, visibly marked `reviewed_change_by_change`.
   - Downstream re-review is now item-level, not document-level: a stage becomes `needs-re-review` only
     when one of its own recorded `upstream_items` actually changed, tracked per stage so a re-approval
     elsewhere in the chain does not erase the signal. An upstream change that affects nothing traced
     leaves the stage `approved`, with a non-blocking `note`.
   - The comprehension check taken for a re-approval is now a **delta** check: only the changed items are
     eligible, capped at two questions, and skipped entirely (recorded `not-applicable` with the reason,
-    asking nothing) when every change is a recorded human decision.
+    asking nothing) when every change is a recorded human decision. `eil amend`/`eil review finish` now
+    complete this check themselves rather than silently skipping it, so it never blocks silently either.
+  - A judgment criterion's recorded verdict is now voided only by an edit to the sections it actually
+    reads (`Criterion.headings`), not by any edit anywhere in the document — a real bug, not just
+    friction: four criteria used to be re-judged for an edit none of them read.
   - `/speckit-eil-comprehend`'s pre-scan is now explicitly a backstop for the stage command's own
     end-of-drafting challenge sweep, not a second full pass.
   - Several commands now accept a batched reply covering several open challenges at once, reuse a

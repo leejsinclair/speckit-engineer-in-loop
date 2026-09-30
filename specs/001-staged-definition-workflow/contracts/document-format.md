@@ -37,7 +37,7 @@ Region names: `approval`, `assessment`, `comprehension`. All three are **exclude
 
 ### Record blocks (fingerprinted)
 
-Challenges, overrides, abbreviation and artefact export records are fenced JSON blocks whose info string starts `eil:` :
+Challenges, overrides, abbreviation, artefact export and review-acceptance records are fenced JSON blocks whose info string starts `eil:` :
 
 ````markdown
 ```eil:challenge
@@ -46,7 +46,9 @@ Challenges, overrides, abbreviation and artefact export records are fenced JSON 
 ```
 ````
 
-Info strings: `eil:challenge`, `eil:override`, `eil:abbreviation`, `eil:artifact`. One JSON object per block. The helper rewrites a block in place when it changes state (for example closing a challenge) and preserves everything else byte for byte.
+Info strings: `eil:challenge`, `eil:override`, `eil:abbreviation`, `eil:artifact`, `eil:review`. One JSON object per block. The helper rewrites a block in place when it changes state (for example closing a challenge) and preserves everything else byte for byte.
+
+An `eil:review` record (`eil review accept`, D-28) is `{"id": "RVW-004", "stage": "functional", "unit": "item"|"section", "target": "FR-026"|"Business Rules", "by": "…", "at": "…", "note": "…"}` (`note` optional). It lives under a generated `## Reviews` heading, which — like `## Challenges`, `## Overrides`, `## Quality Assessment`, `## Comprehension Check` and `## Approval` — holds nothing but records and marked regions and so is never itself a "changed section" (`trace.ADMINISTRATIVE_SECTIONS`).
 
 ### Item lines
 
@@ -65,8 +67,9 @@ and an optional trailing clause on the same line or continuation lines up to the
 (material: yes|no)         OQ only; an OQ with no `material` clause counts as material
 (accepted-by: <name>)      OQ only; required when a material OQ is `accepted` (FR-023)
 (store: <label>)           ART of an ER diagram only: the data store it describes
-(decided: CH-###|OQ-###|AIS-###)  text is a human's own words, copied verbatim from that
-                            recorded decision (D-24); write it untagged instead of [ai-draft]
+(decided: CH-###|OQ-###|AIS-###|RVW-###)  text is a human's own words, copied verbatim from
+                            that recorded decision (D-24) or from an `eil review` acceptance
+                            (D-28); write it untagged instead of [ai-draft]
 [ai-draft]                 unreviewed AI-authored item (D-16)
 [pending-clarification]    AIS only (FR-067)
 ```
@@ -170,16 +173,16 @@ Constructs outside the subset are ignored only if they are known presentation di
   "played_back_to": "Sam (business), Priya (QA)",
   "upstream": {"requirements": "sha256:41ab…"},
   "items": {"FR-001": "sha256:…", "FR-002": "sha256:…"},
-  "prose_fingerprint": "sha256:7ac1…",
+  "section_fingerprints": {"Business Rules": "sha256:7ac1…", "Acceptance Criteria": "sha256:…"},
   "upstream_items": {"REQ-001": "sha256:…", "UC-001": "sha256:…"},
   "overrides_used": ["OVR-001"],
   "comprehension": {"understood": 3, "coached": 1, "revealed": 0, "skipped": 1, "not_applicable": 0}
 }
 ```
 
-- `prose_fingerprint`: the document's fingerprint with every item's lines and every `eil:` record block blanked out (`trace.non_item_fingerprint`). Only `eil amend` reads it, to refuse when anything outside an item changed (D-25).
+- `section_fingerprints`: one fingerprint per level-2 (`##`) section, with every item's lines, every attached Mermaid fence's lines, every marked region's lines, and every `eil:` record block's lines blanked out (`trace.section_fingerprints`), keyed by the section's current title. A section that holds nothing but record blocks and marked regions (`Reviews`, `Challenges`, `Overrides`, `Quality Assessment`, `Comprehension Check`, `Approval`) is never included: recording a challenge, override or review, or checking a gate, is never itself a "changed section." `eil amend`/`eil review finish` refuse when a section outside any item changed with no matching `eil review` acceptance (D-25, D-28).
 - `upstream_items`: the current hash, at approval time, of every id this stage's own items trace to, directly or not, anywhere upstream (`impact.upstream_item_hashes`). A later `check`/`status` compares each against its **current** hash to decide `needs-re-review`, per item, regardless of how many times the upstream stage has itself been re-approved since (D-26). An approval recorded before this field existed carries none; a later check then falls back to the whole-document `upstream` fingerprints.
-- An amendment (`eil amend`) additionally carries `"amended": true` and `"amends": ["CH-004", …]`, the cited human decisions, alongside the same fields above.
+- An amendment (`eil amend`) additionally carries `"amended": true` and `"amends": ["CH-004", …]`, the cited human decisions (`CH`, `OQ`, `AIS` or `RVW`), alongside the same fields above. A guided review's re-approval (`eil review finish`) instead carries `"reviewed_change_by_change": true` and `"reviewed_ids": ["RVW-004", …]` — every `eil:review` acceptance it rests on (D-28).
 
 Absent region or empty JSON ⇒ no approval. Unparseable JSON ⇒ `malformed-approval`, treated as no approval and reported.
 
@@ -194,13 +197,16 @@ Absent region or empty JSON ⇒ no approval. Unparseable JSON ⇒ `malformed-app
     {"id": "FUN-G03", "kind": "traceability", "status": "not-met",
      "reason": "FR-009 traces to no requirement or use case"},
     {"id": "FUN-G09", "kind": "judgment", "status": "met",
-     "reason": "AI assessment: all acceptance criteria are observable"}
+     "reason": "AI assessment: all acceptance criteria are observable",
+     "basis": "sha256:2b91…"}
   ],
   "assessment": {"ambiguity": [], "missing": [], "contradictions": [],
                  "unsupported_assumptions": [], "untestable": []},
   "findings": [{"code": "dangling-trace", "where": "FR-014", "message": "…"}]
 }
 ```
+
+`basis` is present only for a `judgment` criterion: the fingerprint of exactly the sections it reads (its `headings`, joined and re-hashed from `trace.section_fingerprints`), or the whole-document fingerprint for the few judgment criteria with no named sections (they judge the whole document, for example REQ-G12/FUN-G12). A later `check` keeps that verdict only while its own `basis` still matches — an edit to a section the criterion never reads does not void it, unlike the document-level fingerprint every other criterion is still checked against (D-29). A record with no `basis` (from before this decision) is never treated as current.
 
 The assessment carries the `fingerprint` of the document version it evaluated. A stage is `in-review` only while that equals the document's current fingerprint and every criterion is `met` or `overridden`; after any content change the assessment is stale and the stage is a `draft` again until `check` is re-run.
 

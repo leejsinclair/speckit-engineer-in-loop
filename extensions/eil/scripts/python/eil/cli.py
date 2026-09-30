@@ -158,6 +158,25 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     p.add_argument("--by", required=True)
     p.add_argument("--attestation", required=True)
 
+    p = add("review", "walk a stage's changes since its last approval one at a time, and re-sign it")
+    actions = p.add_subparsers(dest="action", metavar="ACTION", parser_class=_Parser)
+    actions.required = True
+    a = actions.add_parser("start", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a = actions.add_parser("accept", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--items", default="")
+    a.add_argument("--sections", default="")
+    a.add_argument("--by", required=True)
+    a.add_argument("--note")
+    a = actions.add_parser("finish", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--by", required=True)
+    a.add_argument("--attestation", required=True)
+
     p = add("abbreviate", "mark a stage abbreviated")
     p.add_argument("stage")
     p.add_argument("--by", required=True)
@@ -436,6 +455,25 @@ def _amend(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _review(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    from . import provenance
+
+    package = ctx.package()
+    if args.action == "start":
+        return provenance.start(package, args.stage)
+    if args.action == "accept":
+        items = [i.strip() for i in args.items.split(",") if i.strip()]
+        sections = [s.strip() for s in args.sections.split(",") if s.strip()]
+        result = provenance.accept(
+            package, _config(ctx, package), args.stage, items, sections, args.by, args.note
+        )
+        _regenerate_overview(ctx, package)
+        return result
+    result = provenance.finish(package, _config(ctx, package), args.stage, args.by, args.attestation)
+    _regenerate_overview(ctx, package)
+    return result
+
+
 def _regenerate_overview(ctx: Context, package: Package) -> bool:
     return overview.write(package, load_template(package.project_root or ctx.cwd, "s00-readme-template"))
 
@@ -639,6 +677,7 @@ HANDLERS.update(
         "approve": _approve,
         "override": _override,
         "amend": _amend,
+        "review": _review,
         "sync": _sync,
         "enter": _enter,
         "resolve": _resolve,

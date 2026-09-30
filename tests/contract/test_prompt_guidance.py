@@ -44,6 +44,7 @@ EXTENSION_PROMPTS = [
     "trace",
     "status",
     "amend",
+    "review",
 ]
 WRAP_PROMPTS = ["specify", "clarify", "plan", "tasks", "analyze", "checklist", "implement"]
 ALL_PROMPTS = [EXT / f"speckit.eil.{n}.md" for n in EXTENSION_PROMPTS] + [
@@ -188,6 +189,17 @@ RULES: list[tuple[Path, str, list[str]]] = [
         "never chooses the cited decisions for the human",
         [r"never choose the decisions"],
     ),
+    # eil review (D-28): walks the human through each change and records their "ok" as the decision
+    (
+        EXT / "speckit.eil.review.md",
+        "never accepts a change on the human's behalf",
+        [r"never accept a change on the human's behalf"],
+    ),
+    (
+        EXT / "speckit.eil.review.md",
+        "never supplies the attestation for eil review finish",
+        [r"never supply the attestation"],
+    ),
     # conversational friction (D-24, D-25, D-27): reuse a known name; batch challenge answers
     *[
         (
@@ -195,7 +207,16 @@ RULES: list[tuple[Path, str, list[str]]] = [
             "reuses the confirmer's name without re-asking",
             [r"reuse it for every `--by`"],
         )
-        for name in ("approve", "override", "abbreviate", "challenge", "resolve", "comprehend", "amend")
+        for name in (
+            "approve",
+            "override",
+            "abbreviate",
+            "challenge",
+            "resolve",
+            "comprehend",
+            "amend",
+            "review",
+        )
     ],
     (
         EXT / "speckit.eil.challenge.md",
@@ -250,7 +271,7 @@ RULES: list[tuple[Path, str, list[str]]] = [
 
 HELPER_CALL = re.compile(
     r"\beil (sync|start|check|approve|override|stage-init|enter|challenge|artifact|comprehension|trace|status|"
-    r"resolve|abbreviate|overview|amend)\b"
+    r"resolve|abbreviate|overview|amend|review)\b"
 )
 FORBIDDEN_MECHANICS = re.compile(r"\b(points?|score|scores|streak|timer|rank|reward)\b", re.IGNORECASE)
 NEGATION = re.compile(r"\b(no|never|not|without|nor)\b", re.IGNORECASE)

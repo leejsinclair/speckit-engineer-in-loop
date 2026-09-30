@@ -486,12 +486,44 @@ def test_verdicts_are_kept_while_the_document_is_unchanged(story_dir: Story, tmp
     assert crit(again, "REQ-G01").reason == "AI assessment: reason for REQ-G01"
 
 
-def test_verdicts_go_stale_when_the_document_changes(story_dir: Story, tmp_path: Path) -> None:
+def test_verdicts_go_stale_when_their_own_section_changes(story_dir: Story, tmp_path: Path) -> None:
+    """REQ-G01 reads Background and Problem Statement (D-29): editing one of them voids it."""
     run(story_dir, requirements_doc(), judgments_file(tmp_path))
-    story_dir.append("requirements", "\nA new sentence.\n")
+    text = story_dir.read("requirements").replace(
+        "Imports create duplicate customers.", "Imports create duplicate customers. A new sentence."
+    )
+    story_dir.write("requirements", text)
     again = check_stage(Package(story_dir.root), "requirements")
     assert crit(again, "REQ-G01").reason == "no judgment supplied"
     assert again.ok is False
+
+
+def test_a_verdict_survives_an_edit_to_a_section_it_does_not_read(story_dir: Story, tmp_path: Path) -> None:
+    """An edit to Constraints, which REQ-G01 never reads, keeps REQ-G01's verdict (D-29) — the old
+    behaviour voided every judgment on any edit anywhere; this is the fix for that."""
+    run(story_dir, requirements_doc(), judgments_file(tmp_path))
+    text = story_dir.read("requirements").replace(
+        "Must run inside the nightly import window.",
+        "Must run inside the nightly import window, always.",
+    )
+    story_dir.write("requirements", text)
+    again = check_stage(Package(story_dir.root), "requirements")
+    assert crit(again, "REQ-G01").reason == "AI assessment: reason for REQ-G01"
+
+
+def test_a_criterion_with_no_named_sections_still_goes_stale_on_any_edit(
+    story_dir: Story, tmp_path: Path
+) -> None:
+    """REQ-G12 has no headings (it judges the whole document), so it keeps the old, whole-document
+    staleness rule (D-29)."""
+    run(story_dir, requirements_doc(), judgments_file(tmp_path))
+    text = story_dir.read("requirements").replace(
+        "Must run inside the nightly import window.",
+        "Must run inside the nightly import window, always.",
+    )
+    story_dir.write("requirements", text)
+    again = check_stage(Package(story_dir.root), "requirements")
+    assert crit(again, "REQ-G12").reason == "no judgment supplied"
 
 
 def test_a_new_judgments_file_replaces_earlier_verdicts_wholly(story_dir: Story, tmp_path: Path) -> None:

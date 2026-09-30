@@ -273,7 +273,9 @@ def test_next_for_a_stage_that_has_not_started(story_dir: Story) -> None:
 def test_next_for_a_stage_needing_re_review(story_dir: Story) -> None:
     approve_requirements(story_dir)
     story_dir.append("requirements", "\nedit\n")
-    assert status(story_dir)["next"].startswith("Re-review requirements")
+    next_text = status(story_dir)["next"]
+    assert next_text.startswith("Re-review requirements")
+    assert "/speckit-eil-amend" in next_text and "/speckit-eil-review-changes" in next_text
 
 
 def test_next_is_a_single_sentence(story_dir: Story) -> None:

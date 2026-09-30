@@ -118,7 +118,7 @@ def test_an_ais_id_is_eligible_once_it_exists(story_dir: Story) -> None:
 
 def test_an_id_shaped_wrong_is_never_eligible(story_dir: Story) -> None:
     package = Package(story_dir.root)
-    assert decided_eligible(package, "FR-004") == "'FR-004' is not a CH-###, OQ-### or AIS-### id"
+    assert decided_eligible(package, "FR-004") == "'FR-004' is not a CH-###, OQ-###, AIS-### or RVW-### id"
 
 
 # ---- decided_findings, wired into the gate

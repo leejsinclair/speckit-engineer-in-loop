@@ -299,33 +299,59 @@ def test_item_hash_includes_an_attachment() -> None:
     assert len({bare, with_diagram, item_hash(item)}) == 3
 
 
-# ---- non_item_fingerprint (eil amend, D-25)
+# ---- section_fingerprints (eil amend, eil review, D-25, D-28, D-29)
 
 
-def test_non_item_fingerprint_ignores_a_change_inside_an_item() -> None:
-    from eil.trace import non_item_fingerprint
+def _section_fps(text: str) -> dict[str, str]:
+    from eil.trace import section_fingerprints
 
-    def fp(text: str) -> str:
-        doc = Doc(text)
-        result = parse_text(text)
-        return non_item_fingerprint(doc, result.items)
-
-    a = "# Title\n\nprose\n\n**REQ-001**: one\n"
-    b = "# Title\n\nprose\n\n**REQ-001**: something else entirely\n"
-    assert fp(a) == fp(b)
+    doc = Doc(text)
+    result = parse_text(text)
+    return section_fingerprints(doc, result.items)
 
 
-def test_non_item_fingerprint_notices_a_change_outside_any_item() -> None:
-    from eil.trace import non_item_fingerprint
+def test_section_fingerprints_ignore_a_change_inside_an_item() -> None:
+    a = "## Section\n\nprose\n\n**REQ-001**: one\n"
+    b = "## Section\n\nprose\n\n**REQ-001**: something else entirely\n"
+    assert _section_fps(a) == _section_fps(b)
 
-    def fp(text: str) -> str:
-        doc = Doc(text)
-        result = parse_text(text)
-        return non_item_fingerprint(doc, result.items)
 
-    a = "# Title\n\nprose\n\n**REQ-001**: one\n"
-    b = "# Title\n\nchanged prose\n\n**REQ-001**: one\n"
-    assert fp(a) != fp(b)
+def test_section_fingerprints_notice_a_change_outside_any_item() -> None:
+    a = "## Section\n\nprose\n\n**REQ-001**: one\n"
+    b = "## Section\n\nchanged prose\n\n**REQ-001**: one\n"
+    assert _section_fps(a) != _section_fps(b)
+
+
+def test_section_fingerprints_are_keyed_by_title_and_scoped_to_their_own_section() -> None:
+    text = "## One\n\na\n\n## Two\n\nb\n"
+    fps = _section_fps(text)
+    assert set(fps) == {"One", "Two"}
+    changed = _section_fps("## One\n\na changed\n\n## Two\n\nb\n")
+    assert changed["Two"] == fps["Two"] and changed["One"] != fps["One"]
+
+
+def test_section_fingerprints_ignore_a_change_inside_an_attached_mermaid_diagram() -> None:
+    a = (
+        "## System Context\n\n**ART-001**: view (traces: FR-001)\n\n"
+        '```mermaid\nC4Context\n  Person(a, "A")\n```\n'
+    )
+    b = (
+        "## System Context\n\n**ART-001**: view (traces: FR-001)\n\n"
+        '```mermaid\nC4Context\n  Person(a, "Renamed")\n```\n'
+    )
+    assert _section_fps(a) == _section_fps(b), "the diagram belongs to the ART item that attaches it"
+
+
+def test_section_fingerprints_still_notice_a_change_outside_the_diagram() -> None:
+    a = (
+        "## System Context\n\nintro\n\n**ART-001**: view (traces: FR-001)\n\n"
+        '```mermaid\nC4Context\n  Person(a, "A")\n```\n'
+    )
+    b = (
+        "## System Context\n\nintro changed\n\n**ART-001**: view (traces: FR-001)\n\n"
+        '```mermaid\nC4Context\n  Person(a, "A")\n```\n'
+    )
+    assert _section_fps(a) != _section_fps(b)
 
 
 def test_doc_object_can_be_parsed_directly() -> None:

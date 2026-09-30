@@ -462,14 +462,14 @@ DEFINITION_STAGE_ORDER = ("requirements", "functional", "technical")
 
 def approve_stages(story: Story, *stages: str, by: str = "Ada Dev") -> None:
     """Record an approval in each stage document (in the order given), as ``records.approve`` shapes it:
-    the fingerprint, the fingerprints of the earlier stages, the hash of every item, its prose
-    fingerprint, and the current hash of everything it traces to upstream."""
+    the fingerprint, the fingerprints of the earlier stages, the hash of every item, its section
+    fingerprints, and the current hash of everything it traces to upstream."""
     from eil import impact
     from eil.artifacts import scan_document
     from eil.blocks import Doc, write_region
     from eil.fingerprint import fingerprint_text
     from eil.package import Package
-    from eil.trace import item_hash, non_item_fingerprint, parse_document
+    from eil.trace import item_hash, parse_document, section_fingerprints
 
     package = Package(story.root)
     for stage in stages:
@@ -494,7 +494,7 @@ def approve_stages(story: Story, *stages: str, by: str = "Ada Dev") -> None:
                 and (fp := package.fingerprint(earlier))
             },
             "items": {item.id: item_hash(item) for item in parsed.items},
-            "prose_fingerprint": non_item_fingerprint(doc, parsed.items, doc.records()),
+            "section_fingerprints": section_fingerprints(doc, parsed.items),
             "upstream_items": impact.upstream_item_hashes(package, stage, all_parsed),
             "overrides_used": [],
         }

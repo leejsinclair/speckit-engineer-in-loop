@@ -40,7 +40,7 @@ from .identity import (
 )
 from .package import APPROVABLE, DOC_FILES, STAGES, Package
 from .results import Refusal, refuse, usage_error
-from .trace import item_hash, non_item_fingerprint, parse_document
+from .trace import item_hash, parse_document, section_fingerprints
 
 DEFINITION_STAGES = ("requirements", "functional", "technical", "ai-spec")
 # Completion has its own refusal codes (FR-064, FR-065); each is the reason for one criterion.
@@ -248,7 +248,7 @@ def approve(
         if STAGES.index(earlier) < STAGES.index(stage) and (fp := pkg.fingerprint(earlier))
     }
     record["items"] = {item.id: item_hash(item) for item in ctx.parsed.items}
-    record["prose_fingerprint"] = non_item_fingerprint(ctx.doc, ctx.parsed.items, ctx.doc.records())
+    record["section_fingerprints"] = section_fingerprints(ctx.doc, ctx.parsed.items)
     all_parsed = impact.parsed_story(pkg)
     all_parsed[stage] = ctx.parsed
     record["upstream_items"] = impact.upstream_item_hashes(pkg, stage, all_parsed)

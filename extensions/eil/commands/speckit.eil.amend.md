@@ -17,7 +17,9 @@ If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the u
 
 ## What this command is for
 
-A stage can become `needs-re-review` for a reason that is nothing but the developer's own prior decision, already recorded — an accepted challenge, a resolved open question, a clarify answer carried upstream. Re-running the whole approval ceremony for that is unneeded work: `eil amend` re-signs the existing approval instead, but only when it can verify every change traces to a decision the developer names. It is not a lighter approval and not a rubber stamp: the helper still refuses it if anything unaccounted for changed, if `[ai-draft]` remains, or if a cited decision does not check out. It never supplies the attestation, the reason, or the list of decisions — the human gives all three.
+A stage can become `needs-re-review` for a reason that is nothing but the developer's own prior decision, already recorded — an accepted challenge, a resolved open question, a clarify answer carried upstream, **or an `eil review` acceptance** (`RVW-###`, from `/speckit-eil-review-changes`). Re-running the whole approval ceremony for that is unneeded work: `eil amend` re-signs the existing approval instead, but only when it can verify every change traces to a decision the developer names. It is not a lighter approval and not a rubber stamp: the helper still refuses it if anything unaccounted for changed, if `[ai-draft]` remains, or if a cited decision does not check out. It never supplies the attestation, the reason, or the list of decisions — the human gives all three.
+
+If the changes are new — reworded just now, not quoted from an earlier decision — there is nothing yet to cite. Use `/speckit-eil-review-changes` first: it walks the human through each change and records their "ok" as the citation, then re-signs in one pass. Use `amend` directly only when the covering decisions already exist.
 
 Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcommand> --json`. **Stop on any non-zero exit** and show the helper's `refusals` (code, message, fix).
 
@@ -33,7 +35,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
    ```
 
    On a refusal, show it and say what it means:
-   - `amend-not-covered`: an item changed with no matching `(decided: ...)` among the ids given, or something outside an item changed (a heading, prose, a diagram). Offer the full `/speckit-eil-approve` instead.
+   - `amend-not-covered`: an item changed with no matching `(decided: ...)` among the ids given, or a section outside any item changed with no matching `eil review` acceptance. Offer `/speckit-eil-review-changes` for what is left, or the full `/speckit-eil-approve`.
    - `unreviewed-ai-content`: an `[ai-draft]` tag remains; review and remove it first.
    - `unknown-item`: a cited id does not exist, or is not in an eligible state (a challenge not accepted, a question not resolved).
    - `not-amendable`: the stage is not approvable, or was never approved before.
