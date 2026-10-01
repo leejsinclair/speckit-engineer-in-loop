@@ -15,6 +15,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Superseded by `/speckit-eil-accept`
+
+This command is superseded. `review` is now a short alias: `/speckit-eil-accept` lists the changes and takes one reply for the whole list, so prefer it. This command still works as described below.
+
 ## What this command is for
 
 Implementation, or the review that follows it, often finds something in an already-approved stage that needs to change — a new item, a resolved question, a diagram fixed because it would not draw, a paragraph reworded. When the developer reviews each of those changes right now, in conversation, that **is** a review; it should not also cost a full re-approval ceremony (comprehend again, judge every criterion again) on top of the one just given. `/speckit-eil-review-changes` walks the human through every change one at a time and records their "ok" as the decision itself — a `(decided: RVW-###)` clause on the item, or a recorded acceptance of a section — then re-signs the approval from those acceptances, the same way `/speckit-eil-amend` re-signs from an earlier decision. It is still one recorded human confirmation per stage, never the AI's.

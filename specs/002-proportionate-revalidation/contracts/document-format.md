@@ -47,7 +47,7 @@ Walk the document outside marked regions, `eil:` record blocks, HTML comments an
                    "reply": "…", "accepted": [], "except": [], "questioned": [], "reopened": [], "reason": null}],
   "corrections": [{"id": "CR-003", "item": "FR-004", "owner": "functional",
                    "found_in": {"stage": "implementation", "item": "T014"}, "problem": "…", "wording": "…",
-                   "impact": [], "opened_by": "…", "at": "…", "status": "open", "closed_by_approval": null}],
+                   "impact": [], "opened_by": "…", "at": "…", "status": "open", "closed_by": null, "closed_at": null, "closed_by_approval": null}],
   "changes": [{"at": "…", "item": "FR-004", "summary": "…", "summary_by": "ai", "origin": "CR-003", "accepted_by": "…"}]
 }
 ```
@@ -59,8 +59,8 @@ Walk the document outside marked regions, `eil:` record blocks, HTML comments an
 | Top level | `version`, `currency`, `blocks`, `acceptances`, `corrections`, `changes`, `conflicts` |
 | Block (`blocks.<key>`) | `hash`, `class`, `cites`, `adds`, `reviewed`, `sources`, `completed_against`, `blocked_at_completion`, `basis` |
 | `reviewed` | `by`, `at`, `list`, `reply` |
-| Acceptance | `id`, `stage`, `kind`, `digest`, `by`, `at`, `reply`, `accepted`, `except`, `questioned`, `reopened`, `deferred`, `reason`, `resolved_conflict` |
-| Correction | `id`, `item`, `owner`, `found_in` (`stage`, `item`), `problem`, `wording`, `impact`, `opened_by`, `at`, `status`, `closed_by_approval` |
+| Acceptance | `id`, `stage`, `kind`, `digest`, `by`, `at`, `reply`, `accepted`, `except`, `questioned`, `reopened`, `deferred`, `reason`, `resolved_conflict`, `hashes` (`{key: current hash}` of every entry the answer names, so a conflict is judged at the same content hash, FR-050) |
+| Correction | `id`, `item`, `owner`, `found_in` (`stage`, `item`), `problem`, `wording`, `impact`, `opened_by`, `at`, `status`, `closed_by`, `closed_at`, `closed_by_approval` (absent on a stage nobody approves) |
 | Change | `at`, `item`, `summary`, `summary_by`, `origin`, `accepted_by` |
 | Conflict | `key`, `hash`, `answers` |
 

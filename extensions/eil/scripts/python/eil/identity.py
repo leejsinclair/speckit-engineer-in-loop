@@ -21,7 +21,17 @@ from .results import Refusal
 
 CONFIG_DIR = Path(".specify") / "extensions" / "eil"
 CONFIG_FILES = ("eil-config.yml", "local-config.yml")
-CONFIG_STAGES = ("requirements", "functional", "technical", "completion")
+CONFIG_STAGES = (
+    "requirements",
+    "functional",
+    "technical",
+    "completion",
+    "ai-spec",
+    "plan",
+    "tasks",
+    "verification",
+)
+DERIVED_APPROVER_STAGES = frozenset({"ai-spec", "plan", "tasks", "verification"})
 
 # Names that are the AI, not a person. Matched on the whole name so "Ai Nguyen" is a person.
 _AI_NAMES = frozenset(
@@ -247,8 +257,12 @@ def story_identities(
 
 
 def resolve_approvers(config: Config, stage: str, developer: list[str]) -> list[str]:
-    """The people who may confirm (and override) ``stage``: the configured list, else the developer."""
-    return config.approvers.get(stage) or list(developer)
+    """The people who may confirm (and override) ``stage``: the configured list, else the developer.
+    A derived stage with no list of its own uses the ``technical`` list first (research D-36)."""
+    configured = config.approvers.get(stage)
+    if not configured and stage in DERIVED_APPROVER_STAGES:
+        configured = config.approvers.get("technical")
+    return list(configured) if configured else list(developer)
 
 
 def confirmer_refusal(by: str, approvers: list[str], stage: str, authorising: bool = False) -> Refusal | None:

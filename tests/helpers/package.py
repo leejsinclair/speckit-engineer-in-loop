@@ -38,7 +38,7 @@ def item_hashes(text: str, stage: str = "requirements") -> dict[str, str]:
 
 
 def region(name: str, obj: Any) -> str:
-    """A marked region (``approval``, ``assessment`` or ``comprehension``) holding JSON."""
+    """A marked region (``approval``, ``assessment``, ``comprehension`` or ``provenance``) holding JSON."""
     body = json.dumps(obj, indent=2, ensure_ascii=False)
     return f"<!-- eil:begin {name} -->\n```json\n{body}\n```\n<!-- eil:end {name} -->\n"
 
@@ -734,3 +734,63 @@ def completion_doc(
 def with_verification(story: Story, rows: list[str] | None = None, **kwargs: Any) -> None:
     with_plan_and_tasks(story)
     story.write("verification", verification_doc(rows, **kwargs))
+
+
+# ---- 002: provenance and change-log regions, review findings (T004)
+
+RECORD_HEADINGS = ("## Change Log", "## Record")
+
+
+def provenance_region(obj: dict[str, Any]) -> str:
+    """A ``provenance`` region holding ``obj`` as JSON."""
+    return region("provenance", obj)
+
+
+def changelog_region(rows: list[str] | None = None) -> str:
+    """A ``changelog`` region: a generated Markdown table (never parsed), or markers only."""
+    body = ""
+    if rows:
+        header = "| Date | Item | Change (AI-drafted, accepted as shown) | Found in | Accepted by |\n|---|---|---|---|---|\n"
+        body = header + "\n".join(rows) + "\n"
+    return f"<!-- eil:begin changelog -->\n{body}<!-- eil:end changelog -->\n"
+
+
+def with_record_sections(text: str, provenance: dict[str, Any] | None = None, changelog: list[str] | None = None) -> str:
+    """Insert ``## Change Log`` and ``## Record`` (with their regions) before the first
+    ``## Comprehension Check`` or ``## Quality Assessment``, or at the end."""
+    block = (
+        "## Change Log\n\n"
+        + changelog_region(changelog)
+        + "\n## Record\n\n"
+        + (provenance_region(provenance) if provenance is not None else "<!-- eil:begin provenance -->\n<!-- eil:end provenance -->\n")
+        + "\n"
+    )
+    positions = [p for p in (text.find("## Comprehension Check"), text.find("## Quality Assessment")) if p >= 0]
+    if not positions:
+        return text.rstrip("\n") + "\n\n" + block
+    at = min(positions)
+    return text[:at] + block + text[at:]
+
+
+def block_entry(text_hash: str, klass: str = "inferred", **fields: Any) -> dict[str, Any]:
+    """One ``blocks.<key>`` entry of a provenance record."""
+    return {"hash": text_hash, "class": klass, **fields}
+
+
+def rf_row(
+    number: int,
+    text: str = "Handler ignores the tenant filter",
+    status: str = "open",
+    root: str = "implementation",
+    accepted_by: str | None = None,
+    reason: str | None = None,
+    traces: list[str] | None = None,
+) -> str:
+    """One ``RF`` (review finding) item with its labelled lines."""
+    clause = f" (traces: {', '.join(traces)})" if traces else ""
+    lines = [f"**RF-{number:03d}**: {text}{clause} (status: {status})", f"Root: {root}"]
+    if accepted_by is not None:
+        lines.append(f"Accepted by: {accepted_by}")
+    if reason is not None:
+        lines.append(f"Reason: {reason}")
+    return "\n".join(lines)

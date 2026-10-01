@@ -7,10 +7,14 @@
   requirement or approved artefact is unverified without an exception.
 
   - No new requirements, decisions or diagrams here: this summarises what the other stages hold.
-  - Diagram Currency states, for every approved artefact (`ART-###`), one line:
+  - Diagram Currency has a line only for the artefacts implementation touched (`eil status` lists
+    them under diagram_currency), and one `- untouched: ART-001, ART-002, ...` line for the rest:
       - ART-004: current
       - ART-007: deviation, accepted by Ada Dev, because the index was renamed in review
-    A deviation is also listed under Accepted Deviations, with who accepted it and why.
+      - untouched: ART-001, ART-002, ART-003
+    A deviation is also listed under Accepted Deviations, with who accepted it and why. A deviation is
+    only for a document that intentionally keeps describing a future target; a difference accepted
+    because the code is right is a correction (`eil correct`), not a deviation.
   - Tag any text the AI wrote with [ai-draft] until a human has reviewed it.
 -->
 
@@ -54,7 +58,7 @@
 
 ## Diagram Currency
 
-<!-- One line per approved ART: `- ART-004: current` or `- ART-007: deviation, accepted by NAME, because REASON`. -->
+<!-- One line per touched ART: `- ART-004: current` or `- ART-007: deviation, accepted by NAME, because REASON`, and `- untouched: ART-001, ART-002, ...` for the rest. -->
 
 ## Not applicable
 
@@ -67,6 +71,16 @@
 ## Overrides
 
 <!-- Recorded by `eil override`, each naming who, what and why. -->
+
+## Change Log
+
+<!-- eil:begin changelog -->
+<!-- eil:end changelog -->
+
+## Record
+
+<!-- eil:begin provenance -->
+<!-- eil:end provenance -->
 
 ## Quality Assessment
 

@@ -25,19 +25,22 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 1. **Synchronise**: run `eil sync --json`.
 2. **Choose the stage** from the user's input, or the story's current stage (`eil check --json` reports the stage it evaluated). Only `requirements`, `functional`, `technical` and `completion` can be approved.
-3. **Show the gate**: run `eil check --stage <stage> --json` and show which criteria are met, which are not and why, any findings, and any open question or `[ai-draft]` tag. If the gate is not met, say so and stop: do not proceed to ask for a confirmation that will be refused. If the human wants to waive one criterion, that is `/speckit-eil-override`.
-4. **Show what changed** since the last approval, so the human confirms what they are actually looking at: use `git diff` on the stage document against the last commit that carried an approval, or say that there is no earlier approval. If every change traces to a `(decided: ID)` clause, mention that `/speckit-eil-amend` can re-sign the approval from those ids instead of a full confirmation here.
-5. **Ask the human directly.** Put this question to the person in the conversation and wait for their own answer. If `$ARGUMENTS` already carries their confirmation in their own words (for example `/speckit-eil-approve "Yes, ship it"`), use that text as the attestation directly, without asking again. Ask for the name they are approving as, and their confirmation in their own words. Optionally ask who the stage was played back to (business, QA, another developer); that is recorded as a note and is never verified.
-6. **Record it**: run
+3. **Show the gate**: run `eil check --stage <stage> --json` and show the focused gate: the unmet criteria first, then the judgment ones, then a count of the met structural criteria (`summary.met_structural`; `eil check --full` lists them all), each unmet one with its reason, any findings, and any open question or `[ai-draft]` tag. If the gate is not met, say so and stop: do not proceed to ask for a confirmation that will be refused. If the human wants to waive one criterion, that is `/speckit-eil-override`.
+4. **List the inferred blocks first.** Run `eil review list --stage <stage> --kind inferred --json`. If it lists anything, the human answers that one list in their own words (`eil review answer ... --reply "<their words>"`, verbatim) before you ask for the attestation; never answer for them. Approval is refused while a block is unreviewed.
+5. **Show what changed** since the last approval, so the human confirms what they are actually looking at: use `git diff` on the stage document against the last commit that carried an approval, or say that there is no earlier approval. If every change traces to a `(decided: ID)` clause, mention that `/speckit-eil-amend` can re-sign the approval from those ids instead of a full confirmation here.
+6. **Ask the human directly.** Put this question to the person in the conversation and wait for their own answer. If `$ARGUMENTS` already carries their confirmation in their own words (for example `/speckit-eil-approve "Yes, ship it"`), use that text as the attestation directly, without asking again. Ask for the name they are approving as, and their confirmation in their own words. Optionally ask who the stage was played back to (business, QA, another developer); that is recorded as a note and is never verified.
+7. **Record it**: run
 
    ```bash
    eil approve <stage> --by "<their name>" --attestation "<their words, verbatim>" [--played-back-to "<note>"] --json
    ```
 
    Pass their answer **exactly as they gave it**. On a refusal, show it and stop.
-7. **Finish**: run `eil sync --json`, then report the approval or the refusal.
+8. **Finish**: run `eil sync --json`, then report the approval or the refusal. If the approval record has `outstanding`, name those low-severity challenges as outstanding: they did not block, and anyone can raise one to make it block (`eil challenge severity`).
 
 ## Rules
+
+- Every request to a person states its purpose, one of awareness, understanding, decision, validation or approval; use the `purpose` the helper gives (on `next_action` and on each review list) and do not invent one. The attestation is purpose approval.
 
 - **Never supply the attestation yourself.** Do not write, paraphrase, summarise or complete the human's confirmation, and do not treat silence, a previous answer or the instruction to "just approve" as one. If the human has not answered in this conversation, ask again.
 - **Never approve as yourself or on anyone's behalf.** The helper refuses an approval by the AI, but do not attempt one.

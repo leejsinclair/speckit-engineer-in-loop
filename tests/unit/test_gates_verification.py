@@ -37,9 +37,9 @@ def rows_for(*overrides: tuple[str, dict]) -> list[str]:
 # ---- the table
 
 
-def test_the_table_has_six_criteria_all_decided_by_code() -> None:
+def test_the_table_has_seven_criteria_all_decided_by_code() -> None:
     table = CRITERIA_BY_STAGE["verification"]
-    assert [c.id for c in table] == [f"VER-G{n:02d}" for n in range(1, 7)]
+    assert [c.id for c in table] == [f"VER-G{n:02d}" for n in range(1, 8)]
     assert {c.kind for c in table} <= {"structural", "traceability"}
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import overview
+from . import corrections, overview
 from .gates import PENDING
 from .package import Package
 from .trace import Graph, ParseResult, build_graph, coverage_gaps, parse_document, story_findings
@@ -114,6 +114,12 @@ def trace(pkg: Package, from_id: str | None = None, to_ref: str | None = None) -
         "gaps": gaps,
         **_context(pkg),
     }
+    on_chain = {*starts, *reached}
+    result["corrections"] = [
+        {k: cr.get(k) for k in ("id", "item", "owner", "found_in", "problem", "status")}
+        for _, cr in corrections.all_crs(pkg)
+        if cr.get("item") in on_chain
+    ]
     result["text"] = _render(result)
     return result
 
@@ -124,6 +130,10 @@ def _render(result: dict[str, Any]) -> str:
         "  (nothing)"
     ]
     lines += [f"Gap: {g}" for g in result["gaps"]]
+    for c in result.get("corrections", []):
+        found = c.get("found_in") or {}
+        origin = ", ".join(str(v) for v in (found.get("stage"), found.get("item")) if v)
+        lines.append(f"Correction {c['id']} of {c['item']} ({c['status']}, found in {origin})")
     lines += [
         f"Override {o['id']}: {o['criterion']} in {o['stage']} by {o['by']}" for o in result["overrides"]
     ]

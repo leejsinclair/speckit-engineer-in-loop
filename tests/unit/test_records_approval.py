@@ -78,6 +78,7 @@ def test_a_met_gate_and_a_configured_confirmer_records_the_approval(
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", record["at"])
     assert record["fingerprint"] == fingerprint
     assert record["attestation"] == "Yes, this is the problem we intend to solve."
+    assert record["reached"] == "first"
     assert record["upstream"] == {}
     assert record["overrides_used"] == []
     assert "played_back_to" not in record and "comprehension" not in record

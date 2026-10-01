@@ -28,12 +28,14 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 3. **Report**, from the helper's output only:
    - the current stage and each stage's state (`not-started`, `draft`, `in-review`, `approved`, `needs-re-review`), with the reason for any `needs-re-review` and any abbreviated stage;
    - the approvals (who, when) and, for Functional and Technical, the comprehension counts;
-   - what is outstanding: open questions, open challenges, pending clarifications, overrides, accepted risks, and any document error under `issues`;
+   - what is outstanding: open questions, open challenges (high first) and the low ones listed as outstanding (`low_challenges`, `outstanding_low`), blocked work (`blocked_work`), open corrections (`corrections`), the recent changes (`recent_changes`), pending clarifications, overrides, accepted risks, and any document error under `issues`;
    - the artefacts and any that are not `ok`;
    - the alias health;
    - if `overview.current` is false, that `s00-README.md` was hand-edited or out of date and has been regenerated: the stage documents are the authority.
-4. **End with the single next action** exactly as `next` gives it. Do not invent a different one.
+4. **End with the single next action** exactly as `next` gives it, with its `purpose` (awareness, understanding, decision, validation or approval). Do not invent a different one.
 
 ## Rules
+
+- Every request to a person states its purpose, one of awareness, understanding, decision, validation or approval; use the `purpose` the helper gives (on `next_action` and on each review list) and do not invent one.
 
 - Report facts from the helper. Do not summarise, soften or add to a document's own text, and do not decide whether a stage is ready.

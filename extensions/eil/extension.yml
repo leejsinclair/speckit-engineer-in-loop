@@ -33,8 +33,10 @@ provides:
     - {name: speckit.eil.artifact,     file: commands/speckit.eil.artifact.md,     description: "Record an exported wireframe or diagram image with its source"}
     - {name: speckit.eil.approve,      file: commands/speckit.eil.approve.md,      description: "Record a stage approval (human confirmation)"}
     - {name: speckit.eil.override,     file: commands/speckit.eil.override.md,     description: "Record a named, reasoned override"}
-    - {name: speckit.eil.amend,        file: commands/speckit.eil.amend.md,        description: "Re-sign an approval covered entirely by cited human decisions"}
-    - {name: speckit.eil.review,       file: commands/speckit.eil.review.md,       description: "Walk a stage's changes since approval one at a time, then re-sign it"}
+    - {name: speckit.eil.accept,       file: commands/speckit.eil.accept.md,       description: "Accept the changes to an approved stage with one short confirmation"}
+    - {name: speckit.eil.correct,      file: commands/speckit.eil.correct.md,      description: "Report a problem in an earlier artefact, show the fix and its impact, and apply it after agreement"}
+    - {name: speckit.eil.amend,        file: commands/speckit.eil.amend.md,        description: "Superseded alias: re-sign an approval covered by cited decisions (use accept)"}
+    - {name: speckit.eil.review,       file: commands/speckit.eil.review.md,       description: "Superseded alias: walk a stage's changes one at a time (use accept)"}
     - {name: speckit.eil.next,         file: commands/speckit.eil.next.md,         description: "Do the next step the story is waiting for, and stop at every human decision"}
     - {name: speckit.eil.status, aliases: ["speckit.eil-0-status"],       file: commands/speckit.eil.status.md,       description: "Where the story is, who approved what, what is outstanding"}
 

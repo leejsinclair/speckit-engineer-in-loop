@@ -88,9 +88,25 @@ The number in each command is the number in the document's file name, and `/spec
 - `/speckit-eil-artifact`: you export a wireframe from Figma (PNG, SVG, PDF or JPG) and the helper records the file, its SHA-256 and the link to the exact frame. The AI never draws or edits one.
 - `/speckit-clarify` then `/speckit-eil-resolve`: an answer collected during clarification is written into the AI Specification as *pending* and must be carried to the earliest stage it affects. Plan and Tasks are refused while any is pending.
 - `/speckit-eil-override`: a configured person waives one criterion, naming the reason. It stays visible in every later stage.
+- `/speckit-eil-accept`: brings a changed, previously approved stage back. It lists what changed and which changes a recorded human decision already covers; if all are covered, one sign-off carries the approval forward, otherwise you answer the uncovered changes in one reply and confirm. The approval records how it was reached (`first`, `carried-forward` or `reviewed`) and what it rests on. `/speckit-eil-amend` and `/speckit-eil-review-changes` remain as superseded aliases.
 - `/speckit-eil-amend`: re-signs a stage's approval when it needs re-review only because of a change already covered by a recorded human decision (an accepted challenge, a resolved open question, a carried clarify answer, or an `/speckit-eil-review-changes` acceptance) — in place of a full re-approval. It refuses if anything else changed, or if any `[ai-draft]` tag remains.
 - `/speckit-eil-review-changes`: for a change with no earlier decision to cite — new, or reworded during implementation — walks you through each changed item and section one at a time, records your "ok" as the decision itself, then re-signs the approval from those acceptances. Asks no comprehension question when everything really is covered.
 - `/speckit-eil-abbreviate`, `/speckit-eil-trace`, `/speckit-eil-status`, `/speckit-analyze` (which also checks the whole traceability chain) and `/speckit-checklist`.
+
+**What you are asked, and why.** Every request for your attention states its purpose: *awareness*, *understanding*, *decision*, *validation* or *approval*. You are not asked to reconfirm something already established (an approval, an answer, a recorded decision) unless it has materially changed, and what the helper can work out itself (coverage, traceability, whether content changed, whether a cited decision exists) it works out rather than asking you.
+
+- **One reply per list.** Anything that needs your review comes as a single list: what each entry is, why it is there, and the limits of the check. Reply once, in your own words: "ok to all", "ok except REQ-002" or a question about one entry. Your reply is recorded word for word; the AI never supplies or completes it. `/speckit-eil-accept` does this for changed stages, and the same list shape is used for AI-inferred content, tasks that may need rework, evidence rows, low-severity challenges and content of unknown currency.
+- **Only what depends on a change is stale.** Changing one decision marks the blocks, tasks and evidence that trace to it, not the whole package. `enter` refuses only the work that depends on the changed item (`work-blocked`); other tasks continue.
+- **Accept and correct.** `/speckit-eil-accept` brings an edited stage back; if every change is covered by a decision you already recorded, one "ok" carries the approval forward, marked as carried forward and naming what it rests on. `/speckit-eil-correct` handles a mistake found later, in implementation or verification: it proposes the owning stage, shows the corrected wording before anything is applied, and records your wording verbatim.
+- **Low-severity challenges do not block.** They are listed as outstanding at approval and in the overview. Anyone can raise a challenge's severity; only a configured confirmer for the stage can lower it, and both are recorded with the person's name.
+
+What the helper does not establish, stated plainly:
+
+- **Restated content (FR-014).** A block that cites a settled source is checked by hash. The check cannot prove that two wordings mean the same thing; you can mark any block inferred.
+- **Evidence (FR-035).** An evidence row naming a test is confirmed only by finding that test in the named file. The helper does not run it, so a row confirmed this way shows the test exists, not that it passes.
+- **Your reply (D-36).** A reply is mapped to the flags you meant, and the helper refuses only obvious mismatches (for example "ok" with an exception named). It cannot tell whether you read the list.
+- **Correction wording (D-38).** The helper records the wording as given and cannot tell who wrote it.
+- **Hand-edited provenance (R-21).** The `provenance` region is not part of the fingerprint. Editing it by hand can make a block look reviewed; this is detectable in version control and is an attestation-level limit, like the gates.
 
 **Diagrams** are Mermaid text inside the stage document (C4 context, container and component; sequence; ER), so a change to a diagram is a change to the document. The helper reads them line by line and checks them against each other (an external system must have the same name in the context and container views; a technical sequence's participants must be C4 elements; an ER diagram names its data store). **It never renders them**, and Mermaid's C4 support is experimental, so a construct outside the accepted subset is reported, not skipped. A diagram from another tool can be attached as an image and is then not structurally checked.
 
@@ -117,7 +133,7 @@ What that does, and does not do:
 
 ## Trials
 
-The automated suite covers everything that code decides (1300 tests: unit, contract against a real installed Spec Kit, and scenarios that drive the installed helper). It cannot show that an AI agent *follows* the prompts, or measure how long real stories take. Those are human trials, with protocols and blank recording sheets in [`docs/trials.md`](docs/trials.md), and **none has been run yet**. Until they are, treat the prompt behaviour as designed and unproven.
+The automated suite covers everything that code decides (over 1,700 tests: unit, contract against a real installed Spec Kit, and scenarios that drive the installed helper). It cannot show that an AI agent *follows* the prompts, or measure how long real stories take. Those are human trials, with protocols and blank recording sheets in [`docs/trials.md`](docs/trials.md), and **none has been run yet**. Until they are, treat the prompt behaviour as designed and unproven.
 
 Known limits, stated plainly:
 

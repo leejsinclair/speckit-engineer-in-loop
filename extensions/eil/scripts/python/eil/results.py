@@ -21,6 +21,7 @@ REFUSAL_CODES = frozenset(
         "open-challenge",
         "open-question",
         "unreviewed-ai-content",
+        "not-restated",
         "pending-clarification",
         "ai-spec-not-traceable",
         "ai-spec-missing",
@@ -55,6 +56,21 @@ REFUSAL_CODES = frozenset(
         "tasks-missing",
         "not-amendable",
         "amend-not-covered",
+        "changes-unanswered",
+        "confirmation-required",
+        "acceptance-conflict",
+        "list-changed",
+        "digest-required",
+        "reply-required",
+        "reply-mismatch",
+        "task-completed-against-earlier-version",
+        "evidence-for-earlier-version",
+        "work-blocked",
+        "amend-not-covering",
+        "owner-ambiguous",
+        "owner-not-candidate",
+        "summary-missing",
+        "review-finding-open",
     }
 )
 
@@ -65,11 +81,14 @@ FINDING_CODES = frozenset(
         "malformed-item",
         "duplicate-id",
         "dangling-trace",
+        "trace-cycle",
+        "completed-while-blocked",
         # documents
         "malformed-region",
         "malformed-record",
         "malformed-fence",
         "malformed-approval",
+        "malformed-provenance",
         "malformed-comprehension",
         "not-utf8",
         # artifacts and diagrams (document-format.md)
@@ -96,6 +115,7 @@ FINDING_CODES = frozenset(
         "comprehension-incomplete",
         # human-decided provenance
         "decided-source-invalid",
+        "correction-wording-mismatch",
     }
 )
 
@@ -107,13 +127,17 @@ class Refusal:
     code: str
     message: str
     fix: str = ""
+    existing: str = ""
 
     def __post_init__(self) -> None:
         if self.code not in REFUSAL_CODES:
             raise ValueError(f"unregistered refusal code: {self.code!r}")
 
     def to_json(self) -> dict[str, str]:
-        return asdict(self)
+        out = asdict(self)
+        if not out["existing"]:
+            del out["existing"]
+        return out
 
 
 @dataclass(frozen=True)

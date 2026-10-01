@@ -67,7 +67,7 @@ def test_installing_from_the_archives_gives_a_working_project(
     helper = scratch_project / ".specify" / "extensions" / "eil" / "scripts" / "python" / "eil"
     assert (helper / "__main__.py").is_file()
     skills = {p.parent.name for p in (scratch_project / ".claude" / "skills").glob("speckit-eil-*/SKILL.md")}
-    assert len(skills) == 27  # 20 commands and 7 numbered aliases
+    assert len(skills) == 29  # 22 commands and 7 numbered aliases
     plan = (scratch_project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").read_text(encoding="utf-8")
     assert "source: preset:engineer-in-the-loop" in plan and "eil enter plan" in plan
     ran = scratch.run(["python3", str(helper), "status", "--json"], scratch_project, check=False)

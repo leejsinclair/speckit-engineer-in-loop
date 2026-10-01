@@ -18,17 +18,28 @@ from .trace import ParseResult, build_graph, item_hash, parse_document
 DEFINITION = ("requirements", "functional", "technical")
 
 
+_SCANNED: dict[tuple[tuple[str, str], ...], dict[str, ParseResult]] = {}
+
+
 def parsed_story(pkg: Package) -> dict[str, ParseResult]:
     """Every existing stage's document, parsed and scanned (diagrams and exports attached)."""
-    parsed: dict[str, ParseResult] = {}
+    docs = {}
     for stage in pkg.existing_stages():
         try:
-            doc = pkg.doc(stage)
+            docs[stage] = pkg.doc(stage)
         except UnicodeDecodeError:
             continue
-        parsed[stage] = parse_document(doc)
-        scan_document(doc, stage, parsed[stage])  # attaches diagrams and exports so hashes cover them
-    return parsed
+    key = tuple((stage, doc.text) for stage, doc in docs.items())
+    cached = _SCANNED.get(key)
+    if cached is None:
+        cached = {}
+        for stage, doc in docs.items():
+            cached[stage] = parse_document(doc)
+            scan_document(doc, stage, cached[stage])  # attaches diagrams and exports so hashes cover them
+        if len(_SCANNED) >= 4:
+            _SCANNED.clear()
+        _SCANNED[key] = cached
+    return dict(cached)
 
 
 def _approval(pkg: Package, stage: str) -> dict | None:

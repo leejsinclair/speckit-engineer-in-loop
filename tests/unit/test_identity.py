@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from eil import identity
 from eil.identity import (
+    CONFIG_STAGES,
     Config,
     ConfigError,
     confirmer_refusal,
@@ -62,7 +63,7 @@ def test_yaml_subset_reads_the_shipped_template() -> None:
     template = Path(__file__).resolve().parents[2] / "extensions" / "eil" / "config-template.yml"
     data = parse_simple_yaml(template.read_text(encoding="utf-8"))
     assert data["default_developer"] is None
-    assert data["approvers"] == {"requirements": [], "functional": [], "technical": [], "completion": []}
+    assert data["approvers"] == dict.fromkeys(CONFIG_STAGES, [])
     assert data["abbreviation_authorisers"] == []
 
 
@@ -81,7 +82,7 @@ def test_defaults_when_no_config_exists(tmp_path: Path) -> None:
     config = load_config(tmp_path)
     assert config == Config(
         default_developer=None,
-        approvers={"requirements": [], "functional": [], "technical": [], "completion": []},
+        approvers=dict.fromkeys(CONFIG_STAGES, []),
         abbreviation_authorisers=[],
     )
 

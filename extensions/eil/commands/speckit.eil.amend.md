@@ -15,6 +15,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Superseded by `/speckit-eil-accept`
+
+This command is superseded. `amend` is now a short alias: `/speckit-eil-accept` lists the changes, shows which are covered and takes one sign-off, so prefer it. This command still works as described below.
+
 ## What this command is for
 
 A stage can become `needs-re-review` for a reason that is nothing but the developer's own prior decision, already recorded — an accepted challenge, a resolved open question, a clarify answer carried upstream, **or an `eil review` acceptance** (`RVW-###`, from `/speckit-eil-review-changes`). Re-running the whole approval ceremony for that is unneeded work: `eil amend` re-signs the existing approval instead, but only when it can verify every change traces to a decision the developer names. It is not a lighter approval and not a rubber stamp: the helper still refuses it if anything unaccounted for changed, if `[ai-draft]` remains, or if a cited decision does not check out. It never supplies the attestation, the reason, or the list of decisions — the human gives all three.

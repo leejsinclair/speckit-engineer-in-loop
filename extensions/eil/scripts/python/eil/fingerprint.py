@@ -4,8 +4,9 @@ The algorithm is the normative one in contracts/document-format.md:
 
 1. decode UTF-8 (failure is ``NotUtf8``, there is no fingerprint);
 2. ``\\r\\n`` and lone ``\\r`` become ``\\n``;
-3. remove every ``approval``, ``assessment`` and ``comprehension`` region, including its marker
-   lines and any single blank line directly after the end marker;
+3. remove every ``approval``, ``assessment``, ``comprehension``, ``provenance`` and ``changelog``
+   region, including its marker lines and any single blank line directly after the end marker (a
+   ``## Change Log`` or ``## Record`` heading directly above its region goes with it);
 4. remove every ``[ai-draft]`` tag (and one preceding space) that sits **outside an HTML
    comment**: reviewing and untagging a human's own text is not a content change (research D-23;
    matches ``trace.item_hash``, which already excludes it from the item hash). The templates'
@@ -24,9 +25,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+from functools import lru_cache
 from pathlib import Path
 
-EXCLUDED_REGIONS = ("approval", "assessment", "comprehension")
+EXCLUDED_REGIONS = ("approval", "assessment", "comprehension", "provenance", "changelog")
+# The helper adds these two headings with their regions on first write; the heading goes with the
+# region so that adding them never changes a fingerprint (contracts/document-format.md, D-42).
+_OWN_HEADING = {"changelog": "change log", "provenance": "record"}
+_H2_TITLE = re.compile(r"^##\s+(?P<title>.+?)\s*#*\s*$")
 
 _BEGIN = {f"<!-- eil:begin {name} -->": name for name in EXCLUDED_REGIONS}
 _END = {name: f"<!-- eil:end {name} -->" for name in EXCLUDED_REGIONS}
@@ -53,6 +59,12 @@ def _strip_regions(lines: list[str]) -> list[str]:
             kept.append(lines[i])
             i += 1
             continue
+        heading = _OWN_HEADING.get(name)
+        if heading is not None:
+            last = next((j for j in range(len(kept) - 1, -1, -1) if kept[j].strip()), None)
+            match = _H2_TITLE.match(kept[last]) if last is not None else None
+            if match and " ".join(match["title"].split()).casefold() == heading:
+                del kept[last:]
         i = end + 1
         if i < len(lines) and lines[i].strip() == "":
             i += 1  # the single blank line directly after the end marker
@@ -123,6 +135,7 @@ def _digest(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+@lru_cache(maxsize=256)
 def fingerprint_text(text: str) -> str:
     return _digest(normalise(text))
 

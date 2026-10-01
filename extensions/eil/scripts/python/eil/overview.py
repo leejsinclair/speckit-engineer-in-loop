@@ -14,10 +14,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import aliases, comprehension
+from . import aliases, blockstatus, comprehension, staleness
 from .artifacts import artifact_state, scan_document
 from .gates import CRITERIA_BY_STAGE, INTEGRITY_CODES, check_stage
-from .package import APPROVABLE, DOC_FILES, OVERVIEW, STAGES, Package, StageState
+from .package import APPROVABLE, DOC_FILES, OVERVIEW, STAGES, Package, StageState, reached_of
+from .records import challenge_severity
 from .results import Finding
 from .trace import ParseResult, parse_document, story_findings
 
@@ -71,16 +72,41 @@ class Model:
     open_questions: list[str] = field(default_factory=list)
     accepted_risks: list[dict[str, str]] = field(default_factory=list)
     open_challenges: list[str] = field(default_factory=list)
+    low_challenges: dict[str, list[str]] = field(default_factory=dict)
     pending_clarifications: list[str] = field(default_factory=list)
     overrides: list[dict[str, str]] = field(default_factory=list)
     issues: list[Finding] = field(default_factory=list)
     abbreviated: list[dict[str, str]] = field(default_factory=list)
     comprehension: dict[str, dict[str, Any]] = field(default_factory=dict)
     aliases: list[dict[str, Any]] = field(default_factory=list)
+    blocked_work: list[dict[str, Any]] = field(default_factory=list)
+    rederive: list[str] = field(default_factory=list)
+    corrections: list[dict[str, Any]] = field(default_factory=list)
+    recent_changes: list[dict[str, Any]] = field(default_factory=list)
+    unsettled: dict[str, list[str]] = field(default_factory=dict)
+    touched_artifacts: dict[str, str] = field(default_factory=dict)
+    untouched_artifacts: list[str] = field(default_factory=list)
+    deferred_challenges: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def overall(self) -> str:
         return "complete" if self.current is None else self.states[self.current].state
+
+
+def _collect_completion(pkg: Package, model: Model) -> None:
+    from . import verification
+    from .records import deferred_challenges
+
+    model.deferred_challenges = deferred_challenges(pkg)
+    if not pkg.exists("verification"):
+        return
+    try:
+        model.touched_artifacts = staleness.touched_artifacts(pkg)
+        model.untouched_artifacts = [
+            a for a in verification.approved_artifact_ids(pkg) if a not in model.touched_artifacts
+        ]
+    except UnicodeDecodeError:
+        return
 
 
 def collect(pkg: Package) -> Model:
@@ -88,6 +114,7 @@ def collect(pkg: Package) -> Model:
     model = Model(states, pkg.current_stage())
     parsed_by_stage: dict[str, ParseResult] = {}
     issues: list[Finding] = []
+    blocking: list[tuple[bool, str]] = []
     for stage in pkg.existing_stages():
         try:
             doc = pkg.doc(stage)
@@ -127,7 +154,11 @@ def collect(pkg: Package) -> Model:
         for record in doc.records():
             body = record.obj or {}
             if record.kind == "challenge" and body.get("status", "open") != "closed" and body.get("id"):
-                model.open_challenges.append(str(body["id"]))
+                rating = challenge_severity(body)
+                if rating == "low":
+                    model.low_challenges.setdefault(stage, []).append(str(body["id"]))
+                else:
+                    blocking.append((rating != "high", str(body["id"])))
             elif record.kind == "override" and body.get("id"):
                 model.overrides.append(
                     {
@@ -147,9 +178,36 @@ def collect(pkg: Package) -> Model:
         if (finding.code, finding.where) not in seen:
             seen.add((finding.code, finding.where))
             model.issues.append(finding)
-    model.open_challenges = sorted(set(model.open_challenges))
+    model.open_challenges = [cid for _, cid in sorted(set(blocking))]
+    model.low_challenges = {stage: sorted(set(ids)) for stage, ids in model.low_challenges.items()}
     model.aliases = _aliases(pkg)
+    if any(pkg.exists(stage) for stage in staleness.DERIVED):
+        try:
+            blocked, again = staleness.scoped_work(pkg)
+        except UnicodeDecodeError:
+            blocked, again = {}, {}
+        model.blocked_work = staleness.rows(blocked)
+        model.rederive = list(again)
+    _collect_backwards(pkg, model)
+    _collect_completion(pkg, model)
     return model
+
+
+def _collect_backwards(pkg: Package, model: Model) -> None:
+    from . import changelog, corrections, reviews
+
+    try:
+        model.corrections = [
+            {"id": c.get("id"), "item": c.get("item"), "owner": stage, "found_in": c.get("found_in")}
+            for stage, c in corrections.open_all(pkg)
+        ]
+        model.recent_changes = changelog.recent(pkg)
+        for stage in pkg.existing_stages():
+            keys = [e.key for e in reviews.build_list(pkg, stage, "unsettled-challenges").entries]
+            if keys:
+                model.unsettled[stage] = keys
+    except (OSError, UnicodeDecodeError):
+        pass
 
 
 def _aliases(pkg: Package) -> list[dict[str, Any]]:
@@ -193,6 +251,15 @@ def _comprehension_text(approval: dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def _reached_text(approval: dict[str, Any]) -> str:
+    reached = reached_of(approval)
+    if reached == "first":
+        return "first approval"
+    rests_on = approval.get("rests_on") or []
+    label = "carried forward" if reached == "carried-forward" else "reviewed"
+    return f"{label}, resting on {', '.join(rests_on)}" if rests_on else label
+
+
 def _approval_rows(model: Model) -> str:
     rows = []
     for stage in STAGES:
@@ -202,22 +269,35 @@ def _approval_rows(model: Model) -> str:
             fingerprint = str(a.get("fingerprint", ""))
             short = fingerprint.split(":", 1)[-1][:12]
             rows.append(
-                f"| {stage} | {a.get('by', '')} | {a.get('at', '')} | {short} | {_comprehension_text(a)} |"
+                f"| {stage} | {a.get('by', '')} | {a.get('at', '')} | {short} | {_comprehension_text(a)} | {_reached_text(a)} |"
             )
     if not rows:
         return "none"
     return "\n".join(
-        ["| Stage | Approved by | At | Fingerprint | Comprehension |", "|---|---|---|---|---|", *rows]
+        ["| Stage | Approved by | At | Fingerprint | Comprehension | Reached |", "|---|---|---|---|---|---|", *rows]
     )
 
 
 def _outstanding(model: Model) -> str:
     overrides = [f"{o['id']} ({o['stage']} {o['criterion']} by {o['by']})" for o in model.overrides]
     issues = [f"{f.code} at {f.where}" for f in model.issues]
+    blocked = [f"{r['id']} ({r['because'][0]})" for r in model.blocked_work]
+    fixing = [f"{c['id']} ({c['item']} in {c['owner']})" for c in model.corrections]
+    unsettled = [f"{k} ({stage})" for stage, keys in model.unsettled.items() for k in keys]
+    recent = [f"{r.get('at', '')} {r.get('item', '')}: {r.get('summary', '')}" for r in model.recent_changes]
     return "\n".join(
         [
+            *([f"- Open corrections: {'; '.join(fixing)}"] if fixing else []),
+            *([f"- Unsettled challenges: {'; '.join(unsettled)}"] if unsettled else []),
+            *([f"- Recent changes: {'; '.join(recent)}"] if recent else []),
+            *([f"- Blocked work: {'; '.join(blocked)}"] if blocked else []),
             f"- Open questions: {_join(model.open_questions)}",
             f"- Open challenges: {_join(model.open_challenges)}",
+            *(
+                [f"- Low challenges (outstanding, not blocking): {_join(sorted(c for v in model.low_challenges.values() for c in v))}"]
+                if model.low_challenges
+                else []
+            ),
             f"- Pending clarifications: {_join(model.pending_clarifications)}",
             f"- Overrides: {_join(overrides)}",
             f"- Issues: {'; '.join(issues) if issues else 'none'}",
@@ -301,8 +381,10 @@ def _open_tasks(pkg: Package) -> int:
         return 0
 
 
-def _action(kind: str, stage: str | None, command: str | None, message: str) -> dict[str, Any]:
-    return {"kind": kind, "stage": stage, "command": command, "message": message}
+def _action(
+    kind: str, stage: str | None, command: str | None, message: str, purpose: str = "awareness"
+) -> dict[str, Any]:
+    return {"kind": kind, "stage": stage, "command": command, "message": message, "purpose": purpose}
 
 
 def next_action(pkg: Package, model: Model) -> dict[str, Any]:
@@ -319,6 +401,17 @@ def next_action(pkg: Package, model: Model) -> dict[str, Any]:
             stage,
             CHALLENGE_COMMAND,
             f"Answer challenge {model.open_challenges[0]}, then approve {stage}.",
+            "decision",
+        )
+    if model.unsettled:
+        first = next(iter(model.unsettled))
+        return _action(
+            "human",
+            first,
+            "/speckit-eil-accept",
+            f"Review the challenges set aside in {first} whose target changed since "
+            f"({', '.join(model.unsettled[first])}): eil review list --stage {first} --kind unsettled-challenges.",
+            "decision",
         )
     if state.state == "not-started":
         if stage == "verification" and _open_tasks(pkg):
@@ -334,12 +427,14 @@ def next_action(pkg: Package, model: Model) -> dict[str, Any]:
             "human",
             stage,
             APPROVE_COMMAND,
-            f"Re-review {stage} ({state.reason}). If every change is already a recorded decision, "
-            f"/speckit-eil-amend can re-sign it from those ids; otherwise walk through each change "
-            f"with /speckit-eil-review-changes; or approve it again with {APPROVE_COMMAND}.",
+            f"Re-review {stage} ({state.reason}): run /speckit-eil-accept to list what changed, answer it "
+            f"in one reply and confirm; or approve it again with {APPROVE_COMMAND}.",
+            "validation",
         )
     if state.state == "in-review":
-        return _action("human", stage, APPROVE_COMMAND, f"Approve {stage} with {APPROVE_COMMAND}.")
+        return _action(
+            "human", stage, APPROVE_COMMAND, f"Approve {stage} with {APPROVE_COMMAND}.", "approval"
+        )
     if stage in CRITERIA_BY_STAGE:
         unmet = check_stage(pkg, stage, write=False).unmet()
         if unmet and all(c.kind == "judgment" and c.reason == "no judgment supplied" for c in unmet):
@@ -386,6 +481,13 @@ def status(pkg: Package, template: str | None = None) -> dict[str, Any]:
             entry["affected_items"] = reached[stage]
         if state.state == "approved" and state.approval:
             entry["approval"] = {k: state.approval.get(k) for k in ("by", "at", "fingerprint")}
+            entry["approval"]["reached"] = reached_of(state.approval)
+            if state.approval.get("rests_on"):
+                entry["approval"]["rests_on"] = state.approval["rests_on"]
+        if model.low_challenges.get(stage):
+            entry["outstanding_low"] = model.low_challenges[stage]
+        if pkg.exists(stage):
+            entry["blocks"] = blockstatus.counts(pkg, stage)
         stages[stage] = entry
     if template is None:
         overview_report: dict[str, Any] = {"current": None}
@@ -406,15 +508,22 @@ def status(pkg: Package, template: str | None = None) -> dict[str, Any]:
         "outstanding": {
             "open_questions": model.open_questions,
             "open_challenges": model.open_challenges,
+            "low_challenges": sorted(c for ids in model.low_challenges.values() for c in ids),
             "pending_clarifications": model.pending_clarifications,
             "accepted_risks": [r["id"] for r in model.accepted_risks],
             "overrides": [o["id"] for o in model.overrides],
+            "deferred_challenges": model.deferred_challenges,
         },
+        "diagram_currency": {"touched": model.touched_artifacts, "untouched": model.untouched_artifacts},
         "comprehension": model.comprehension,
         "artifacts": [{k: a[k] for k in ("id", "kind", "stage", "form", "state")} for a in model.artifacts],
         "aliases": model.aliases,
         "overview": overview_report,
         "issues": [f.to_json() for f in model.issues],
+        "blocked_work": model.blocked_work,
+        "rederive": model.rederive,
+        "corrections": model.corrections,
+        "recent_changes": model.recent_changes,
         "next": action["message"],
         "next_action": action,
     }

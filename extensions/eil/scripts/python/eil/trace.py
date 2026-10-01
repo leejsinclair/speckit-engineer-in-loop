@@ -16,7 +16,7 @@ from .blocks import Doc
 from .fingerprint import fingerprint_text, hash_fragment
 from .results import Finding
 
-KINDS = ("REQ", "UC", "FR", "NFR", "DEC", "AIS", "EVD", "OQ", "OVR", "CH", "ART")
+KINDS = ("REQ", "UC", "FR", "NFR", "DEC", "AIS", "EVD", "OQ", "OVR", "CH", "ART", "RF")
 _KIND_ALT = "|".join(KINDS)
 
 ITEM_LINE = re.compile(
@@ -38,12 +38,18 @@ _EVD_LABEL = re.compile(
     r"(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.*?)\s*$",
     re.IGNORECASE,
 )
+RF_FIELDS = ("root", "accepted by", "reason")
+_RF_LABEL = re.compile(
+    r"^\s*(?:[-*]\s+)?(?:\*\*)?(?P<label>Root|Accepted by|Reason)"
+    r"(?:\*\*)?\s*:\s*(?:\*\*)?\s*(?P<value>.*?)\s*$",
+    re.IGNORECASE,
+)
 _CLAUSE = re.compile(
     r"\((?P<name>traces|code|status|material|store|accepted-by|decided):\s*(?P<value>[^)]*)\)"
 )
 _TAG = re.compile(r"\s*\[(?P<tag>ai-draft|pending-clarification)\]")
 _ID = re.compile(r"^(?:[A-Z]{2,3}-\d{3}|T\d{3,})$")  # an item id, or a task id (evidence traces to tasks)
-_DECIDED_ID = re.compile(r"^(?:CH|OQ|AIS|RVW)-\d{3}$")  # a recorded human decision (decided: ...)
+_DECIDED_ID = re.compile(r"^(?:CH|OQ|AIS|RVW|CR)-\d{3}$")  # a recorded human decision (decided: ...)
 _CODE_REF = re.compile(r"^(?:[0-9a-f]{7,40}|PR#\d+)$")
 _STATUSES = ("open", "resolved", "accepted", "verified", "failed", "unverified", "excepted")
 
@@ -222,6 +228,16 @@ def evidence_fields(item: Item) -> dict[str, str]:
     return fields
 
 
+def review_finding_fields(item: Item) -> dict[str, str]:
+    """The labelled lines of an ``RF`` item: root, accepted by and reason (same rules as ``EVD`` rows)."""
+    fields: dict[str, str] = {}
+    for row in item.text.splitlines()[1:]:
+        labelled = _RF_LABEL.match(row)
+        if labelled:
+            fields[labelled["label"].lower()] = labelled["value"]
+    return fields
+
+
 def decision_fields(item: Item) -> dict[str, str]:
     """The labelled fields of a ``DEC`` item (FR-032, FR-033): decision, reason, rejected alternative,
     trade-off and owner. A field whose label is present but has no text is returned empty."""
@@ -290,7 +306,7 @@ def _build_item(
                 Finding(
                     "malformed-item",
                     where,
-                    f"decided {value!r} is not a CH-###, OQ-###, AIS-### or RVW-### id",
+                    f"decided {value!r} is not a CH-###, OQ-###, AIS-###, RVW-### or CR-### id",
                 )
             )
     title = _CLAUSE.sub("", rest)
@@ -308,7 +324,16 @@ _H2 = re.compile(r"^##\s+(?P<title>.+?)\s*#*\s*$")
 # content a human drafts — excluded from section_fingerprints so recording a challenge, override
 # or review, or checking a gate, is never itself a "changed section" needing its own review (D-28).
 ADMINISTRATIVE_SECTIONS = frozenset(
-    {"reviews", "challenges", "overrides", "quality assessment", "approval", "comprehension check"}
+    {
+        "reviews",
+        "challenges",
+        "overrides",
+        "quality assessment",
+        "approval",
+        "comprehension check",
+        "change log",
+        "record",
+    }
 )
 
 

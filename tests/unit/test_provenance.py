@@ -118,7 +118,7 @@ def test_an_ais_id_is_eligible_once_it_exists(story_dir: Story) -> None:
 
 def test_an_id_shaped_wrong_is_never_eligible(story_dir: Story) -> None:
     package = Package(story_dir.root)
-    assert decided_eligible(package, "FR-004") == "'FR-004' is not a CH-###, OQ-###, AIS-### or RVW-### id"
+    assert decided_eligible(package, "FR-004") == "'FR-004' is not a CH-###, OQ-###, AIS-###, RVW-### or CR-### id"
 
 
 # ---- decided_findings, wired into the gate
@@ -200,7 +200,7 @@ def test_amend_refuses_a_change_outside_any_item(story_dir: Story, tmp_path: Pat
     package2 = Package(story_dir.root)
     with pytest.raises(EilExit) as exc:
         amend(package2, config, "requirements", ["CH-004"], "Ada Dev", "Yes.")
-    assert refusals(exc) == ["amend-not-covered"]
+    assert "amend-not-covered" in refusals(exc)
 
 
 def test_amend_succeeds_when_every_change_is_covered(
@@ -228,14 +228,14 @@ def test_amend_succeeds_when_every_change_is_covered(
     assert package3.state("requirements").state == "approved"
 
 
-def test_amend_refuses_while_an_ai_draft_tag_remains(
+def test_amend_refuses_while_a_block_is_unreviewed(
     story_dir: Story, tmp_path: Path, config: Config
 ) -> None:
     package = ready_and_approved(story_dir, tmp_path, config)
     text = package.read("requirements")
     edited = text.replace(
         "**REQ-001**: The system detects duplicate customers on import.",
-        "**REQ-001**: The system detects duplicate customers on import, and more. (decided: CH-004) [ai-draft]",
+        "**REQ-001**: The system detects duplicate customers on import, and more.",
     ).replace("## Challenges\n", "## Challenges\n\n" + record_block("challenge", CHALLENGE_ACCEPTED))
     story_dir.write("requirements", edited)
     package2 = Package(story_dir.root)

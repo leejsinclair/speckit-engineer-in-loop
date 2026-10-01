@@ -126,6 +126,8 @@ def test_outstanding_items_are_listed_by_id(story_dir: Story) -> None:
     assert outstanding == {
         "open_questions": ["OQ-004"],
         "open_challenges": ["CH-002"],
+        "low_challenges": [],
+        "deferred_challenges": [],
         "pending_clarifications": [],
         "accepted_risks": ["OQ-005"],
         "overrides": ["OVR-001"],
@@ -275,7 +277,7 @@ def test_next_for_a_stage_needing_re_review(story_dir: Story) -> None:
     story_dir.append("requirements", "\nedit\n")
     next_text = status(story_dir)["next"]
     assert next_text.startswith("Re-review requirements")
-    assert "/speckit-eil-amend" in next_text and "/speckit-eil-review-changes" in next_text
+    assert "/speckit-eil-accept" in next_text and "/speckit-eil-approve" in next_text
 
 
 def test_next_is_a_single_sentence(story_dir: Story) -> None:
@@ -293,7 +295,7 @@ def next_action(story: Story) -> dict[str, Any]:
 def test_next_action_carries_kind_stage_command_and_the_same_sentence(story_dir: Story) -> None:
     story_dir.write("requirements", requirements_doc())
     result = status(story_dir)
-    assert set(result["next_action"]) == {"kind", "stage", "command", "message"}
+    assert set(result["next_action"]) == {"kind", "stage", "command", "message", "purpose"}
     assert result["next_action"]["message"] == result["next"]
 
 
@@ -304,6 +306,7 @@ def test_a_stage_not_started_is_drafting_with_the_numbered_command(story_dir: St
         "stage": "functional",
         "command": "/speckit-eil-2-functional",
         "message": "Start functional: run /speckit-eil-2-functional.",
+        "purpose": "awareness",
     }
 
 

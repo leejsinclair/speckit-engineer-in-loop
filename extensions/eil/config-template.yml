@@ -13,6 +13,12 @@ approvers:
   functional: []
   technical: []
   completion: []
+  # The derived stages are never approved, but review answers and carried-forward sign-offs on them
+  # need a confirmer. An empty list means the `technical` list, then the story's developer.
+  ai-spec: []
+  plan: []
+  tasks: []
+  verification: []
 
 # Who may abbreviate a stage (empty means the story's developer).
 abbreviation_authorisers: []

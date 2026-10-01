@@ -118,6 +118,16 @@
 
 <!-- Recorded by `eil override`, each naming who, what and why. -->
 
+## Change Log
+
+<!-- eil:begin changelog -->
+<!-- eil:end changelog -->
+
+## Record
+
+<!-- eil:begin provenance -->
+<!-- eil:end provenance -->
+
 ## Comprehension Check
 
 <!-- The record of the check taken on this version: levels, outcomes, attempts and item ids only. Never a question, an answer, a hint or a score. -->

@@ -81,7 +81,7 @@ def override(criterion: str) -> str:
 
 def test_the_table_lists_the_sections_the_verification_the_two_statuses_and_the_currency() -> None:
     table = CRITERIA_BY_STAGE["completion"]
-    assert [c.id for c in table] == [f"CMP-G{n:02d}" for n in range(1, 6)]
+    assert [c.id for c in table] == [f"CMP-G{n:02d}" for n in range(1, 9)]
     assert all(c.kind in ("structural", "traceability") for c in table)
 
 
@@ -275,3 +275,42 @@ def test_the_verification_document_can_be_present_but_open_tasks_do_not_block_co
     with_open = verification_doc(open_tasks=["T001"])
     story_dir.write("verification", with_open)
     assert approve(package, CONFIG, "completion", "Ada Dev", YES)["ok"]
+
+
+# ---- untouched artefacts need no question (FR-033)
+
+ALL_ARTS = ("ART-001", "ART-002", "ART-003", "ART-004", "ART-005", "ART-006", "ART-007")
+
+
+def test_untouched_artefacts_are_covered_by_one_untouched_line(story_dir: Story) -> None:
+    package = ready(story_dir, sections={"Diagram Currency": "- untouched: " + ", ".join(ALL_ARTS)})
+    assert crit(gate(package), "CMP-G05").status == "met"
+
+
+def test_an_untouched_line_beside_individual_lines(story_dir: Story) -> None:
+    lines = "- ART-004: current\n- untouched: " + ", ".join(a for a in ALL_ARTS if a != "ART-004")
+    assert crit(gate(ready(story_dir, sections={"Diagram Currency": lines})), "CMP-G05").status == "met"
+
+
+def test_an_artefact_on_neither_an_untouched_line_nor_its_own_line_is_missing(story_dir: Story) -> None:
+    package = ready(story_dir, sections={"Diagram Currency": "- untouched: " + ", ".join(ALL_ARTS[:6])})
+    assert "ART-007 has no line under Diagram Currency" in crit(gate(package), "CMP-G05").reason
+
+
+def test_a_touched_artefact_cannot_hide_on_the_untouched_line(story_dir: Story, monkeypatch: pytest.MonkeyPatch) -> None:
+    from eil import staleness
+
+    monkeypatch.setattr(staleness, "touched_artifacts", lambda pkg: {"ART-004": "T001 carries code that reaches it"})
+    package = ready(story_dir, sections={"Diagram Currency": "- untouched: " + ", ".join(ALL_ARTS)})
+    result = crit(gate(package), "CMP-G05")
+    assert result.status == "not-met"
+    assert "ART-004 is listed untouched but implementation touched it" in result.reason
+
+
+def test_a_touched_artefact_needs_its_own_line(story_dir: Story, monkeypatch: pytest.MonkeyPatch) -> None:
+    from eil import staleness
+
+    monkeypatch.setattr(staleness, "touched_artifacts", lambda pkg: {"ART-004": "changed"})
+    lines = "- untouched: " + ", ".join(a for a in ALL_ARTS if a != "ART-004")
+    assert "ART-004 has no line under Diagram Currency" in crit(gate(ready(story_dir, sections={"Diagram Currency": lines})), "CMP-G05").reason
+    assert crit(gate(ready(story_dir, sections={"Diagram Currency": lines + "\n- ART-004: current"})), "CMP-G05").status == "met"

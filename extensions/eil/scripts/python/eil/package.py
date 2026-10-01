@@ -38,6 +38,17 @@ ALIASES = {"spec.md": "s04-ai-spec.md", "plan.md": "s05-plan.md", "tasks.md": "s
 
 APPROVABLE = ("requirements", "functional", "technical", "completion")
 
+REACHED = ("first", "carried-forward", "reviewed")
+
+
+def reached_of(approval: dict[str, Any] | None) -> str | None:
+    """How an approval was reached; a record from before `reached` existed was a first approval."""
+    if not approval:
+        return None
+    value = approval.get("reached")
+    return value if value in REACHED else "first"
+
+
 STAGE_STATES = ("not-started", "draft", "in-review", "approved", "needs-re-review")
 
 
@@ -76,6 +87,9 @@ class StageState:
     note: str = ""  # non-blocking: upstream moved but nothing traced in this stage is affected (D-26)
 
 
+_SHARED_DOCS: dict[tuple[str, str], Doc] = {}
+
+
 class Package:
     """A feature directory. It is *governed* iff it contains ``s00-README.md`` (FR-069)."""
 
@@ -86,6 +100,7 @@ class Package:
         # changes on disk is simply read again.
         self._docs: dict[str, tuple[str, Doc]] = {}
         self._fingerprints: dict[str, tuple[str, str]] = {}
+        self._texts: dict[str, tuple[tuple[int, int], str]] = {}
         self._parsed_story: tuple[tuple[str, ...], dict[str, Any]] | None = None
 
     def parsed_story(self) -> dict[str, Any]:
@@ -141,13 +156,26 @@ class Package:
         return [stage for stage in STAGES if self.exists(stage)]
 
     def read(self, stage: str) -> str:
-        return self.doc_path(stage).read_bytes().decode("utf-8")
+        path = self.doc_path(stage)
+        info = path.stat()
+        key = (info.st_mtime_ns, info.st_size)
+        held = self._texts.get(stage)
+        if held is not None and held[0] == key:
+            return held[1]
+        text = path.read_bytes().decode("utf-8")
+        self._texts[stage] = (key, text)
+        return text
 
     def doc(self, stage: str) -> Doc:
         text = self.read(stage)
         cached = self._docs.get(stage)
         if cached is None or cached[0] != text:
-            cached = (text, Doc(text, path=DOC_FILES[stage]))
+            shared = _SHARED_DOCS.get((stage, text))
+            if shared is None:
+                if len(_SHARED_DOCS) >= 24:
+                    _SHARED_DOCS.clear()
+                shared = _SHARED_DOCS[(stage, text)] = Doc(text, path=DOC_FILES[stage])
+            cached = (text, shared)
             self._docs[stage] = cached
         return cached[1]
 
@@ -221,6 +249,19 @@ class Package:
                     approval,
                     **base,
                 )
+            recorded_findings = approval.get("review_findings") if stage == "completion" else None
+            if isinstance(recorded_findings, dict):
+                from .verification import finding_hashes
+
+                fresh = sorted(i for i, h in finding_hashes(self).items() if recorded_findings.get(i) != h)
+                if fresh:
+                    return StageState(
+                        stage,
+                        "needs-re-review",
+                        f"review finding recorded after completion: {', '.join(fresh)}",
+                        approval,
+                        **base,
+                    )
             if moved:
                 return StageState(
                     stage,

@@ -21,7 +21,7 @@ from typing import Any
 
 from .results import Finding
 
-REGION_NAMES = ("approval", "assessment", "comprehension")
+REGION_NAMES = ("approval", "assessment", "comprehension", "provenance", "changelog")
 
 _FENCE_OPEN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 _FENCE_CLOSE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})\s*$")
@@ -95,6 +95,7 @@ class Doc:
         self._scan_lines()
         self._scan_regions()
         self._check_records()
+        self._check_provenance()
 
     # ---- location helper
 
@@ -207,6 +208,15 @@ class Doc:
                     )
                 )
 
+    def _check_provenance(self) -> None:
+        if "provenance" not in self.regions:
+            return
+        problem = self.read_provenance().error
+        if problem:
+            self.findings.append(
+                Finding("malformed-provenance", self.where(self.regions["provenance"].begin_no), problem)
+            )
+
     # ---- fences and records
 
     def fences_with_info(self, language: str) -> list[Fence]:
@@ -240,6 +250,17 @@ class Doc:
                 return RegionRead(obj, error)
         return RegionRead(None)
 
+    def read_provenance(self) -> RegionRead:
+        """The provenance record, checked against the allowed keys (contracts/document-format.md).
+        An unreadable or non-conforming region has ``obj`` ``None`` and an ``error`` (``malformed-provenance``)."""
+        read = self.read_region("provenance")
+        if read.error or read.obj is None:
+            return read
+        problems = provenance_problems(read.obj)
+        if problems:
+            return RegionRead(None, "; ".join(problems[:3]))
+        return read
+
     def _marker_present(self, name: str) -> bool:
         return any((m := _MARKER.match(line.raw)) and m["name"] == name for line in self.lines)
 
@@ -254,6 +275,74 @@ def _parse_object(text: str) -> tuple[dict[str, Any] | None, str | None]:
     if not isinstance(value, dict):
         return None, "JSON must be an object"
     return value, None
+
+
+# ---- the provenance record: allowed keys only
+
+PROVENANCE_KEYS = frozenset(
+    {"version", "currency", "blocks", "acceptances", "corrections", "changes", "conflicts"}
+)
+BLOCK_KEYS = frozenset(
+    {"hash", "class", "cites", "adds", "reviewed", "sources", "completed_against", "blocked_at_completion", "basis"}
+)
+REVIEWED_KEYS = frozenset({"by", "at", "list", "reply"})
+ACCEPTANCE_KEYS = frozenset(
+    {
+        "id", "stage", "kind", "digest", "by", "at", "reply", "accepted", "except", "questioned",
+        "reopened", "deferred", "reason", "resolved_conflict", "hashes", "summaries",
+    }
+)  # fmt: skip
+CORRECTION_KEYS = frozenset(
+    {
+        "id", "item", "owner", "found_in", "problem", "wording", "impact", "opened_by", "at", "status",
+        "closed_by_approval", "closed_by", "closed_at",
+    }
+)  # fmt: skip
+FOUND_IN_KEYS = frozenset({"stage", "item"})
+CHANGE_KEYS = frozenset({"at", "item", "summary", "summary_by", "origin", "accepted_by"})
+CONFLICT_KEYS = frozenset({"key", "hash", "answers"})
+BLOCK_CLASSES = ("restated", "decided", "inferred", "adopted")
+
+
+def _extra(where: str, obj: Any, allowed: frozenset[str]) -> list[str]:
+    if not isinstance(obj, dict):
+        return [f"{where} must be an object"]
+    return [f"{where} has unknown key {key!r}" for key in obj if key not in allowed]
+
+
+def provenance_problems(obj: Any) -> list[str]:
+    """Every way ``obj`` departs from the provenance grammar; empty means it conforms."""
+    problems = _extra("provenance", obj, PROVENANCE_KEYS)
+    if not isinstance(obj, dict):
+        return problems
+    blocks = obj.get("blocks", {})
+    if not isinstance(blocks, dict):
+        problems.append("blocks must be an object")
+        blocks = {}
+    for key, entry in blocks.items():
+        where = f"blocks.{key}"
+        problems += _extra(where, entry, BLOCK_KEYS)
+        if not isinstance(entry, dict):
+            continue
+        if "class" in entry and entry["class"] not in BLOCK_CLASSES:
+            problems.append(f"{where}.class {entry['class']!r} is not one of {', '.join(BLOCK_CLASSES)}")
+        if entry.get("reviewed") is not None:
+            problems += _extra(f"{where}.reviewed", entry["reviewed"], REVIEWED_KEYS)
+    for name, allowed in (
+        ("acceptances", ACCEPTANCE_KEYS),
+        ("corrections", CORRECTION_KEYS),
+        ("changes", CHANGE_KEYS),
+        ("conflicts", CONFLICT_KEYS),
+    ):
+        rows = obj.get(name, [])
+        if not isinstance(rows, list):
+            problems.append(f"{name} must be a list")
+            continue
+        for index, row in enumerate(rows):
+            problems += _extra(f"{name}[{index}]", row, allowed)
+            if name == "corrections" and isinstance(row, dict) and row.get("found_in") is not None:
+                problems += _extra(f"{name}[{index}].found_in", row["found_in"], FOUND_IN_KEYS)
+    return problems
 
 
 # ---- editing
@@ -336,4 +425,106 @@ def insert_record_after(text: str, line_no: int, kind: str, obj: Any) -> str:
     block = ["", f"```eil:{kind}", *dumps(obj).split("\n"), "```"]
     pieces = text.split("\n")
     pieces[line_no:line_no] = [line + suffix for line in block]
+    return "\n".join(pieces)
+
+
+# ---- the Change Log and Record sections (contracts/document-format.md §Marked regions)
+
+_CHANGELOG_HEAD = (
+    "| Date | Item | Change (AI-drafted, accepted as shown) | Found in | Accepted by |",
+    "|---|---|---|---|---|",
+)
+
+
+def _cell(value: Any) -> str:
+    return " ".join(str(value if value is not None else "").split()).replace("|", "\\|")
+
+
+def render_changelog(changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None) -> list[str]:
+    """The table lines for ``changes``, oldest first, or no lines when there are none."""
+    if not changes:
+        return []
+    by_id = {c.get("id"): c for c in corrections or [] if isinstance(c, dict)}
+    rows = list(_CHANGELOG_HEAD)
+    for change in changes:
+        origin = str(change.get("origin") or "")
+        found = by_id.get(origin, {}).get("found_in") if origin.startswith("CR-") else None
+        where = (
+            f"{found.get('stage')} ({found.get('item')}), {origin}"
+            if isinstance(found, dict)
+            else origin
+        )
+        cells = [
+            str(change.get("at") or "")[:10],
+            change.get("item"),
+            change.get("summary"),
+            where,
+            change.get("accepted_by"),
+        ]
+        rows.append("| " + " | ".join(_cell(c) for c in cells) + " |")
+    return rows
+
+
+def _h2_index(doc: Doc, titles: tuple[str, ...]) -> int | None:
+    """0-based index of the first ``##`` heading whose title is in ``titles`` (compared casefolded)."""
+    for index, line in enumerate(doc.lines):
+        match = _HEADING_LINE.match(line.live) if line.kind == "text" else None
+        if match and len(match["hashes"]) == 2 and " ".join(match["title"].split()).casefold() in titles:
+            return index
+    return None
+
+
+def ensure_record_sections(text: str) -> str:
+    """Add ``## Change Log`` (with its empty region) just before ``## Record`` (with its empty
+    provenance region), and ``## Record`` just before ``## Comprehension Check`` or ``## Quality
+    Assessment``, whichever comes first, or at the end. Whatever already exists is left alone."""
+    doc = Doc(text)
+    if doc._region_problem:
+        raise RegionError("the document has a malformed region; fix it before writing")
+    has_log, has_record = "changelog" in doc.regions, "provenance" in doc.regions
+    if has_log and has_record:
+        return text
+    nl = _newline(text)
+    suffix = "\r" if nl == "\r\n" else ""
+    log = ["## Change Log", "", "<!-- eil:begin changelog -->", "<!-- eil:end changelog -->", ""]
+    record = ["## Record", "", "<!-- eil:begin provenance -->", "<!-- eil:end provenance -->", ""]
+    pieces = text.split("\n")
+    if has_record:  # the log goes just above the Record heading, or above the provenance marker
+        at = doc.regions["provenance"].begin_no - 1
+        heading = _h2_index(doc, ("record",))
+        if heading is not None and heading < at:
+            at = heading
+        pieces[at:at] = [line + suffix for line in log]
+        return "\n".join(pieces)
+    if has_log:  # the Record goes just below the log region
+        at = doc.regions["changelog"].end_no
+        pieces[at:at] = [line + suffix for line in ["", *record[:-1]]]
+        return "\n".join(pieces)
+    block = [*log, *record]
+    at = _h2_index(doc, ("comprehension check", "quality assessment"))
+    if at is None:
+        tail = "" if text == "" or text.endswith("\n") else nl
+        return text + tail + ("" if text == "" else nl) + nl.join(block) + nl
+    pieces[at:at] = [line + suffix for line in block]
+    return "\n".join(pieces)
+
+
+def write_provenance(text: str, obj: dict[str, Any]) -> str:
+    """Write the provenance record, placing the Change Log and Record sections on first write.
+    Refuses an ``obj`` that would itself be ``malformed-provenance``."""
+    problems = provenance_problems(obj)
+    if problems:
+        raise RegionError("; ".join(problems[:3]))
+    return write_region(ensure_record_sections(text), "provenance", obj)
+
+
+def write_changelog(text: str, changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None) -> str:
+    """Rewrite the ``changelog`` region from ``changes`` (a generated table, never parsed)."""
+    text = ensure_record_sections(text)
+    doc = Doc(text)
+    region = doc.regions["changelog"]
+    nl = _newline(text)
+    suffix = "\r" if nl == "\r\n" else ""
+    pieces = text.split("\n")
+    pieces[region.begin_no : region.end_no - 1] = [line + suffix for line in render_changelog(changes, corrections)]
     return "\n".join(pieces)

@@ -52,6 +52,7 @@ def make_scratch_project(directory: Path) -> Path:
     git(directory, "init", "-q")
     git(directory, "config", "user.name", "Test Developer")
     git(directory, "config", "user.email", "developer@example.test")
+    git(directory, "config", "gc.auto", "0")
     specify(directory, "init", "--here", "--integration", "claude", "--force")
     git(directory, "add", "-A")
     git(directory, "commit", "-q", "-m", "baseline")

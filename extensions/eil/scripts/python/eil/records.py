@@ -12,9 +12,10 @@ import difflib
 import re
 from typing import Any
 
-from . import comprehension, impact
+from . import comprehension, impact, verification
 from .artifacts import scan_document
 from .blocks import Doc, append_record, replace_record, write_region
+from .blockstatus import unreviewed
 from .clock import utc_now
 from .fingerprint import fingerprint_text
 from .gates import (
@@ -22,7 +23,6 @@ from .gates import (
     INTEGRITY_CODES,
     Criterion,
     Sections,
-    ai_draft_lines,
     build_context,
     check_stage,
     criteria_for,
@@ -53,6 +53,18 @@ COMPLETION_REFUSALS = {
     "CMP-G04": (
         "unverified-artifact",
         "Verify the artefact, or record an exception naming who accepted it and why; or record a named override of CMP-G04",
+    ),
+    "CMP-G08": (
+        "review-finding-open",
+        "Resolve each review finding, or record who accepted it and why, in the Verification document",
+    ),
+    "CMP-G06": (
+        "task-completed-against-earlier-version",
+        "Answer the tasks list (`eil review list --kind tasks`), or record a named override of CMP-G06",
+    ),
+    "CMP-G07": (
+        "evidence-for-earlier-version",
+        "Answer the evidence list (`eil review list --kind evidence`), or record a named override of CMP-G07",
     ),
 }
 _OVERRIDE_ID = re.compile(r"OVR-(\d{3,})")
@@ -165,17 +177,37 @@ def _gate_refusals(pkg: Package, stage: str, ctx: Any, text: str) -> list[Refusa
                 "Correct them; they cannot be overridden",
             )
         )
-    drafts = ai_draft_lines(text)
-    if drafts and "unreviewed-ai-content" not in ctx_overrides:
-        lines = ", ".join(str(n) for n in drafts[:10])
+    pending = unreviewed(pkg, stage)
+    if pending and "unreviewed-ai-content" not in ctx_overrides:
+        listing = ", ".join(f"{i.key} (line {i.block.first_line})" for i in pending[:10])
         refusals.append(
             Refusal(
                 "unreviewed-ai-content",
-                f"[ai-draft] tags remain on line(s) {lines}",
-                "Review the AI's text, then remove each tag; or record an override for unreviewed-ai-content",
+                f"{len(pending)} block(s) have not been reviewed: {listing}",
+                f"Answer the inferred list for {stage} (eil review list --stage {stage} --kind inferred), "
+                "or record an override for unreviewed-ai-content",
             )
         )
+    if stage == "completion" and "unreviewed-ai-content" not in ctx_overrides:
+        refusals += _unreviewed_evidence(pkg)
     return refusals
+
+
+def _unreviewed_evidence(pkg: Package) -> list[Refusal]:
+    from .blockstatus import NEEDS_REVIEW, block_statuses
+
+    if not pkg.exists("verification"):
+        return []
+    keys = [k for k, i in block_statuses(pkg).get("verification", {}).items() if i.status == NEEDS_REVIEW]
+    if not keys:
+        return []
+    return [
+        Refusal(
+            "unreviewed-ai-content",
+            f"{len(keys)} block(s) of the verification document have not been reviewed: " + ", ".join(keys[:8]),
+            "Answer the inferred list for verification, or record an override for unreviewed-ai-content",
+        )
+    ]
 
 
 def approve(
@@ -238,6 +270,7 @@ def approve(
         "by": by.strip(),
         "at": utc_now(),
         "fingerprint": fingerprint,
+        "reached": "first",
         "attestation": attestation.strip(),
     }
     if played_back_to and played_back_to.strip():
@@ -253,8 +286,14 @@ def approve(
     all_parsed[stage] = ctx.parsed
     record["upstream_items"] = impact.upstream_item_hashes(pkg, stage, all_parsed)
     record["overrides_used"] = [str(o.get("id")) for o in ctx.overrides.values()]
+    if outstanding := open_low_challenges(pkg, stage):
+        record["outstanding"] = outstanding
+    if stage == "completion" and (deferred := deferred_challenges(pkg)):
+        record["deferred"] = deferred
     if stage in comprehension.ELIGIBLE_STAGES:  # copied so review sees skipped and revealed levels (FR-093)
         record["comprehension"] = comprehension.counts(ctx.doc.read_region("comprehension").obj or {})
+    if stage == "completion":
+        record["review_findings"] = verification.finding_hashes(pkg)
     pkg.doc_path(stage).write_bytes(write_region(text, "approval", record).encode("utf-8"))
     return {
         "ok": True,
@@ -414,8 +453,26 @@ def _target_exists(pkg: Package, stage: str, target: str) -> bool:
     return Sections(pkg.doc(stage)).find(target) is not None
 
 
-def add_challenge(pkg: Package, stage: str, target: str, text: str, by: str | None = None) -> dict[str, Any]:
-    """Record an open challenge (FR-034, FR-035), unless a person already settled this very point."""
+SEVERITIES = ("low", "medium", "high")
+
+
+def challenge_severity(record: dict[str, Any]) -> str:
+    """A challenge's severity; a record without one (or with an unknown one) reads as medium (FR-029)."""
+    value = record.get("severity")
+    return value if value in SEVERITIES else "medium"
+
+
+def add_challenge(
+    pkg: Package, stage: str, target: str, text: str, by: str | None = None, severity: str | None = None
+) -> dict[str, Any]:
+    """Record an open challenge (FR-034, FR-035), unless a person already settled this very point.
+
+    The AI must rate what it raises; a person may omit the rating (it reads as medium)."""
+    raiser = (by or "ai").strip() or "ai"
+    if severity is not None and severity not in SEVERITIES:
+        raise usage_error(f"--severity is one of {', '.join(SEVERITIES)}")
+    if severity is None and is_ai_actor(raiser):
+        raise usage_error("the AI rates each challenge it raises: give --severity high, medium or low")
     if stage not in STAGES:
         _require_stage_with_document(pkg, stage)
     if stage not in CHALLENGE_STAGES:
@@ -448,6 +505,7 @@ def add_challenge(pkg: Package, stage: str, target: str, text: str, by: str | No
                     "duplicate-of-closed",
                     f"{found.get('id')} raises the same point and is still open",
                     "Answer it instead of raising it again",
+                    existing=str(found.get("id", "")),
                 )
             )
         if found.get("response") in ("rejected", "deferred"):
@@ -462,12 +520,14 @@ def add_challenge(pkg: Package, stage: str, target: str, text: str, by: str | No
     record = {
         "id": _next_challenge_id(pkg),
         "stage": stage,
-        "raised_by": (by or "ai").strip() or "ai",
+        "raised_by": raiser,
         "raised_at": utc_now(),
         "target": target.strip(),
         "text": text.strip(),
         "status": "open",
     }
+    if severity is not None:
+        record["severity"] = severity
     pkg.doc_path(stage).write_bytes(
         append_record(pkg.read(stage), "Challenges", "challenge", record).encode("utf-8")
     )
@@ -476,6 +536,48 @@ def add_challenge(pkg: Package, stage: str, target: str, text: str, by: str | No
         "id": record["id"],
         "challenge": record,
         "text": f"Raised {record['id']} on {target}.",
+    }
+
+
+def set_challenge_severity(pkg: Package, config: Config, challenge_id: str, to: str, by: str) -> dict[str, Any]:
+    """Change a challenge's severity (FR-030, FR-048). Anyone may raise it; lowering needs a configured
+    confirmer of the stage. Every change is recorded with the person's name."""
+    if to not in SEVERITIES:
+        raise usage_error(f"--to is one of {', '.join(SEVERITIES)}")
+    located = _find_challenge(pkg, challenge_id)
+    if located is None:
+        raise refuse(
+            Refusal("unknown-item", f"{challenge_id} is not a challenge of this story", "Check the id with eil status")
+        )
+    stage, record = located
+    current: dict[str, Any] = dict(record.obj)
+    before = challenge_severity(current)
+    if before == to:
+        return {
+            "ok": True,
+            "id": challenge_id,
+            "challenge": current,
+            "text": f"{challenge_id} is already {to}.",
+        }
+    if SEVERITIES.index(to) < SEVERITIES.index(before):
+        if is_ai_actor(by):
+            raise refuse(
+                Refusal("ai-approval", f"{by!r} is the AI; a person lowers a challenge's severity", "Ask the developer")
+            )
+        problem = confirmer_refusal(by, approvers_for(pkg, config, stage), stage)
+        if problem:
+            raise refuse(problem)
+    current["severity"] = to
+    current["severity_history"] = [
+        *current.get("severity_history", []),
+        {"from": before, "to": to, "by": by.strip(), "at": utc_now()},
+    ]
+    pkg.doc_path(stage).write_bytes(replace_record(pkg.read(stage), record, current).encode("utf-8"))
+    return {
+        "ok": True,
+        "id": challenge_id,
+        "challenge": current,
+        "text": f"{challenge_id} is now {to} (was {before}), by {by.strip()}.",
     }
 
 
@@ -564,21 +666,61 @@ def answer_challenge(
     return {"ok": True, "id": challenge_id, "challenge": current, "conflict": conflict, "text": text}
 
 
-def _open_challenge_refusals(pkg: Package, stage: str) -> list[Refusal]:
-    standing = [
-        f"{r.obj.get('id', '?')} ({r.obj.get('status', 'open')})"
+def open_low_challenges(pkg: Package, stage: str) -> list[str]:
+    """Ids of the challenges of ``stage`` that are open and rated low: outstanding, not blocking (FR-030)."""
+    return sorted(
+        str(r.obj.get("id"))
+        for r in _challenge_records(pkg.doc(stage))
+        if r.obj.get("status", "open") != "closed" and challenge_severity(r.obj) == "low"
+    )
+
+
+def open_challenges_story(pkg: Package) -> list[tuple[str, str, str]]:
+    """``(stage, id, severity)`` of every challenge still standing on any stage of the story."""
+    return [
+        (stage, str(r.obj.get("id", "?")), challenge_severity(r.obj))
+        for stage in pkg.existing_stages()
         for r in _challenge_records(pkg.doc(stage))
         if r.obj.get("status", "open") != "closed"
     ]
+
+
+def deferred_challenges(pkg: Package) -> list[dict[str, str]]:
+    """Every challenge of the story a person deferred, with who, when and why (FR-040)."""
+    rows = [
+        {
+            "id": str(r.obj.get("id", "?")),
+            "stage": stage,
+            "target": str(r.obj.get("target", "")),
+            "by": str(r.obj.get("responder", "")),
+            "reason": str(r.obj.get("reason", "")),
+        }
+        for stage in pkg.existing_stages()
+        for r in _challenge_records(pkg.doc(stage))
+        if r.obj.get("status") == "closed" and r.obj.get("response") == "deferred"
+    ]
+    return sorted(rows, key=lambda row: row["id"])
+
+
+def _open_challenge_refusals(pkg: Package, stage: str) -> list[Refusal]:
+    if stage == "completion":
+        standing = [f"{cid} ({stg})" for stg, cid, _ in open_challenges_story(pkg)]
+        low = [cid for _, cid, sev in open_challenges_story(pkg) if sev == "low"]
+        fix = "A person answers each with `eil challenge answer`" + (
+            f"; the {len(low)} low one(s) can be answered together with `eil review list --stage completion --kind low-challenges`"
+            if low
+            else ""
+        )
+    else:
+        standing = [
+            f"{r.obj.get('id', '?')} ({r.obj.get('status', 'open')})"
+            for r in _challenge_records(pkg.doc(stage))
+            if r.obj.get("status", "open") != "closed" and challenge_severity(r.obj) != "low"
+        ]
+        fix = "A person answers each with `eil challenge answer` (accepted, rejected with a reason, or deferred); a conflict is settled by a configured confirmer"
     if not standing:
         return []
-    return [
-        Refusal(
-            "open-challenge",
-            f"open challenge(s) on {stage}: {', '.join(standing)}",
-            "A person answers each with `eil challenge answer` (accepted, rejected with a reason, or deferred); a conflict is settled by a configured confirmer",
-        )
-    ]
+    return [Refusal("open-challenge", f"open challenge(s) on {stage}: {', '.join(standing)}", fix)]
 
 
 __all__ = [

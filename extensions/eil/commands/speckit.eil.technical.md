@@ -40,7 +40,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
    - **Propose, do not decide.** You may propose alternatives with their advantages and disadvantages and say which you would choose and why. What is written is the developer's choice, even when it is the option you argued against; a proposal the developer declines is recorded as the rejected alternative, with their reason. Never write a decision the developer has not made.
    - **The owner is the developer** who decided, including when the option came from you. Never write an owner that is you or another AI.
    - Every decision traces to at least one `FR` or `NFR` it serves. If you find behaviour the decisions do not serve, or a decision no requirement needs, raise a challenge.
-   - **Tag every passage you write with `[ai-draft]`.** A person removes the tag once they have reviewed the text. A decision is not tagged once the developer has stated it in their own words.
+   - **Never write `[ai-draft]` by hand.** The helper renders that cue itself, from what you classify. Where a passage is your own inference rather than a restatement of an approved source, leave it plain: it is listed for review when you run the `inferred` list (below). Approval is refused while any block is unreviewed.
    - **Human-decided provenance.** When other text you write (outside a `DEC`'s own fields) is copied verbatim from a decision already made — an accepted challenge, a resolved open question, or a clarify answer carried by `/speckit-eil-resolve` — write it **untagged**, with `(decided: CH-004)`, `(decided: OQ-002)` or `(decided: AIS-007)` instead of `[ai-draft]`, naming the exact id.
    - A question the developer cannot answer yet is an open question (`**OQ-###**: ... (status: open) (material: yes)`), never an assumption. A material one blocks approval until it is resolved or accepted by a named person.
 5. **Fill the sections** (technical requirements, architecture, component design, data design, API and integration design, security design, error handling and resilience, observability, performance, testing strategy, deployment and migration, existing system impact, alternatives considered, risks and trade-offs) from the decisions and from what the developer supports. Where you would have to guess, ask.
@@ -61,8 +61,9 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
    Include an entry for every judgment criterion, and fill the five lists with the specific problems you find, including where the design leaves a functional requirement unserved or contradicts the functional text. Run `eil check --stage technical --judgments <file> --json`. Your verdicts are labelled as the AI's, apply only to the exact text you assessed, and cannot make a code-decided criterion met.
 9. **Challenge** the design the way a reviewer would: what happens on retry, on a duplicate request, when a dependency is down, when two requests arrive together, and which requirement is unserved. Record each as a challenge for the developer to answer; never answer one yourself.
-10. **Report** the gate result, every remaining `[ai-draft]` tag and open question, and any inconsistency. When the gate is otherwise met, offer `/speckit-eil-comprehend`: the developer takes the comprehension check on this version before approving.
-11. **Finish**: run `eil sync --json`.
+10. **Classify and list the inferred blocks.** Write a classification file outside the repository: `{"stage": "technical", "blocks": [{"block": "DEC-001", "adds": null}]}`, one entry per block you wrote or changed. A block that restates an approved source has no `adds`; a block that goes beyond its sources carries `adds`, one sentence saying what it adds. Run `eil blocks classify --stage technical --file <path> --json`; the helper decides restated, decided or inferred from the traces and hashes, and renders the review cue itself. Then run `eil review list --stage technical --kind inferred --json` and show the human that one list. They answer once, in their own words (for example "ok except DEC-003"); pass their reply verbatim to `eil review answer --stage technical --kind inferred --digest <digest> --reply "<their words>" --by "<name>" [--all-except <ids>] --json`. Never answer for them. When you re-edit an item that carries a `(decided: ID)` clause, replace or remove the clause so it still matches the text.
+11. **Report** the gate result, every remaining `[ai-draft]` tag and open question, and any inconsistency. When the gate is otherwise met, offer `/speckit-eil-comprehend`: the developer takes the comprehension check on this version before approving.
+12. **Finish**: run `eil sync --json`.
 
 ## The challenge pass
 
@@ -75,6 +76,8 @@ Before you report, review the stage document the way a careful colleague would, 
 5. While any challenge is open the stage cannot be approved. Say so, and list them.
 
 ## Rules
+
+- When you re-edit an item that carries a `(decided: CR-###)` clause, remove or replace the clause; never leave one that no longer matches the text.
 
 - You never record an approval, edit the `assessment`, `comprehension` or `approval` regions by hand, or answer an open question or a challenge on the human's behalf.
 - Do not offer to approve until the gate is met and the comprehension check has been taken on this version.

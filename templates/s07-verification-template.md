@@ -54,6 +54,10 @@
 
 <!-- Every task of the task list that is not done, by id (`T004`). Say "None." only if there are none. -->
 
+## Review Findings
+
+<!-- Findings from code review: one RF-### item each, with Root (implementation, or the upstream stage), status open, resolved or excepted, and for excepted Accepted by and Reason. A finding rooted upstream is corrected with `eil correct`. -->
+
 ## Not applicable
 
 <!-- Sections removed from this document, each with its reason. -->
@@ -65,6 +69,16 @@
 ## Overrides
 
 <!-- Recorded by `eil override`, each naming who, what and why. -->
+
+## Change Log
+
+<!-- eil:begin changelog -->
+<!-- eil:end changelog -->
+
+## Record
+
+<!-- eil:begin provenance -->
+<!-- eil:end provenance -->
 
 ## Quality Assessment
 

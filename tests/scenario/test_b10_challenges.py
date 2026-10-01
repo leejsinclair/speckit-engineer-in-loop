@@ -18,7 +18,7 @@ YES = "Yes, this is the behaviour we require."
 
 
 def raise_gap(eil: Callable, text: str = GAP, target: str = "FR-001"):
-    return eil(["challenge", "add", "functional", "--target", target, "--text", text, "--json"])
+    return eil(["challenge", "add", "functional", "--target", target, "--text", text, "--severity", "medium", "--json"])
 
 
 def answer(eil: Callable, cid: str, response: str, by: str = "Ada Dev", *extra: str):
@@ -121,6 +121,8 @@ def test_b10_challenges_are_allowed_at_any_definition_stage_and_not_elsewhere(
             "requirements",
             "--target",
             "REQ-001",
+            "--severity",
+            "medium",
             "--text",
             "Is the success criterion measurable?",
             "--json",
@@ -128,8 +130,14 @@ def test_b10_challenges_are_allowed_at_any_definition_stage_and_not_elsewhere(
     )
     assert ok.code == 0
     no = eil(
-        ["challenge", "add", "verification", "--target", "REQ-001", "--text", "Is this verified?", "--json"]
+        [
+            *["challenge", "add", "verification", "--target", "REQ-001", "--severity", "medium"],
+            *["--text", "Is this verified?", "--json"],
+        ]
     )
     assert no.code == 1
-    unknown = eil(["challenge", "add", "functional", "--target", "FR-404", "--text", "About what?", "--json"])
+    unknown = eil(
+        [*["challenge", "add", "functional", "--target", "FR-404", "--severity", "medium"]]
+        + ["--text", "About what?", "--json"]
+    )
     assert unknown.code == 1 and unknown.refusal_codes == ["unknown-item"]

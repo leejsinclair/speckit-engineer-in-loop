@@ -22,6 +22,6 @@ In a governed story the "spec file" of the core command below is `spec.md`, whic
 
 For **each answer the human accepted**, write it into `s04-ai-spec.md` as a new item in the section it belongs to, on one line: `**AIS-###**: the answer, stated as an instruction to the agent [pending-clarification]`. Use the next free `AIS` number, and give it **no** `(traces: ...)` clause yet: an answer has no source until it has been carried upstream. Do not put the answer anywhere else, and do not edit `s01`, `s02` or `s03` from here.
 
-Then tell the human, for each pending answer, to run `/speckit-eil-resolve` so the answer is carried to the earliest stage it affects. Until that is done the AI Specification does not pass its check and `/speckit-plan` is refused, and the overview lists the answer as an outstanding issue.
+Then tell the human, for each pending answer, to run `/speckit-eil-resolve` so the answer is carried to the earliest stage it affects. Until that is done the items and tasks that trace to the pending answer are blocked and the overview lists the answer as an outstanding issue. Everything else stays open: run `python3 .specify/extensions/eil/scripts/python/eil enter implement --json` and tell the human which tasks remain implementable (those not in `blocked[]`) and which wait for the answer.
 
 Finish with `python3 .specify/extensions/eil/scripts/python/eil sync --json`.

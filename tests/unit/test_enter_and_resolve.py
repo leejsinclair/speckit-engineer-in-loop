@@ -85,30 +85,41 @@ def test_enter_plan_passes_when_the_chain_is_approved_and_the_ai_specification_i
     assert (story_dir.root / "spec.md").exists(), "enter synchronises the aliases first"
 
 
-def test_enter_plan_refuses_a_pending_clarification_and_names_it(story_dir: Story) -> None:
+def blocked_ids(story: Story, command: str) -> list[str]:
+    return [row["id"] for row in enter(Package(story.root), command)["blocked"]]
+
+
+def test_enter_plan_blocks_a_pending_clarification_and_names_it(story_dir: Story) -> None:
     with_ai_spec(story_dir, sections={"Business Rules": PENDING_BODY})
-    with pytest.raises(EilExit) as exc:
-        enter(Package(story_dir.root), "plan")
-    assert refusals_of(exc) == ["pending-clarification"]
-    assert "AIS-002" in exc.value.payload["refusals"][0]["message"]
+    result = enter(Package(story_dir.root), "plan")
+    assert result["ok"]
+    (row,) = [r for r in result["blocked"] if r["id"] == "AIS-002"]
+    assert any("pending" in why for why in row["because"]) and "/speckit-eil-resolve AIS-002" in row["fix"]
 
 
-def test_enter_plan_refuses_an_item_without_a_source(story_dir: Story) -> None:
+def test_enter_plan_blocks_an_item_without_a_source(story_dir: Story) -> None:
     with_ai_spec(story_dir, sections={"Business Rules": "**AIS-002**: Tax ids are unique."})
-    assert refused(story_dir, "plan") == ["ai-spec-not-traceable"]
+    assert "AIS-002" in blocked_ids(story_dir, "plan")
 
 
 def test_enter_plan_reports_a_pending_answer_and_an_unsourced_item_together(story_dir: Story) -> None:
     body = PENDING_BODY + "\n\n**AIS-016**: Unsourced."
     with_ai_spec(story_dir, sections={"Business Rules": body})
-    assert sorted(refused(story_dir, "plan")) == ["ai-spec-not-traceable", "pending-clarification"]
+    assert {"AIS-002", "AIS-016"} <= set(blocked_ids(story_dir, "plan"))
 
 
-def test_enter_plan_refuses_when_an_earlier_stage_is_no_longer_approved(story_dir: Story) -> None:
+def test_enter_plan_refuses_a_stage_that_was_never_approved(story_dir: Story) -> None:
+    with_ai_spec(story_dir)
+    text = story_dir.read("functional")
+    start, end = text.index("<!-- eil:begin approval -->"), text.index("<!-- eil:end approval -->")
+    story_dir.write("functional", text[:start] + "<!-- eil:begin approval -->\n```json\n{}\n```\n" + text[end:])
+    assert "stage-not-approved" in refused(story_dir, "plan")
+
+
+def test_a_stage_edited_after_approval_does_not_stop_plan_only_what_it_reaches(story_dir: Story) -> None:
     with_ai_spec(story_dir)
     story_dir.write("functional", story_dir.read("functional").replace("60 seconds", "90 seconds"))
-    codes = refused(story_dir, "plan")
-    assert "stage-not-approved" in codes
+    assert enter(Package(story_dir.root), "plan")["ok"]
 
 
 def test_a_named_override_lets_plan_enter_over_a_pending_answer_and_stays_visible(story_dir: Story) -> None:
@@ -118,7 +129,7 @@ def test_a_named_override_lets_plan_enter_over_a_pending_answer_and_stays_visibl
     assert "OVR-001" in story_dir.read("ai-spec")
 
 
-def test_enter_tasks_needs_a_plan_and_a_passing_ai_specification(story_dir: Story) -> None:
+def test_enter_tasks_needs_a_plan_and_blocks_a_pending_item(story_dir: Story) -> None:
     with_ai_spec(story_dir)
     assert refused(story_dir, "tasks") == ["plan-missing"]
     story_dir.write("plan", plan_doc())
@@ -127,19 +138,18 @@ def test_enter_tasks_needs_a_plan_and_a_passing_ai_specification(story_dir: Stor
         "ai-spec",
         story_dir.read("ai-spec").replace("**AIS-002**: Two", "**AIS-002**: [pending-clarification] Two"),
     )
-    assert "pending-clarification" in refused(story_dir, "tasks")
+    assert "AIS-002" in blocked_ids(story_dir, "tasks")
 
 
-def test_enter_implement_needs_plan_and_tasks_and_no_pending_answer(story_dir: Story) -> None:
+def test_enter_implement_needs_plan_and_tasks_and_blocks_a_pending_answer(story_dir: Story) -> None:
     with_ai_spec(story_dir)
     story_dir.write("plan", plan_doc())
     assert refused(story_dir, "implement") == ["tasks-missing"]
     story_dir.write("tasks", tasks_doc())
     assert enter(Package(story_dir.root), "implement")["ok"]
-    story_dir.write("ai-spec", story_dir.read("ai-spec") + "\n")
     text = story_dir.read("ai-spec").replace("**AIS-002**: Two", "**AIS-002**: Two [pending-clarification]")
     story_dir.write("ai-spec", text)
-    assert "pending-clarification" in refused(story_dir, "implement")
+    assert "AIS-002" in blocked_ids(story_dir, "implement")
 
 
 def test_enter_implement_refuses_an_alias_it_cannot_repair(story_dir: Story) -> None:

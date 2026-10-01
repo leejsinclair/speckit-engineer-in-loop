@@ -133,7 +133,7 @@ def test_an_open_question_or_challenge_is_not_a_source(story_dir: Story) -> None
 
 def test_a_source_in_a_stage_that_is_not_approved_is_not_a_source(story_dir: Story) -> None:
     with_ai_spec(story_dir)
-    story_dir.write("technical", story_dir.read("technical").replace("three times", "four times"))
+    story_dir.write("technical", story_dir.read("technical").replace("10 MB", "20 MB"))
     result = check(story_dir)
     reason = crit(result, "AIS-G02").reason
     assert "AIS-003 traces to DEC-001, defined in technical, which is needs-re-review" in reason
@@ -142,7 +142,7 @@ def test_a_source_in_a_stage_that_is_not_approved_is_not_a_source(story_dir: Sto
 
 def test_re_approving_the_changed_stage_restores_the_source(story_dir: Story) -> None:
     with_ai_spec(story_dir)
-    story_dir.write("technical", story_dir.read("technical").replace("three times", "four times"))
+    story_dir.write("technical", story_dir.read("technical").replace("10 MB", "20 MB"))
     assert not check(story_dir).ok
     approve_stages(story_dir, "technical")
     assert crit(check(story_dir), "AIS-G02").status == "met"
@@ -228,12 +228,12 @@ def test_an_artefact_that_changed_since_its_stage_was_approved_is_named(story_di
     assert any(f.code == "artifact-changed-since-approval" and f.where == "AIS-013" for f in result.findings)
 
 
-def test_a_change_to_other_text_of_the_stage_leaves_the_artefact_current(story_dir: Story) -> None:
+def test_a_change_to_other_text_of_the_stage_leaves_the_artefact_and_the_sources_current(story_dir: Story) -> None:
     with_ai_spec(story_dir)
     story_dir.write("technical", story_dir.read("technical").replace("three times", "four times"))
     result = check(story_dir)
     assert crit(result, "AIS-G04").status == "met"
-    assert crit(result, "AIS-G02").status == "not-met"
+    assert crit(result, "AIS-G02").status == "met", "only an item's own change makes it an unapproved source (FR-002)"
 
 
 def test_a_referenced_artefact_that_was_removed_is_a_dangling_trace_not_current(story_dir: Story) -> None:

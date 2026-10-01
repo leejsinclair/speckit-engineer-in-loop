@@ -117,6 +117,8 @@ def test_a_whole_story_from_start_to_completion(project: Path, eil: Callable, mo
         "functional",
         "--target",
         "FR-001",
+        "--severity",
+        "medium",
         "--text",
         "What happens when two requests arrive together?",
     )
@@ -153,14 +155,14 @@ def test_a_whole_story_from_start_to_completion(project: Path, eil: Callable, mo
     take_the_check(lambda argv, *a: eil(argv, env), "technical")
     approve("technical")
 
-    # B-06: an unsourced or pending item stops Plan; a corrected AI Specification lets it through
+    # B-06: a pending item is blocked, not the whole of Plan; a corrected AI Specification clears it
     run("stage-init", "ai-spec")
     write(
         project,
         "s04-ai-spec.md",
         ai_spec_doc({"Business Rules": "**AIS-002**: Retention is 90 days. [pending-clarification]"}),
     )
-    assert run("enter", "plan", code=1).refusal_codes == ["pending-clarification"]
+    assert [row["id"] for row in run("enter", "plan").json["blocked"]] == ["AIS-002"]
     write(project, "s04-ai-spec.md", ai_spec_doc())
     assert run("check", "--stage", "ai-spec").json["ok"]
 

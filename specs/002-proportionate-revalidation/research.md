@@ -205,6 +205,10 @@ The summary is AI-drafted (Constitution II). The rendered column is headed **Cha
 
 ---
 
+### D-45 An answer on the `inferred` list also answers the matching `changes` entry
+
+SC-001 measurement (D-43) found the `changes` list re-asking entries the person had just accepted on the `inferred` list, at the same content hash, so the same content was confirmed twice (Constitution IV). Decision: for the `changes` list, the latest recorded answer per `(key, hash)` is taken from both `changes` and `inferred` acceptances. An accepted entry at the current hash is therefore not listed again. Safeguards: only a stored acceptance counts, so the person's verbatim reply, name and time are the evidence and a non-confirmer's attempt is refused before anything is stored (FR-048); an `all-except`, `question` or `reopen` is a non-settling latest word and keeps the entry listed; a different hash is a different entry; an opposing answer from another person is a conflict (FR-050) and blocks as before. The approval's `rests_on` names the inferred acceptance. Nothing is settled on the AI's behalf (Constitution II). Measured: `other` interactions 6 under 001, at most 2 under 002.
+
 ## Risks and tests
 
 | ID | Risk | Effect | Mitigation / test |
@@ -218,4 +222,4 @@ The summary is AI-drafted (Constitution II). The rendered column is headed **Cha
 
 ## Outcome
 
-No `NEEDS CLARIFICATION` remain. All 50 functional requirements map to D-30 to D-44 or are unchanged guarantees (FR-036 to FR-038, enforced by existing refusals and by D-36's authority rule, with a regression test for FR-038). `/speckit-analyze` (2026-09-30) findings C1, I1, U1, U2, A1 and I4 are resolved in D-36, D-32, D-38, D-43 and D-39.
+No `NEEDS CLARIFICATION` remain. All 50 functional requirements map to D-30 to D-45 or are unchanged guarantees (FR-036 to FR-038, enforced by existing refusals and by D-36's authority rule, with a regression test for FR-038). `/speckit-analyze` (2026-09-30) findings C1, I1, U1, U2, A1 and I4 are resolved in D-36, D-32, D-38, D-43 and D-39.

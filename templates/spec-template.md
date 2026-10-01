@@ -94,6 +94,16 @@
 
 <!-- Recorded by `eil override`, each naming who, what and why. -->
 
+## Change Log
+
+<!-- eil:begin changelog -->
+<!-- eil:end changelog -->
+
+## Record
+
+<!-- eil:begin provenance -->
+<!-- eil:end provenance -->
+
 ## Quality Assessment
 
 <!-- eil:begin assessment -->

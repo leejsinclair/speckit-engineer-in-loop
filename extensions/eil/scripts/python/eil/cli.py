@@ -23,9 +23,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
-from . import aliases, chain, comprehension, handoff, overview, records
+from . import (
+    aliases,
+    blockstatus,
+    chain,
+    changelog,
+    comprehension,
+    corrections,
+    handoff,
+    overview,
+    provenance,
+    records,
+    reviews,
+    staleness,
+)
 from . import fingerprint as fingerprint_module
 from .artifacts import list_artifacts, register
+from .blocks import write_provenance
 from .gates import JudgmentsError, check_stage
 from .identity import Config, ConfigError, load_config
 from .package import STAGES, Package, resolve_feature_dir
@@ -114,12 +128,14 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
 
     p = add("enter", "the single gate call used by wraps")
     p.add_argument("target", choices=ENTER_COMMANDS)
+    p.add_argument("--task", help="the task about to be implemented (implement only)")
 
     p = add("check", "evaluate a stage's gate")
     p.add_argument("--stage")
     p.add_argument("--chain", action="store_true")
     p.add_argument("--judgments", metavar="PATH")
     p.add_argument("--strict", action="store_true")
+    p.add_argument("--full", action="store_true", help="list every criterion, including the met structural ones")
 
     p = add("stage-init", "create a stage's document from its template")
     p.add_argument("stage")
@@ -133,6 +149,12 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--target", required=True)
     a.add_argument("--text", required=True)
     a.add_argument("--by")
+    a.add_argument("--severity", choices=("high", "medium", "low"))
+    a = actions.add_parser("severity", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("id")
+    a.add_argument("--to", required=True, choices=("high", "medium", "low"))
+    a.add_argument("--by", required=True)
     a = actions.add_parser("answer", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("id")
@@ -176,6 +198,64 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--stage", required=True)
     a.add_argument("--by", required=True)
     a.add_argument("--attestation", required=True)
+    a = actions.add_parser("confirm", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--by", required=True)
+    a.add_argument("--confirmation", required=True)
+    a.add_argument("--summaries", metavar="FILE")
+    a = actions.add_parser("list", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--kind", required=True, choices=REVIEW_KINDS)
+    a.add_argument("--views", metavar="FILE")
+    a = actions.add_parser("answer", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--kind", required=True, choices=REVIEW_KINDS)
+    a.add_argument("--digest")
+    a.add_argument("--by", required=True)
+    a.add_argument("--reply", required=True)
+    mode = a.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--all", dest="all_", action="store_true")
+    mode.add_argument("--all-except", metavar="IDS")
+    mode.add_argument("--question", metavar="IDS")
+    mode.add_argument("--reopen", metavar="IDS")
+    a.add_argument("--defer-reason")
+    a.add_argument("--summaries", metavar="FILE")
+
+    p = add("correct", "propose or open a backwards correction")
+    actions = p.add_subparsers(dest="action", metavar="ACTION", parser_class=_Parser)
+    actions.required = True
+    for name in ("propose", "open"):
+        a = actions.add_parser(name, parents=[common])
+        a.stream = stream  # type: ignore[attr-defined]
+        a.add_argument("--item", required=True)
+        a.add_argument("--found-in", required=True)
+        a.add_argument("--problem", required=True)
+        if name == "open":
+            a.add_argument("--by", required=True)
+            a.add_argument("--owner")
+            a.add_argument("--wording")
+
+    p = add("blocks", "list the content blocks of a stage with their derived status")
+    actions = p.add_subparsers(dest="action", metavar="ACTION", parser_class=_Parser)
+    actions.required = True
+    a = actions.add_parser("list", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--status", choices=("settled", "needs-review", "source-changed", "stale", "unknown-currency"))
+    a = actions.add_parser("classify", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--file", required=True)
+    a = actions.add_parser("reclassify", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--block", required=True)
+    a.add_argument("--to", required=True, choices=("inferred",))
+    a.add_argument("--by", required=True)
+    a.add_argument("--reason")
 
     p = add("abbreviate", "mark a stage abbreviated")
     p.add_argument("stage")
@@ -406,7 +486,7 @@ def _check(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         raise EilExit(EXIT_INTERNAL, {"ok": False, "error": str(exc)}, str(exc)) from exc
     _regenerate_overview(ctx, package)
     payload = result.to_json()
-    payload["text"] = _render_check(result)
+    payload["text"] = _render_check(result, args.full)
     if args.strict and not result.ok:
         raise refuse(
             Refusal(
@@ -418,10 +498,16 @@ def _check(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     return payload
 
 
-def _render_check(result: Any) -> str:
+def _render_check(result: Any, full: bool = False) -> str:
     lines = [f"Gate for {result.stage}: {'met' if result.ok else 'not met'}"]
-    for c in result.criteria:
+    collapsed = 0
+    for c in result.ordered_criteria():
+        if not full and c.status == "met" and c.kind != "judgment":
+            collapsed += 1
+            continue
         lines.append(f"  {c.id} [{c.kind}] {c.status}" + (f": {c.reason}" if c.reason else ""))
+    if collapsed:
+        lines.append(f"  {collapsed} structural criteria met (--full lists them)")
     for f in result.findings:
         lines.append(f"  finding {f.code} at {f.where}: {f.message}")
     return "\n".join(lines)
@@ -455,10 +541,119 @@ def _amend(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+REVIEW_KINDS = (
+    "inferred", "changes", "tasks", "evidence", "low-challenges", "unknown-currency", "diagram-currency",
+    "unsettled-challenges",
+)  # fmt: skip
+
+
+def _read_keyed(path: str, stage: str, what: str, rows: str, value: str, kind: str | None = None) -> dict[str, str]:
+    """A ``--views`` or ``--summaries`` file: ``{"stage", rows: [{"key", value}]}`` as ``{key: value}``."""
+    import json
+
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise usage_error(f"cannot read {what} file {path}: {exc}") from exc
+    if not isinstance(data, dict) or data.get("stage") != stage or (kind and data.get("kind", kind) != kind):
+        raise usage_error(f"{what} file {path} is not for stage {stage}" + (f" kind {kind}" if kind else ""))
+    found = data.get(rows)
+    if not isinstance(found, list) or not all(isinstance(r, dict) and "key" in r and value in r for r in found):
+        raise usage_error(f'{what} file {path} needs "{rows}": [{{"key", "{value}"}}]')
+    return {str(r["key"]): str(r[value]) for r in found}
+
+
+def _ids(text: str | None) -> list[str] | None:
+    return None if text is None else [i.strip() for i in text.split(",") if i.strip()]
+
+
+def _review_list(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    package = ctx.package()
+    views = _read_keyed(args.views, args.stage, "views", "views", "view", args.kind) if args.views else None
+    listed = reviews.build_list(package, args.stage, args.kind, views)
+    lines = [f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose})"]
+    for entry in listed.entries:
+        lines.append(f"  {entry.key}: {entry.what.splitlines()[0] if entry.what else ''}")
+    lines += [f"  limit: {limit}" for limit in listed.limits]
+    return {"ok": True, **listed.to_json(), "text": "\n".join(lines)}
+
+
+def _review_answer(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    package = ctx.package()
+    _persist_adoption(package)
+    package = ctx.package()
+    summaries = (
+        _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary") if args.summaries else None
+    )
+    result = reviews.answer(
+        package,
+        _config(ctx, package),
+        args.stage,
+        args.kind,
+        digest=args.digest,
+        by=args.by,
+        reply=args.reply,
+        all_=args.all_,
+        all_except=_ids(args.all_except),
+        question=_ids(args.question),
+        reopen=_ids(args.reopen),
+        defer_reason=args.defer_reason,
+        summaries=summaries,
+    )
+    _regenerate_overview(ctx, package)
+    return result
+
+
+def _blocks(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    package = ctx.package()
+    if args.action in ("classify", "reclassify"):
+        _persist_adoption(package)
+        package = ctx.package()
+        if args.action == "reclassify":
+            return provenance.reclassify(package, args.stage, args.block, args.by, args.reason)
+        import json
+
+        try:
+            data = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise usage_error(f"cannot read classification file {args.file}: {exc}") from exc
+        result = provenance.classify(package, args.stage, data)
+        _regenerate_overview(ctx, ctx.package())
+        return result
+    stale = blockstatus.stale_sources(package, args.stage)
+    rows = []
+    for info in blockstatus.block_statuses(package).get(args.stage, {}).values():
+        if args.status and not (
+            info.status == args.status or (args.status == "stale" and (info.stale or info.status == "source-changed"))
+        ):
+            continue
+        row = {"key": info.key, "class": info.klass, "status": info.status}
+        if args.stage in blockstatus.DERIVED or info.key in stale:
+            row["stale_sources"] = stale.get(info.key, [])
+        rows.append(row)
+    lines = [f"{args.stage}: {len(rows)} block(s)"] + [f"  {r['key']}: {r['status']}" for r in rows]
+    return {"ok": True, "stage": args.stage, "blocks": rows, "text": "\n".join(lines)}
+
+
 def _review(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     from . import provenance
 
+    if args.action == "list":
+        return _review_list(ctx, args)
+    if args.action == "answer":
+        return _review_answer(ctx, args)
     package = ctx.package()
+    if args.action == "confirm":
+        _persist_adoption(package)
+        package = ctx.package()
+        summaries = (
+            _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary") if args.summaries else None
+        )
+        result = reviews.confirm(
+            package, _config(ctx, package), args.stage, by=args.by, confirmation=args.confirmation, summaries=summaries
+        )
+        _regenerate_overview(ctx, package)
+        return result
     if args.action == "start":
         return provenance.start(package, args.stage)
     if args.action == "accept":
@@ -474,12 +669,40 @@ def _review(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _correct(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    package = ctx.package()
+    if args.action == "propose":
+        return corrections.propose(package, args.item, args.found_in, args.problem)
+    _persist_adoption(package)
+    package = ctx.package()
+    result = corrections.open_correction(
+        package, args.item, args.found_in, args.problem, args.by, args.owner, args.wording
+    )
+    _regenerate_overview(ctx, package)
+    return result
+
+
 def _regenerate_overview(ctx: Context, package: Package) -> bool:
     return overview.write(package, load_template(package.project_root or ctx.cwd, "s00-readme-template"))
 
 
+def _persist_adoption(package: Package) -> None:
+    """D-42: the first writing command records the provenance an upgrade adopts, once per document."""
+    for stage in package.existing_stages():
+        record = blockstatus.adopt(package, stage)
+        if record is not None:
+            text = write_provenance(package.read(stage), record)
+            package.doc_path(stage).write_bytes(text.encode("utf-8"))
+
+
 def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
+    snapshots: dict[str, Any] = {"snapshotted": [], "completed_while_blocked": [], "cleared": []}
+    if not args.check_only:
+        _persist_adoption(package)
+        provenance.refresh_cues(package)
+        changelog.refresh_all(ctx.package())
+        snapshots = staleness.sync_task_snapshots(ctx.package())
     before, after = aliases.refresh(package, aliases.alias_mode(ctx.env), check_only=args.check_only)
     changed = False if args.check_only else _regenerate_overview(ctx, package)
     faults = [s for s in before if s.fault]
@@ -492,8 +715,14 @@ def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
             )
         )
     lines = ["Synchronised."] + [f"  alias fault {s.name}: {s.fault}" for s in faults]
+    lines += [f"  completed-while-blocked {t}" for t in snapshots["completed_while_blocked"]]
     return {
         "ok": True,
+        "task_snapshots": snapshots["snapshotted"],
+        "findings": [
+            {"code": "completed-while-blocked", "where": t, "message": f"{t} was ticked while it was blocked"}
+            for t in snapshots["completed_while_blocked"]
+        ],
         "alias_faults": [s.to_json() for s in faults],
         "aliases": [s.to_json() for s in after],
         "overview_changed": changed,
@@ -503,7 +732,7 @@ def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 
 def _enter(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
-    result = handoff.enter(package, args.target, aliases.alias_mode(ctx.env))
+    result = handoff.enter(package, args.target, aliases.alias_mode(ctx.env), task=args.task)
     _regenerate_overview(ctx, package)
     return result
 
@@ -589,7 +818,9 @@ def _abbreviate(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 def _challenge(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
     if args.action == "add":
-        result = records.add_challenge(package, args.stage, args.target, args.text, args.by)
+        result = records.add_challenge(package, args.stage, args.target, args.text, args.by, args.severity)
+    elif args.action == "severity":
+        result = records.set_challenge_severity(package, _config(ctx, package), args.id, args.to, args.by)
     else:
         result = records.answer_challenge(
             package, _config(ctx, package), args.id, args.response, args.by, args.reason
@@ -678,6 +909,8 @@ HANDLERS.update(
         "override": _override,
         "amend": _amend,
         "review": _review,
+        "correct": _correct,
+        "blocks": _blocks,
         "sync": _sync,
         "enter": _enter,
         "resolve": _resolve,

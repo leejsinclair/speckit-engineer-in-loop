@@ -7,6 +7,38 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- Proportionate revalidation (feature 002): fewer, better-explained requests for a developer's attention,
+  and staleness that follows what actually changed.
+  - Every request states its purpose (awareness, understanding, decision, validation or approval), and a
+    person is not asked to reconfirm anything already established (constitution 1.2.0, Principle IV).
+  - One reply per list: `eil review list` and `eil review answer` present inferred content, changes, tasks,
+    evidence, low-severity challenges, unknown-currency content, diagram currency and unsettled challenges
+    as a single list answered in one verbatim reply ("ok to all", "ok except ...", or a question).
+  - Content blocks carry a hash and a class (restated, decided, inferred, adopted) in a new `provenance`
+    region, and a generated `changelog` region records what changed and why. Both are excluded from the
+    fingerprint. `[ai-draft]` is now a cue the helper renders from recorded status, never read as status.
+  - Item-level staleness: changing one decision marks only the blocks, tasks and evidence that trace to it.
+    `eil enter` is work-scoped and refuses only blocked work (`work-blocked`).
+  - `/speckit-eil-accept` (`eil review confirm`): one sign-off re-signs an edited stage; if every change is
+    covered by a recorded decision it is carried forward and marked so. `amend` and `review start|accept|finish`
+    remain as aliases.
+  - `/speckit-eil-correct` (`eil correct propose|open`): backwards corrections from implementation, with the
+    corrected wording shown before it is applied and recorded verbatim (`CR-###`, `(decided: CR-###)`).
+  - Challenge severity: a low-severity challenge is listed as outstanding and does not block approval.
+    Anyone may raise a severity; only a configured confirmer may lower it, recorded with their name.
+  - Review findings (`RF`) in `s07`, task snapshots, and evidence confirmed by finding the named test.
+  - Existing stories are adopted on first `sync` (blocks recorded as adopted, no state changes); an
+    upgrade never loosens a gate silently (R-20).
+  - Attestation limits, stated where the feature is documented: restated-content fidelity is by hash only
+    (FR-014); evidence confirmation finds a test, it does not run it (FR-035); a reply is mapped to flags
+    with only obvious mismatches refused (D-36); correction wording is recorded as given, and the helper
+    cannot tell who wrote it (D-38); a hand-edited `provenance` region is an attestation-level limit (R-21).
+  - Contract deltas folded into `specs/001-staged-definition-workflow/contracts/`, including the three
+    places the helper edits human content (`review accept`, `resolve`, `[ai-draft]` cue rendering).
+  - Interaction count (SC-001): the harness in `tests/scenario/test_interaction_count.py` replays the same
+    edits under the 001 baseline and this code. On the current replay the number of non-decision,
+    non-first-approval interactions is **not** reduced (5 under 001, 5 under 002), so the 60% target is
+    not met; the test is marked `xfail` until it is.
 - Release workflow: pushing a `v*` tag builds the extension and preset zips and attaches them to a GitHub release; `tools/stage.py --tag` refuses a tag that does not match the manifest versions. Added a CI workflow (lint and unit tests).
 - Numbered command names that match the document numbers: `/speckit-eil-0-status`, `-1-requirements`,
   `-2-functional`, `-3-technical`, `-4-ai-spec`, `-5-plan`, `-6-tasks`, `-7-verify` and `-8-complete`. They are

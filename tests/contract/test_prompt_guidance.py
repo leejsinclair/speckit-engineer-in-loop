@@ -90,8 +90,8 @@ RULES: list[tuple[Path, str, list[str]]] = [
     ),
     (
         EXT / "speckit.eil.requirements.md",
-        "tags AI text ai-draft",
-        [r"tag every passage you write with `\[ai-draft\]`"],
+        "leaves the ai-draft cue to the helper",
+        [r"never write `\[ai-draft\]` by hand"],
     ),
     # functional and artifacts (FR-085)
     (
@@ -200,6 +200,10 @@ RULES: list[tuple[Path, str, list[str]]] = [
         "never supplies the attestation for eil review finish",
         [r"never supply the attestation"],
     ),
+    # accept (FR-015): covered changes take a short sign-off; the person's words are never supplied
+    (EXT / "speckit.eil.accept.md", "never supplies the sign-off", [r"never supply the sign-off"]),
+    (EXT / "speckit.eil.accept.md", "labels its own summaries as drafts", [r"draft by the AI and must be labelled"]),
+    (EXT / "speckit.eil.accept.md", "asks once for the uncovered changes", [r"ask once", r"one reply"]),
     # conversational friction (D-24, D-25, D-27): reuse a known name; batch challenge answers
     *[
         (
@@ -216,6 +220,7 @@ RULES: list[tuple[Path, str, list[str]]] = [
             "comprehend",
             "amend",
             "review",
+            "accept",
         )
     ],
     (
@@ -340,3 +345,102 @@ def test_the_numbered_plan_and_tasks_commands_only_delegate(name: str, core: str
     assert GUARD in text
     assert f"Run `/speckit-{core}`" in text and "adds no behaviour of its own" in text
     assert not HELPER_CALL.search(text), "a delegating command must leave every check to the wrapped one"
+
+
+DRAFTING = [EXT / f"speckit.eil.{n}.md" for n in ("requirements", "functional", "technical", "ai-spec")]
+WRAPPED = [WRAPS / f"speckit.{n}.md" for n in ("plan", "tasks")]
+
+
+@pytest.mark.parametrize("path", DRAFTING, ids=lambda p: p.stem)
+def test_no_manual_ai_draft(path: Path) -> None:
+    """D-33: the cue is helper-rendered; a drafting prompt never tells the AI to write it."""
+    text = read(path)
+    assert re.search(r"never write `\[ai-draft\]` by hand", text, re.I)
+    assert not re.search(r"tag every (passage|row)", text, re.I)
+
+
+@pytest.mark.parametrize("path", [*DRAFTING, EXT / "speckit.eil.approve.md"], ids=lambda p: p.stem)
+def test_one_reply_lists(path: Path) -> None:
+    """FR-009, FR-010: one `inferred` list answered in one reply, before any attestation."""
+    text = read(path)
+    assert "--kind inferred" in text
+    if path.stem.endswith("approve"):
+        assert text.index("--kind inferred") < text.index("--attestation")
+
+
+@pytest.mark.parametrize("path", DRAFTING, ids=lambda p: p.stem)
+def test_reply_verbatim(path: Path) -> None:
+    """The human's reply is passed as they gave it; the AI never answers for them."""
+    text = read(path)
+    assert "verbatim" in text and re.search(r"never answer for them", text, re.I)
+    assert "eil blocks classify" in text
+
+
+@pytest.mark.parametrize("path", WRAPPED, ids=lambda p: p.stem)
+def test_wrapped_prompts_list_inferred_once_and_never_hand_tag(path: Path) -> None:
+    text = read(path)
+    assert "--kind inferred" in text and re.search(r"never write `\[ai-draft\]` by hand", text, re.I)
+
+
+CORRECT = EXT / "speckit.eil.correct.md"
+SUMMARISING = [EXT / "speckit.eil.accept.md", CORRECT]
+DECIDED_CLAUSE = [CORRECT, EXT / "speckit.eil.accept.md", *DRAFTING, *WRAPPED]
+
+
+def test_correct_shows_before_apply() -> None:
+    """FR-021: propose, show the owner, edit and impact, and get agreement before anything is written."""
+    text = read(CORRECT)
+    assert text.index("correct propose") < text.index("Get agreement") < text.index("correct open")
+    assert re.search(r"show before applying", text, re.I) and re.search(r"only\*\* if `ambiguous`", text)
+    assert re.search(r"never (supply|pass text you wrote)", text, re.I) and "verbatim" in text
+
+
+@pytest.mark.parametrize("path", [CORRECT, *WRAPPED, WRAPS / "speckit.implement.md"], ids=lambda p: p.stem)
+def test_rederive_only_listed(path: Path) -> None:
+    text = read(path)
+    assert "rederive" in text or "rederive[]" in text
+    assert re.search(r"only\*{0,2} (the )?(sections|tasks|stages)|Never implement a task", text)
+
+
+@pytest.mark.parametrize("path", DECIDED_CLAUSE, ids=lambda p: p.stem)
+def test_decided_clause_removed_on_reedit(path: Path) -> None:
+    assert re.search(r"\(decided: CR-###\)", read(path)) and re.search(r"remove", read(path), re.I)
+
+
+@pytest.mark.parametrize("path", SUMMARISING, ids=lambda p: p.stem)
+def test_summaries_passed(path: Path) -> None:
+    text = read(path)
+    assert "--summaries" in text and re.search(r"draft by the AI", text)
+
+
+PURPOSE_STATED = [EXT / f"speckit.eil.{n}.md" for n in ("status", "next", "approve", "challenge")]
+
+
+@pytest.mark.parametrize("path", PURPOSE_STATED, ids=lambda p: p.stem)
+def test_purpose_stated(path: Path) -> None:
+    """Principle IV, FR-032: each request to a person says its purpose, from the helper's `purpose`."""
+    text = read(path)
+    assert "purpose" in text and re.search(r"awareness.*understanding.*decision.*validation.*approval", text, re.S)
+
+
+def test_challenge_prompt_rates_severity_and_leads_with_the_highest() -> None:
+    text = read(EXT / "speckit.eil.challenge.md")
+    assert "--severity" in text and "challenge severity" in text
+    assert re.search(r"high.{0,40}first", text, re.I | re.S) and re.search(r"label.{0,40}AI", text, re.I | re.S)
+
+
+def test_approve_prompt_shows_the_focused_gate_and_outstanding_lows() -> None:
+    text = read(EXT / "speckit.eil.approve.md")
+    assert "outstanding" in text and re.search(r"unmet.{0,60}first|focused", text, re.I | re.S)
+
+
+def test_complete_prompt_asks_only_what_implementation_touched() -> None:
+    """FR-033, FR-040, FR-045: one reply per non-empty list, untouched artefacts listed without a question."""
+    text = read(EXT / "speckit.eil.complete.md")
+    for kind in ("low-challenges", "evidence", "tasks", "diagram-currency"):
+        assert f"--kind {kind}" in text
+    assert re.search(r"only.{0,40}non-empty|non-empty.{0,60}only|skip.{0,40}empty", text, re.I | re.S)
+    assert "untouched" in text and re.search(r"without (?:a|any) question", text, re.I)
+    assert "--defer-reason" in text and re.search(r"purpose", text)
+    assert "--found-in completion" in text and re.search(r"correct.{0,80}not.{0,40}(?:annotat|deviation)", text, re.I | re.S)
+    assert re.search(r"exists; result attested", text)

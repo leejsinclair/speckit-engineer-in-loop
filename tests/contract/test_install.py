@@ -1,7 +1,7 @@
 """C-01, C-02 and C-04 against the real preset and extension (task T034).
 
 The counts follow the manifests, so this file does not change as commands are added. Two tests that
-need the finished command set (20 commands, 4 hooks) switch themselves on once the manifest lists
+need the finished command set (22 commands, 4 hooks) switch themselves on once the manifest lists
 them (task T129).
 """
 
@@ -186,9 +186,9 @@ def test_c01_removal_restores_a_project_without_the_preset_or_extension(scratch_
     assert json.loads(resolved.stdout)["TEMPLATE_CONTENT"] == core
 
 
-@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 20, reason="the last command arrives in task T129")
-def test_the_finished_extension_registers_twenty_commands_and_four_hooks(installed: Path) -> None:
-    assert len(EXTENSION_COMMANDS) == 20
+@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 22, reason="the last command arrives in task T129")
+def test_the_finished_extension_registers_twenty_two_commands_and_four_hooks(installed: Path) -> None:
+    assert len(EXTENSION_COMMANDS) == 22
     hooks = (installed / ".specify" / "extensions.yml").read_text(encoding="utf-8")
     for name in ("after_clarify", "after_plan", "after_tasks", "after_implement"):
         assert name in hooks
@@ -204,3 +204,11 @@ def test_the_finished_preset_composes_seven_core_commands(installed: Path) -> No
         f"speckit.{n}" for n in ("specify", "clarify", "plan", "tasks", "analyze", "checklist", "implement")
     )
     assert len(PRESET_TEMPLATES) == 9
+
+
+def test_accept_is_registered_and_the_old_review_commands_say_they_are_superseded() -> None:
+    manifest = (REPO / "extensions" / "eil" / "extension.yml").read_text(encoding="utf-8")
+    assert "speckit.eil.accept" in manifest
+    for name in ("amend", "review"):
+        text = (REPO / "extensions" / "eil" / "commands" / f"speckit.eil.{name}.md").read_text(encoding="utf-8")
+        assert "/speckit-eil-accept" in text and "superseded" in text.lower()

@@ -2,9 +2,8 @@
 under a second on a story of nine documents of about 1 MB each.
 
 The bound is generous on purpose: it catches an accidental quadratic scan, not a slow machine.
-Raised from 1.0s to 1.5s when per-stage impact tracking and per-section fingerprinting (D-26, D-28,
-D-29) added real, linear, cached-per-call work across all nine documents — not a regression in kind,
-just in the constant.
+Block splitting and scoped staleness (D-34, D-35) briefly needed 2.0s; shared per-process caches
+(D-44) brought it back to 1.0s.
 """
 
 from __future__ import annotations
@@ -15,9 +14,9 @@ import pytest
 from eil import cli
 from eil.package import Package
 
-from tests.helpers.package import Story, with_verification
+from tests.helpers.package import Story, approve_stages, with_verification
 
-LIMIT_SECONDS = 1.5
+LIMIT_SECONDS = 1.0
 TARGET_BYTES = 1_000_000
 
 
@@ -86,3 +85,46 @@ def test_sync_stays_under_a_second(big_story: Story, monkeypatch: pytest.MonkeyP
     )  # the template needs a project
     code, elapsed = run(big_story, "sync", "--check-only")
     assert code == 0 and elapsed < LIMIT_SECONDS, f"sync took {elapsed:.2f}s"
+
+
+# ---- provenance regions with 2,000 blocks in each document (D-44)
+
+BLOCKS_PER_DOCUMENT = 2_000
+STAGES = ("requirements", "functional", "technical", "ai-spec", "plan", "tasks", "verification")
+
+
+def block_padding(prefix: str) -> str:
+    """BLOCKS_PER_DOCUMENT prose paragraphs, together about TARGET_BYTES, each one content block."""
+    filler = "narrative words and a little punctuation, but no item. " * 8
+    paragraphs = [f"{prefix} paragraph {n:04d} {filler}" for n in range(BLOCKS_PER_DOCUMENT)]
+    return "\n\n".join(paragraphs)
+
+
+@pytest.fixture
+def provenance_story(story_dir: Story) -> Story:
+    with_verification(story_dir)
+    for stage in STAGES:
+        text = story_dir.read(stage)
+        marker = "## Not applicable"
+        story_dir.write(stage, text.replace(marker, f"## Background notes\n\n{block_padding(stage)}\n\n{marker}", 1))
+    approve_stages(story_dir, "requirements", "functional", "technical")
+    cli._persist_adoption(Package(story_dir.root))
+    return story_dir
+
+
+def test_the_fixture_records_two_thousand_blocks_per_document(provenance_story: Story) -> None:
+    package = Package(provenance_story.root)
+    for stage in STAGES:
+        region = package.doc(stage).read_region("provenance").obj
+        assert len(region["blocks"]) >= BLOCKS_PER_DOCUMENT, stage
+    assert sum(1 for p in provenance_story.root.glob("s0*.md") if p.stat().st_size > 900_000) >= 7
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["status"], ["check", "--stage", "technical"], ["enter", "implement"]],
+)
+def test_status_check_and_enter_stay_under_a_second_with_provenance(provenance_story: Story, argv: list[str]) -> None:
+    code, elapsed = run(provenance_story, *argv)
+    assert code in (0, 1), argv  # enter may refuse; only its speed is under test
+    assert elapsed < LIMIT_SECONDS, f"{' '.join(argv)} took {elapsed:.2f}s"

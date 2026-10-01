@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import comprehension, verification
+from . import comprehension, staleness, verification
 from .artifacts import DIAGRAM_KINDS, ArtifactScan, orphan_findings, scan_document
 from .blocks import Doc, write_region
 from .clock import utc_now
@@ -341,6 +341,11 @@ CRITERIA_BY_STAGE["verification"] = (
     Criterion("VER-G04", "Every exception records who accepted it and why.", STRUCTURAL),
     Criterion("VER-G05", "Every open task is listed, none hidden.", TRACEABILITY),
     Criterion("VER-G06", "The document describes evidence and does not declare completion.", STRUCTURAL),
+    Criterion(
+        "VER-G07",
+        "No review finding is open, and every upstream-rooted one has its correction.",
+        TRACEABILITY,
+    ),
 )
 
 COMPLETION_HEADINGS = (
@@ -380,6 +385,17 @@ CRITERIA_BY_STAGE["completion"] = (
         STRUCTURAL,
         ("Diagram Currency",),
     ),
+    Criterion(
+        "CMP-G06",
+        "Every ticked task is confirmed against the current version of what it traces to.",
+        TRACEABILITY,
+    ),
+    Criterion(
+        "CMP-G07",
+        "Every evidence row is confirmed against the current version of what it traces to.",
+        TRACEABILITY,
+    ),
+    Criterion("CMP-G08", "No review finding is open.", TRACEABILITY),
 )
 
 
@@ -950,12 +966,13 @@ def _stage_of_ids(ctx: GateContext) -> dict[str, str]:
 
 
 def _approved_ids(ctx: GateContext) -> set[str]:
-    approved: set[str] = set()
-    for stage in APPROVED_SOURCE_STAGES:
-        parsed = ctx.upstream.get(stage)
-        if parsed is not None and ctx.pkg.state(stage).state == "approved":
-            approved |= {item.id for item in parsed.items}
-    return approved
+    """Definition items an approval covers and no change upstream of them reaches (item level, D-35)."""
+    from .blockstatus import approved_ids
+
+    defined = {
+        item.id for stage in APPROVED_SOURCE_STAGES if (parsed := ctx.upstream.get(stage)) for item in parsed.items
+    }
+    return approved_ids(ctx.pkg) & defined
 
 
 def _unsourced_text(ctx: GateContext) -> list[tuple[int, str]]:
@@ -1305,6 +1322,7 @@ def _check_artifacts_verified(ctx: GateContext) -> list[str]:
     return _status_problems(ctx, verification.approved_artifact_ids(ctx.pkg))
 
 
+_UNTOUCHED_LINE = re.compile(r"^\s*(?:[-*]\s+)?untouched\s*:\s*(?P<ids>.*)$", re.IGNORECASE)
 _CURRENCY_LINE = re.compile(r"(?P<id>ART-\d{3})\s*:\s*(?P<rest>.*)$")
 _ACCEPTED_BY = re.compile(r"accepted by\s+(?P<who>[^,;.]+)", re.IGNORECASE)
 _BECAUSE = re.compile(r"\b(because|reason|why)\b\s*:?\s*\S", re.IGNORECASE)
@@ -1319,10 +1337,21 @@ def _check_diagram_currency(ctx: GateContext) -> list[str]:
             lines.setdefault(found["id"], found["rest"].strip())
     deviations = ctx.sections.find("Accepted Deviations")
     listed = "\n".join(deviations.content) if deviations else ""
+    untouched = {
+        i
+        for text in (section.content if section else [])
+        if (m := _UNTOUCHED_LINE.search(text))
+        for i in re.findall(r"ART-\d{3}", m["ids"])
+    }
+    touched = staleness.touched_artifacts(ctx.pkg)
     problems: list[str] = []
     for art in verification.approved_artifact_ids(ctx.pkg):
         rest = lines.get(art)
-        if rest is None:
+        if art in untouched and art in touched:
+            problems.append(f"{art} is listed untouched but implementation touched it ({touched[art]})")
+        elif rest is None and art in untouched:
+            continue
+        elif rest is None:
             problems.append(f"{art} has no line under Diagram Currency")
         elif rest.lower().startswith("current"):
             continue
@@ -1352,6 +1381,47 @@ CHECKS.update(
         "CMP-G03": _check_requirements_verified,
         "CMP-G04": _check_artifacts_verified,
         "CMP-G05": _check_diagram_currency,
+    }
+)
+
+def _unanswered(ctx: GateContext, stage: str, kind: str, noun: str) -> list[str]:
+    from . import reviews
+
+    if not ctx.pkg.exists(stage):
+        return []
+    entries = reviews.build_list(ctx.pkg, stage, kind).entries
+    return [f"{e.key}: {e.why}" for e in entries] and [
+        f"{len(entries)} {noun}(s) not yet confirmed: " + "; ".join(f"{e.key} ({e.why})" for e in entries[:5])
+    ]
+
+
+def _check_tasks_current(ctx: GateContext) -> list[str]:
+    return _unanswered(ctx, "tasks", "tasks", "ticked task")
+
+
+def _check_evidence_current(ctx: GateContext) -> list[str]:
+    return _unanswered(ctx, "verification", "evidence", "evidence row")
+
+
+def _check_findings_ver(ctx: GateContext) -> list[str]:
+    return [
+        p
+        for item in verification.review_findings(ctx.pkg)
+        for p in verification.finding_problems(item, needs_correction=True, pkg=ctx.pkg)
+        if item.status != "resolved" or "no correction" in p
+    ]
+
+
+def _check_findings_cmp(ctx: GateContext) -> list[str]:
+    return [p for item in verification.review_findings(ctx.pkg) for p in verification.finding_problems(item)]
+
+
+CHECKS.update(
+    {
+        "CMP-G06": _check_tasks_current,
+        "CMP-G07": _check_evidence_current,
+        "CMP-G08": _check_findings_cmp,
+        "VER-G07": _check_findings_ver,
     }
 )
 
@@ -1432,12 +1502,24 @@ class GateResult:
     def unmet(self) -> list[CriterionResult]:
         return [c for c in self.criteria if c.status == "not-met"]
 
+    def ordered_criteria(self) -> list[CriterionResult]:
+        """Unmet first, then judgment criteria, then the rest, each group in the gate's own order (FR-028)."""
+        return sorted(self.criteria, key=lambda c: 0 if c.status == "not-met" else 1 if c.kind == "judgment" else 2)
+
+    def summary(self) -> dict[str, int]:
+        return {
+            "total": len(self.criteria),
+            "unmet": len(self.unmet()),
+            "met_structural": sum(1 for c in self.criteria if c.status == "met" and c.kind != "judgment"),
+        }
+
     def to_json(self) -> dict[str, Any]:
         return {
             "ok": self.ok,
             "stage": self.stage,
             "fingerprint": self.fingerprint,
-            "criteria": [c.to_json() for c in self.criteria],
+            "summary": self.summary(),
+            "criteria": [c.to_json() for c in self.ordered_criteria()],
             "assessment": self.assessment,
             "findings": [f.to_json() for f in self.findings],
         }

@@ -260,7 +260,12 @@ def _require_prerequisites(pkg: Package, stage: str) -> None:
     ours = CRITERION_FOR[stage]
     problems += [f"{c.id}: {c.reason}" for c in result.unmet() if c.id != ours]
     for record in pkg.doc(stage).records():
-        if record.kind == "challenge" and record.obj and record.obj.get("status", "open") != "closed":
+        if (
+            record.kind == "challenge"
+            and record.obj
+            and record.obj.get("status", "open") != "closed"
+            and record.obj.get("severity") != "low"
+        ):
             problems.append(f"challenge {record.obj.get('id', '?')} is open")
     if problems:
         raise refuse(
@@ -308,7 +313,7 @@ def _all_decided(pkg: Package, pool: set[str]) -> tuple[bool, str]:
     decided: list[str] = []
     for item_id in sorted(changed):
         item = home.get(item_id)
-        if item is None or item.decided is None or decided_eligible(pkg, item.decided) is not None:
+        if item is None or item.decided is None or decided_eligible(pkg, item.decided, None, item) is not None:
             return False, ""
         decided.append(item.decided)
     return True, "every changed item is a recorded human decision: " + ", ".join(sorted(set(decided)))

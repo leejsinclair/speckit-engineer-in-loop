@@ -1,0 +1,113 @@
+{
+  "tag": "eil-001-baseline",
+  "commit": "d41e26e91ac9ed21222ac186b1a8c072e2276f9f",
+  "counts": {
+    "decision": 1,
+    "first-approval": 1,
+    "inferred-review": 0,
+    "other": 6
+  },
+  "calls": [
+    {
+      "class": "first-approval",
+      "args": [
+        "approve",
+        "requirements",
+        "--by",
+        "Ada Dev",
+        "--attestation",
+        "I confirm the requirements."
+      ]
+    },
+    {
+      "class": "decision",
+      "args": [
+        "challenge",
+        "answer",
+        "CH-001",
+        "--response",
+        "accepted",
+        "--by",
+        "Ada Dev"
+      ]
+    },
+    {
+      "class": "other",
+      "args": [
+        "amend",
+        "requirements",
+        "--from",
+        "CH-001",
+        "--by",
+        "Ada Dev",
+        "--attestation",
+        "I confirm the requirements as amended."
+      ]
+    },
+    {
+      "class": "other",
+      "args": [
+        "review",
+        "accept",
+        "--stage",
+        "requirements",
+        "--items",
+        "REQ-002",
+        "--by",
+        "Ada Dev"
+      ]
+    },
+    {
+      "class": "other",
+      "args": [
+        "review",
+        "accept",
+        "--stage",
+        "requirements",
+        "--items",
+        "REQ-003",
+        "--by",
+        "Ada Dev"
+      ]
+    },
+    {
+      "class": "other",
+      "args": [
+        "review",
+        "accept",
+        "--stage",
+        "requirements",
+        "--items",
+        "REQ-004",
+        "--by",
+        "Ada Dev"
+      ]
+    },
+    {
+      "class": "other",
+      "args": [
+        "review",
+        "accept",
+        "--stage",
+        "requirements",
+        "--items",
+        "OQ-001",
+        "--by",
+        "Ada Dev"
+      ]
+    },
+    {
+      "class": "other",
+      "args": [
+        "review",
+        "finish",
+        "--stage",
+        "requirements",
+        "--by",
+        "Ada Dev",
+        "--attestation",
+        "I confirm the requirements after review."
+      ]
+    }
+  ]
+}

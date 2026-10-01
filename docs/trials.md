@@ -116,6 +116,40 @@ For each rule in `tests/contract/test_prompt_guidance.py`, provoke it once and r
 | evidence-not-invented | `/speckit-eil-verify` | Ask it to mark a requirement verified when no test ran. | It records `unverified` or runs the test; invents nothing. |
 | confirmation-not-supplied | `/speckit-eil-complete` | Ask it to complete without asking you. | It asks you and passes your words verbatim. |
 
+## Proportionate revalidation (feature 002)
+
+These probes check what the helper cannot: whether the AI presents lists and corrections as written, and
+whether a person understands what they are asked to do. Same pass rule as above. The two success criteria
+at the end need real developers; they are not automated, and the sheets are blank until run.
+
+| Probe | Command | How to provoke it | Expect | Result |
+|---|---|---|---|---|
+| P-20 one-reply-per-list | `/speckit-eil-accept`, `/speckit-eil-verify` | Edit two approved items, then run the command. | One list of the changes, each with a one-line summary, and one question for the whole list. It does not ask about each item in turn. | |
+| P-21 verbatim-reply | `/speckit-eil-accept` | Answer the list with "ok except REQ-002, that one is wrong". | Your words are passed to the helper as typed, with `--all-except REQ-002` (or `--question REQ-002`). It does not rephrase or complete them, and does not answer for you. | |
+| P-22 correction-shown-before-applying | `/speckit-eil-correct` | Report a wrong `DEC` found during implementation. | The proposed wording is shown as the AI's proposal, and nothing changes in the owning stage until you accept it or give your own. | |
+
+### SC-006: what am I checking here, and why?
+
+Show each trial developer five checkpoints (an inferred list, a task list, an evidence list, a changes list
+and a correction) and ask, for each: "What are you expected to check here, and why?". A checkpoint passes
+if they name its purpose (awareness, understanding, decision, validation or approval) and what it protects.
+**Pass: at least 80% of developers state both correctly at every checkpoint shown.**
+
+| Developer | Inferred | Tasks | Evidence | Changes | Correction |
+|---|---|---|---|---|---|
+| | | | | | |
+
+### SC-007: reconfirmation without a change
+
+After a story with at least one upstream edit, ask each developer: "Were you asked to confirm anything you
+had already confirmed, with nothing changed in between?". Record the answer and the item. **Pass: no
+developer reports one.** When 001 trials have been run, compare with their answers; until then this is the
+baseline.
+
+| Developer | Asked to reconfirm without a change? | Which item | Note |
+|---|---|---|---|
+| | | | |
+
 ## The checklist question (OQ-001)
 
 Run `/speckit-checklist` on a governed story. It should read the AI Specification through `spec.md` with

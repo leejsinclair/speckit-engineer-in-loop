@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .identity import is_ai_actor
 from .package import Package
-from .trace import Item, evidence_fields, parse_document
+from .trace import Item, evidence_fields, item_hash, parse_document, review_finding_fields
 
 KINDS = ("automated", "manual")
 STATUSES = ("verified", "failed", "unverified", "excepted")
@@ -25,6 +25,46 @@ def evidence_rows(pkg: Package) -> list[Item]:
         return [i for i in parse_document(pkg.doc("verification")).items if i.kind == "EVD"]
     except UnicodeDecodeError:
         return []
+
+
+def review_findings(pkg: Package) -> list[Item]:
+    if not pkg.exists("verification"):
+        return []
+    try:
+        return [i for i in parse_document(pkg.doc("verification")).items if i.kind == "RF"]
+    except UnicodeDecodeError:
+        return []
+
+
+def finding_hashes(pkg: Package) -> dict[str, str]:
+    return {i.id: item_hash(i) for i in review_findings(pkg)}
+
+
+def finding_problems(item: Item, *, needs_correction: bool = False, pkg: Package | None = None) -> list[str]:
+    """Why a review finding is still open: it says so, or it is excepted by nobody, or (with
+    ``needs_correction``) it is rooted upstream and no correction names it as its origin."""
+    fields = review_finding_fields(item)
+    problems: list[str] = []
+    if item.status == "excepted":
+        who = fields.get("accepted by", "")
+        if not who:
+            problems.append(f"{item.id} is excepted and names no 'Accepted by'")
+        elif is_ai_actor(who):
+            problems.append(f"{item.id} is accepted by {who!r}, who is the AI; a person accepts an exception")
+        if not fields.get("reason"):
+            problems.append(f"{item.id} is excepted and gives no 'Reason'")
+    elif item.status != "resolved":
+        problems.append(f"{item.id} is {item.status or 'open'}")
+    root = fields.get("root", "")
+    if needs_correction and pkg is not None and root and root.lower() != "implementation":
+        from .corrections import all_crs
+
+        if not any((cr.get("found_in") or {}).get("item") == item.id for _, cr in all_crs(pkg)):
+            problems.append(
+                f"{item.id} is rooted at {root} but no correction names it as its origin "
+                f"(eil correct open --found-in code-review:{item.id})"
+            )
+    return problems
 
 
 def exception_problems(row: Item) -> list[str]:

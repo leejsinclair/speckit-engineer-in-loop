@@ -27,7 +27,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 2. **Read** `s01-requirements.md` in the feature directory. Its headings are the process standard's; its HTML comments say what each section holds.
 3. **Draft from what the user said, and only from that.** Fill each section with what the user's input, the repository and the human's answers support. Where you would have to guess, do not guess: write an open question instead.
    - **Never turn an open question into an assumption.** An open question is `**OQ-001**: text (status: open) (material: yes)`. An assumption is a separate statement in Assumptions. Moving something from one to the other is a human decision, never yours (FR-022).
-   - **Tag every passage you write with `[ai-draft]`** at the end of the item or paragraph. A person removes the tag once they have reviewed the text; approval is refused while any tag remains.
+   - **Never write `[ai-draft]` by hand.** The helper renders that cue itself, from what you classify. Where a passage is your own inference rather than a restatement of an approved source, leave it plain: it is listed for review when you run the `inferred` list (below). Approval is refused while any block is unreviewed.
    - **Human-decided provenance.** When the text is the human's own words, copied verbatim from a decision they already made — an accepted challenge, a resolved open question, or a clarify answer carried by `/speckit-eil-resolve` — write it **untagged**, with `(decided: CH-004)`, `(decided: OQ-002)` or `(decided: AIS-007)` in place of `[ai-draft]`, naming the exact id. Everything else you write is still `[ai-draft]`.
    - Write desired outcomes as `**REQ-001**: ...` items and use cases as `**UC-001**: ... (actor: ...; goal: ...; trigger: ...; outcome: ...)`.
    - Do not prescribe an implementation.
@@ -46,8 +46,9 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
    ```
 
    Include an entry for every judgment criterion. Fill the five assessment lists with the specific problems you find (ambiguous wording, missing information, contradictions, assumptions with no support, statements that cannot be tested); leave a list empty only if there are none. Then run `eil check --stage requirements --judgments <file> --json`. Your verdicts are recorded and labelled as the AI's. You cannot make any other criterion met, and a verdict is only honoured for the exact text you assessed: any later edit needs a new run.
-7. **Report** the gate result: which criteria are met, which are not and why, and every remaining `[ai-draft]` tag and open question. Say plainly that a human still has to review the tagged text, decide the open questions and approve.
-8. **Finish**: run `eil sync --json` so the overview reflects the outcome.
+7. **Classify and list the inferred blocks.** Write a classification file outside the repository: `{"stage": "requirements", "blocks": [{"block": "REQ-001", "adds": null}]}`, one entry per block you wrote or changed. A block that restates an approved source has no `adds`; a block that goes beyond its sources carries `adds`, one sentence saying what it adds. Run `eil blocks classify --stage requirements --file <path> --json`; the helper decides restated, decided or inferred from the traces and hashes, and renders the review cue itself. Then run `eil review list --stage requirements --kind inferred --json` and show the human that one list. They answer once, in their own words (for example "ok except REQ-003"); pass their reply verbatim to `eil review answer --stage requirements --kind inferred --digest <digest> --reply "<their words>" --by "<name>" [--all-except <ids>] --json`. Never answer for them. When you re-edit an item that carries a `(decided: ID)` clause, replace or remove the clause so it still matches the text.
+8. **Report** the gate result: which criteria are met, which are not and why, and every remaining `[ai-draft]` tag and open question. Say plainly that a human still has to review the tagged text, decide the open questions and approve.
+9. **Finish**: run `eil sync --json` so the overview reflects the outcome.
 
 ## The challenge pass
 
@@ -60,6 +61,8 @@ Before you report, review the stage document the way a careful colleague would, 
 5. While any challenge is open the stage cannot be approved. Say so, and list them.
 
 ## Rules
+
+- When you re-edit an item that carries a `(decided: CR-###)` clause, remove or replace the clause; never leave one that no longer matches the text.
 
 - You never record an approval, edit the `assessment` or `approval` regions by hand, or answer an open question on the human's behalf.
 - Do not offer to approve until the gate is met and no `[ai-draft]` tag remains; then tell the user to run `/speckit-eil-approve`.

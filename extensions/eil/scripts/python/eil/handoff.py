@@ -14,12 +14,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from . import aliases
+from . import aliases, staleness
 from .blocks import Doc
+from .content import blocks_of
 from .gates import PENDING, Sections, check_stage
 from .package import DOC_FILES, Package
 from .records import prior_stage_refusals
 from .results import Refusal, refuse
+from .staleness import Cause
 from .trace import _TAG, parse_document
 
 ENTER_COMMANDS = ("specify", "clarify", "plan", "tasks", "analyze", "checklist", "implement")
@@ -44,31 +46,101 @@ def missing_refusal(stage: str, fix: str) -> Refusal:
 
 
 def ai_spec_refusals(pkg: Package) -> list[Refusal]:
-    """Why Plan and Tasks may not start: the AI Specification must exist and pass its gate (FR-004)."""
+    """Why Plan and Tasks may not start at all: the AI Specification must exist and its document-wide
+    checks (artefacts and diagrams) must pass (FR-004). Items without a source or pending a clarification
+    are per-item ``blocked`` entries instead (D-35)."""
     if not pkg.exists("ai-spec"):
         return [missing_refusal("ai-spec", "Create it with /speckit-eil-ai-spec once Technical is approved")]
     result = check_stage(pkg, "ai-spec", write=False)
-    refusals: list[Refusal] = []
-    pending = [c for c in result.unmet() if c.id == "AIS-G03"]
-    rest = [c for c in result.unmet() if c.id != "AIS-G03"]
-    if pending:
-        refusals.append(
-            Refusal(
-                "pending-clarification",
-                pending[0].reason,
-                "Carry each answer to the earliest stage it affects with /speckit-eil-resolve, or record a named override of AIS-G03",
-            )
+    rest = [c for c in result.unmet() if c.id in ("AIS-G04", "AIS-G05")]
+    if not rest:
+        return []
+    listing = "".join(f"\n  {c.id}: {c.reason}" for c in rest)
+    return [
+        Refusal(
+            "ai-spec-not-traceable",
+            f"the AI Specification does not pass its source-traceability check:{listing}",
+            "Give each item an approved source, or remove it; or record a named override of the criterion",
         )
-    if rest:
-        listing = "".join(f"\n  {c.id}: {c.reason}" for c in rest)
-        refusals.append(
+    ]
+
+
+def _never_approved(pkg: Package) -> list[Refusal]:
+    """``stage-not-approved`` only for a stage that has never been approved; one that needs re-review is
+    handled item by item."""
+    return [r for r in prior_stage_refusals(pkg, "plan") if pkg.state(_stage_named(r.message)).state != "needs-re-review"]
+
+
+def _stage_named(message: str) -> str:
+    return message.split(" ", 1)[0]
+
+
+def _sourceless(pkg: Package) -> dict[str, list[Cause]]:
+    """AI Specification items with no approved source, by id, and the work that traces to them."""
+    if not pkg.exists("ai-spec"):
+        return {}
+    out: dict[str, list[Cause]] = {}
+    for finding in check_stage(pkg, "ai-spec", write=False).findings:
+        if finding.code == "ai-spec-not-traceable":
+            out.setdefault(finding.where, []).append(Cause(finding.message, "Give it an approved source, or remove it"))
+    return out
+
+
+def _dependants(pkg: Package, roots: dict[str, list[Cause]]) -> dict[str, list[Cause]]:
+    edges = {}
+    for stage in pkg.existing_stages():
+        for b in blocks_of(pkg.doc(stage)):
+            if b.numbered:
+                edges.setdefault(b.key, list(b.traces))
+    out = {k: list(v) for k, v in roots.items()}
+    changed = True
+    while changed:
+        changed = False
+        for key, traces in edges.items():
+            for source in traces:
+                if source in out:
+                    cause = Cause(f"{source} is blocked ({out[source][0]})", f"Clear {source} first: {out[source][0].fix}")
+                    if str(cause) not in out.setdefault(key, []):
+                        out[key].append(cause)
+                        changed = True
+    return out
+
+
+def _scope(pkg: Package) -> tuple[dict[str, list[Cause]], dict[str, list[Cause]]]:
+    blocked, rederive = staleness.scoped_work(pkg)
+    for key, causes in _dependants(pkg, _sourceless(pkg)).items():
+        blocked.setdefault(key, [])
+        blocked[key] += [c for c in causes if str(c) not in blocked[key]]
+        rederive.pop(key, None)
+    return dict(sorted(blocked.items())), rederive
+
+
+def _task_blocks(pkg: Package) -> list[Any]:
+    return [b for b in blocks_of(pkg.doc("tasks")) if b.kind == "task"] if pkg.exists("tasks") else []
+
+
+def _work_refusals(pkg: Package, task: str | None, blocked: dict[str, list[Cause]], rederive: dict[str, list[Cause]]) -> list[Refusal]:
+    tasks = _task_blocks(pkg)
+    if task is not None:
+        if task not in {t.key for t in tasks}:
+            return [Refusal("unknown-item", f"{task} is not a task in tasks.md", "Name a task id from tasks.md")]
+        if task in blocked:
+            causes = blocked[task]
+            fixes = "; ".join(dict.fromkeys(c.fix for c in causes if c.fix))
+            return [Refusal("work-blocked", f"{task} is blocked: " + "; ".join(causes), fixes)]
+        if task in rederive:
+            return [Refusal("work-blocked", f"{task} must be re-derived first: " + "; ".join(rederive[task]), f"Re-derive {task}")]
+        return []
+    open_tasks = [t.key for t in tasks if not staleness.is_ticked(t)]
+    if open_tasks and all(t in blocked or t in rederive for t in open_tasks):
+        return [
             Refusal(
-                "ai-spec-not-traceable",
-                f"the AI Specification does not pass its source-traceability check:{listing}",
-                "Give each item an approved source, or remove it; or record a named override of the criterion",
+                "work-blocked",
+                "every open task is blocked: " + ", ".join(f"{t} ({(blocked.get(t) or rederive[t])[0]})" for t in open_tasks[:6]),
+                "; ".join(dict.fromkeys(c.fix for t in open_tasks for c in blocked.get(t, []) if c.fix)),
             )
-        )
-    return refusals
+        ]
+    return []
 
 
 def enter(
@@ -76,11 +148,18 @@ def enter(
     command: str,
     mode: str = aliases.SYMLINK,
     strict: bool = False,
+    task: str | None = None,
 ) -> dict[str, Any]:
-    """Synchronise the aliases, then apply the entry rule of ``command``; refuse, or describe what was done."""
+    """Synchronise the aliases, then apply the entry rule of ``command``; refuse, or describe what was done.
+
+    ``plan``, ``tasks`` and ``implement`` are work-scoped (D-35): only a stage never approved, or nothing
+    that may proceed, refuses the command; ``blocked`` names the items that may not be relied on and
+    ``rederive`` those that need deriving again."""
     before, after = aliases.refresh(pkg, mode)
     faults = [s for s in before if s.fault]
     refusals: list[Refusal] = []
+    blocked: dict[str, list[Cause]] = {}
+    rederive: dict[str, list[Cause]] = {}
     if command == "specify":
         refusals.append(
             Refusal(
@@ -98,12 +177,18 @@ def enter(
             )
     elif command in ("plan", "tasks", "implement"):
         if command in ("plan", "tasks"):
-            refusals.extend(prior_stage_refusals(pkg, "plan"))
+            refusals.extend(_never_approved(pkg))
         refusals.extend(ai_spec_refusals(pkg))
         if command in ("tasks", "implement") and not pkg.exists("plan"):
             refusals.append(missing_refusal("plan", "Run /speckit-plan first"))
         if command == "implement" and not pkg.exists("tasks"):
             refusals.append(missing_refusal("tasks", "Run /speckit-tasks first"))
+        if not refusals:
+            blocked, rederive = _scope(pkg)
+            if command == "implement":
+                refusals.extend(_work_refusals(pkg, task, blocked, rederive))
+    if task is not None and command != "implement":
+        refusals.append(Refusal("unknown-item", "--task applies only to implement", "Drop --task"))
     unresolved = [s for s in after if s.fault]
     if (strict and faults) or (command == "implement" and unresolved):
         shown = unresolved or faults
@@ -116,13 +201,23 @@ def enter(
         )
     if refusals:
         raise refuse(*refusals)
+    text = f"May proceed with {command}"
+    held = [t.key for t in _task_blocks(pkg) if t.key in blocked and not staleness.is_ticked(t)] if command == "implement" and task is None else []
+    if held:
+        text += " except " + ", ".join(held)
+    text += "."
+    if rederive:
+        text += " To re-derive: " + ", ".join(rederive) + "."
+    if faults:
+        text += f" Repaired: {', '.join(f'{s.name} ({s.fault})' for s in faults)}."
     return {
         "ok": True,
         "command": command,
         "alias_faults": [s.to_json() for s in faults],
         "aliases": [s.to_json() for s in after],
-        "text": f"May proceed with {command}."
-        + (f" Repaired: {', '.join(f'{s.name} ({s.fault})' for s in faults)}." if faults else ""),
+        "blocked": staleness.rows(blocked),
+        "rederive": list(rederive),
+        "text": text,
     }
 
 

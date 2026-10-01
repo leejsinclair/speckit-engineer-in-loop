@@ -23,15 +23,17 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 ## Steps
 
-1. **Synchronise and read**: run `eil sync --json`, then `eil status --json`, and take `next_action` from it. Its `kind`, `stage`, `command` and `message` come from the helper; **do not choose a different step, and do not work out the step yourself.**
+1. **Synchronise and read**: run `eil sync --json`, then `eil status --json`, and take `next_action` from it. Its `kind`, `stage`, `command`, `message` and `purpose` come from the helper; **do not choose a different step, and do not work out the step yourself.**
 2. **Act on `kind`, and only on `kind`**:
    - `done`: say every stage is complete and stop.
-   - `human`: **stop.** Give the `message`, name the `command` the person should run, and if it is a challenge, show it. Run nothing.
+   - `human`: **stop.** Give the `message`, say its `purpose` (awareness, understanding, decision, validation or approval), name the `command` the person should run, and if it is a challenge, show it. Run nothing.
    - `draft` or `check`: say in one line which command you are about to run and why, then run that `command` with no extra input, following it completely.
 3. If the user's input says "show", "what", "dry run" or similar, report the `message` and `command` and run nothing.
 4. **After one step, stop.** Run `eil status --json` again and report the new `next`. Never start a second step in the same call: the person decides whether to go on.
 
 ## Rules
+
+- Every request to a person states its purpose, one of awareness, understanding, decision, validation or approval; use the `purpose` the helper gives (on `next_action` and on each review list) and do not invent one.
 
 - Never approve a stage, record an override, accept a risk, abbreviate a stage, answer a challenge, take a comprehension check or mark anything verified, however the step is worded. Those stay with a person, through their own commands.
 - Never edit an approved stage. If `next_action` points at one, that is a `human` step.

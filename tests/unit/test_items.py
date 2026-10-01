@@ -398,3 +398,35 @@ def test_decision_fields_accept_bold_bullets_and_plural_labels_and_join_continua
 
 def test_a_label_with_no_text_is_an_empty_field() -> None:
     assert decision_fields(only("**DEC-004**: Use a queue\nReason:\n")) == {"reason": ""}
+
+
+# ---- RF (review finding) items, 002 (T013)
+
+
+def test_an_rf_item_parses_with_status_and_labelled_lines() -> None:
+    from eil.trace import review_finding_fields
+
+    text = (
+        "**RF-002**: Handler ignores the tenant (traces: T014) (status: excepted)\n"
+        "Root: FR-004\nAccepted by: Ada Dev\nReason: Deferred to the next release\n"
+    )
+    (item,) = parse_text(text).items
+    assert (item.id, item.kind, item.status, item.traces) == ("RF-002", "RF", "excepted", ["T014"])
+    assert review_finding_fields(item) == {
+        "root": "FR-004",
+        "accepted by": "Ada Dev",
+        "reason": "Deferred to the next release",
+    }
+
+
+@pytest.mark.parametrize("status", ["open", "resolved", "excepted"])
+def test_rf_statuses(status: str) -> None:
+    (item,) = parse_text(f"**RF-001**: Something (status: {status})\n").items
+    assert item.status == status
+
+
+def test_rf_is_an_administrative_free_content_kind() -> None:
+    from eil.trace import ADMINISTRATIVE_SECTIONS, KINDS
+
+    assert "RF" in KINDS
+    assert {"change log", "record"} <= ADMINISTRATIVE_SECTIONS

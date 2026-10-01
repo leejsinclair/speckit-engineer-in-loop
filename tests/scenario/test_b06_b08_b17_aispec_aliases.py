@@ -132,9 +132,9 @@ def test_b06_a_pending_answer_fails_the_check_shows_in_the_overview_and_refuses_
     assert status["outstanding"]["pending_clarifications"] == ["AIS-002"]
     assert "AIS-002" in read(project, "s00-README.md")
     before = sorted(p.name for p in feature(project).iterdir())
-    refused = eil(["enter", "plan", "--json"])
-    assert refused.code == 1 and refused.refusal_codes == ["pending-clarification"]
-    assert sorted(p.name for p in feature(project).iterdir()) == before, "nothing written on a refusal"
+    entered = eil(["enter", "plan", "--json"])
+    assert entered.code == 0 and [row["id"] for row in entered.json["blocked"]] == ["AIS-002"]
+    assert sorted(p.name for p in feature(project).iterdir()) == before
 
 
 def test_b06_resolve_carries_the_answer_upstream_and_a_named_override_lets_plan_proceed(
@@ -152,7 +152,7 @@ def test_b06_resolve_carries_the_answer_upstream_and_a_named_override_lets_plan_
     # not, since FR-002 did not exist when technical was approved), so per FR-043 ("depends on the
     # changed content") technical is not itself pulled into re-review — D-26.
     assert status["stages"]["technical"]["state"] == "approved"
-    assert eil(["enter", "plan", "--json"]).code == 1, "plan stays refused until it is approved again"
+    assert eil(["enter", "plan", "--json"]).code == 0, "a stage awaiting re-review blocks only what it reaches"
     again = eil(["resolve", "--id", "AIS-002", "--stage", "functional", "--json"])
     assert again.json["cleared"] is False
     for criterion in ("AIS-G02", "AIS-G03"):
@@ -172,11 +172,7 @@ def test_b06_resolve_carries_the_answer_upstream_and_a_named_override_lets_plan_
         assert overridden.code == 0, overridden.stdout
     entered = eil(["enter", "plan", "--json"])
     stages = eil(["status", "--json"]).json["stages"]
-    assert (
-        entered.code == 1
-        and "stage-not-approved" in entered.refusal_codes
-        and stages["functional"]["state"] != "approved"
-    )
+    assert entered.code == 0 and stages["functional"]["state"] != "approved"
     overview = read(project, "s00-README.md")
     assert "AIS-G03" in overview and "OVR-" in overview
 
@@ -236,6 +232,7 @@ def test_b08_a_replaced_alias_is_reported_then_repaired_and_the_target_is_untouc
     project: Path, eil: Callable
 ) -> None:
     start_ai_spec(project, eil)
+    eil(["sync", "--json"])  # the first sync records the upgrade adoption (D-42) in the target
     target = (feature(project) / "s04-ai-spec.md").read_bytes()
     alias = feature(project) / "spec.md"
     alias.unlink()

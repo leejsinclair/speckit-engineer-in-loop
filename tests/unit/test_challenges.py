@@ -50,7 +50,7 @@ def add(
     text: str = TEXT,
     by: str | None = None,
 ) -> dict:
-    return records.add_challenge(package, stage, target, text, by)
+    return records.add_challenge(package, stage, target, text, by, "medium")
 
 
 def answer(package: Package, cid: str, response: str, by: str = "Ada Dev", reason: str | None = None) -> dict:
@@ -80,6 +80,7 @@ def test_a_challenge_is_recorded_open_with_its_target_and_text(package: Package)
             "target": "FR-001",
             "text": TEXT,
             "status": "open",
+            "severity": "medium",
         }
     ]
 
@@ -157,6 +158,7 @@ def test_accepting_closes_the_challenge_with_who_when_and_the_response(package: 
         "target": "FR-001",
         "text": TEXT,
         "status": "closed",
+        "severity": "medium",
         "response": "accepted",
         "responder": "Ada Dev",
         "at": NOW,
