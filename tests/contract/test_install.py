@@ -186,9 +186,9 @@ def test_c01_removal_restores_a_project_without_the_preset_or_extension(scratch_
     assert json.loads(resolved.stdout)["TEMPLATE_CONTENT"] == core
 
 
-@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 22, reason="the last command arrives in task T129")
-def test_the_finished_extension_registers_twenty_two_commands_and_four_hooks(installed: Path) -> None:
-    assert len(EXTENSION_COMMANDS) == 22
+@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 20, reason="the last command arrives in task T129")
+def test_the_finished_extension_registers_twenty_commands_and_four_hooks(installed: Path) -> None:
+    assert len(EXTENSION_COMMANDS) == 20
     hooks = (installed / ".specify" / "extensions.yml").read_text(encoding="utf-8")
     for name in ("after_clarify", "after_plan", "after_tasks", "after_implement"):
         assert name in hooks
@@ -206,9 +206,9 @@ def test_the_finished_preset_composes_seven_core_commands(installed: Path) -> No
     assert len(PRESET_TEMPLATES) == 9
 
 
-def test_accept_is_registered_and_the_old_review_commands_say_they_are_superseded() -> None:
+def test_accept_is_registered_and_the_superseded_commands_are_gone() -> None:
     manifest = (REPO / "extensions" / "eil" / "extension.yml").read_text(encoding="utf-8")
     assert "speckit.eil.accept" in manifest
     for name in ("amend", "review"):
-        text = (REPO / "extensions" / "eil" / "commands" / f"speckit.eil.{name}.md").read_text(encoding="utf-8")
-        assert "/speckit-eil-accept" in text and "superseded" in text.lower()
+        assert f"speckit.eil.{name}" not in manifest
+        assert not (REPO / "extensions" / "eil" / "commands" / f"speckit.eil.{name}.md").exists()

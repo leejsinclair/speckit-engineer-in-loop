@@ -5,6 +5,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The `speckit.eil.amend` and `speckit.eil.review` prompt commands. Use `/speckit-eil-accept`. The `eil amend`
+  and `eil review` helper subcommands are unchanged.
+
 ### Added
 
 - Proportionate revalidation (feature 002): fewer, better-explained requests for a developer's attention,

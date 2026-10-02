@@ -46,7 +46,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 7. **After each level** record it: `eil comprehension record --stage <stage> --level <level> --outcome <understood|coached|revealed|skipped|not-applicable> --attempts <n> --items <ids> --by "<the human's name>" [--reason "<why>"]`. Only a person can take the check: record it under the developer's own name, and never record an outcome for a level the human did not take part in.
 8. **Never write any question, answer or hint into any file, record or commit message.** The record holds levels, outcomes, attempt counts and item ids only. Do not save the conversation.
 9. **No game mechanics.** Never use points, scores, streaks, timers, rankings or rewards, and no praise beyond a brief acknowledgement.
-10. **Finish**: report the counts by outcome, any challenges you raised, and the next step. On a first approval that is `/speckit-eil-approve`; on a re-approval where every change is a recorded human decision, `/speckit-eil-amend <stage> --from <ids>` may cover it instead — say so. State plainly that skipped or revealed levels will show in the approval record. Run `eil sync --json`.
+10. **Finish**: report the counts by outcome, any challenges you raised, and the next step. On a first approval that is `/speckit-eil-approve`; on a re-approval where every change is a recorded human decision, `/speckit-eil-accept` may cover it with one sign-off instead — say so. State plainly that skipped or revealed levels will show in the approval record. Run `eil sync --json`.
 
 ## Rules
 

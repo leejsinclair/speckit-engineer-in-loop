@@ -181,25 +181,6 @@ RULES: list[tuple[Path, str, list[str]]] = [
         "shows the human the recorded text and writes a verbatim carry untagged",
         [r"verbatim carry", r"\(decided: AIS-###\)"],
     ),
-    # eil amend (D-25): re-signs an approval covered by cited human decisions
-    (EXT / "speckit.eil.amend.md", "asks the human directly", [r"ask the human directly"]),
-    (EXT / "speckit.eil.amend.md", "never supplies the attestation", [r"never supply the attestation"]),
-    (
-        EXT / "speckit.eil.amend.md",
-        "never chooses the cited decisions for the human",
-        [r"never choose the decisions"],
-    ),
-    # eil review (D-28): walks the human through each change and records their "ok" as the decision
-    (
-        EXT / "speckit.eil.review.md",
-        "never accepts a change on the human's behalf",
-        [r"never accept a change on the human's behalf"],
-    ),
-    (
-        EXT / "speckit.eil.review.md",
-        "never supplies the attestation for eil review finish",
-        [r"never supply the attestation"],
-    ),
     # accept (FR-015): covered changes take a short sign-off; the person's words are never supplied
     (EXT / "speckit.eil.accept.md", "never supplies the sign-off", [r"never supply the sign-off"]),
     (EXT / "speckit.eil.accept.md", "labels its own summaries as drafts", [r"draft by the AI and must be labelled"]),
