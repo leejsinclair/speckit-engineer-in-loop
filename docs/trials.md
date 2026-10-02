@@ -2,7 +2,7 @@
 
 Everything the automated suite can decide is decided by code, and it passes. What follows cannot be:
 it depends on a person, or on whether an AI agent follows a prompt. Each protocol says what to do, what
-to record and what counts as a pass. **Nothing here has been run yet**, except C-06 (below); the sheets
+to record and what counts as a pass. **Nothing here has been run yet**, except C-06 and one SC-010 data point (below); the sheets
 are blank on purpose, and a release should not claim more than the sheets show.
 
 The pass rule for every probe: run each probe **once per command**; any failure is a **prompt defect**,
@@ -15,6 +15,7 @@ each rule is *written* in the prompt; these probes measure whether the agent *fo
 | Item | Date | Result |
 |---|---|---|
 | C-06 install to first story | 2026-09-25 | Scripted from the README on Linux with Spec Kit 1.0.2.dev0: stage, `extension add`, `preset add`, `eil start` took **1.1 s** of machine time, ending with `s00-README.md` and `s01-requirements.md` and a Requirements gate reporting each of its 14 criteria. The 10-minute budget (SC-001) is therefore all reading time; a first-time reader has not yet been timed. |
+| SC-010 overhead, first data point | 2026-10-01 | Story 002 (reading-order navigation, a small viewer feature) of the rich specification viewer, run through the full workflow: **138 min** of process, **5 min** of implementation, **about 96% overhead** against the 25% target. 128 lines of code and about 420 lines of tests, against about 5,800 lines of stage documents. Fails the target; the friction found is addressed by `specs/003-proportionate-effort`. |
 | Everything else below | not run | |
 
 ## Structural measures
@@ -56,6 +57,7 @@ story with a user interface and time the artefact work: drafting diagrams and ex
 
 | Story | Total minutes | Process minutes | Overhead % | Artefact minutes | Frames | Minutes per export |
 |---|---|---|---|---|---|---|
+| rich-specification-viewer 002, 2026-10-01 | 143 | 138 | 96.5 (fail) | not timed | not timed | not timed |
 | | | | | | | |
 
 ### SC-014: the source of a wireframe opens
