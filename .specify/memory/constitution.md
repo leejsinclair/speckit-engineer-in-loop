@@ -1,5 +1,18 @@
 <!--
 Sync Impact Report
+Version change: 1.2.1 -> 1.2.2 (2026-10-02)
+1.2.2 (PATCH): Principle II clarified. A short reply ("ok") to an explicit approval question
+  is an ordinary confirmation; when the reply does not itself say what it confirms, it is
+  recorded with the helper's fixed question. The "short acknowledgement ... when, and only
+  when" clause governs approvals carried forward with no fresh question. The requirement that
+  the helper fixes the question applies only where the question is recorded in place of the
+  reply's own words, so approvals worded in full stay compliant. Enables specs/003-proportionate-effort FR-047 to FR-049. Nothing compliant
+  with 1.2.1 becomes non-compliant.
+Modified principles: II (scope of the short-acknowledgement clause made explicit)
+Follow-up: none; 003 records the question beside every approval reply (D-59).
+Templates reviewed: none modified (dependent commands read this file at runtime)
+
+Previous amendment
 Version change: 1.2.0 -> 1.2.1 (2026-09-30)
 1.2.1 (PATCH): Constraints of Record, proportionate-gates bullet reworded to resolve
   /speckit-analyze finding I1 against specs/002-proportionate-revalidation FR-048. Anyone may raise
@@ -12,7 +25,7 @@ Modified sections: Constraints of Record (who may raise or lower a challenge's s
 Follow-up: none; specs/002 FR-030 and FR-048 already state this rule.
 Templates reviewed: none modified (dependent commands read this file at runtime)
 
-Previous amendment
+Earlier amendment
 Version change: 1.1.0 -> 1.2.0 (2026-09-30)
 1.2.0 (MINOR): Principle IV added; Principle II materially widened; one Constraints of Record
   bullet widened. Reason (repository owner): ceremony that does not earn its place makes developers
@@ -85,9 +98,17 @@ Figma source changing after export, whether the person answering is the confirme
 judgment of understanding is right) MUST be stated as an attestation-level limit where the feature
 is documented, and AI judgments MUST be labelled as the AI's.
 
-A human confirmation MAY be a short acknowledgement (for example "ok") of an explanation the helper
-generates, when, and only when, every change since an approval is covered by recorded human
-decisions that the helper has verified. It is still the human's own words: recorded verbatim with
+A human confirmation is the person's reply to an explicit question that states what is being
+confirmed (for example "Approve the Functional Specification as the behaviour you require?"). The
+reply MAY be as short as "ok", "yes" or "approved": the question carries the content, so when the
+reply does not itself say what it confirms, the question MUST be recorded with it, so that a reader
+sees what was confirmed. When the question is recorded in place of the reply's own words, it is
+fixed by the helper, never worded by the AI.
+
+An approval MAY also be carried forward, with no fresh approval question, on a short
+acknowledgement (for example "ok") of an explanation the helper generates, when, and only when,
+every change since that approval is covered by recorded human decisions that the helper has
+verified. It is still the human's own words: recorded verbatim with
 their name and the time, refused from anyone not configured to confirm that stage, and never
 supplied, completed or inferred by the AI. An approval carried forward this way MUST be marked as
 carried forward, naming the decisions it rests on, wherever approvals are shown. Any change not
@@ -171,4 +192,4 @@ adding a principle or section or materially widening guidance, PATCH for clarifi
 is reviewed at each `/speckit-analyze` run and in each pull request. Complexity that departs from a
 principle MUST be justified in the plan's Complexity Tracking table before it is built.
 
-**Version**: 1.2.1 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-09-30
+**Version**: 1.2.2 | **Ratified**: 2026-09-25 | **Last Amended**: 2026-10-02
