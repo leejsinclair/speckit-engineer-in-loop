@@ -25,6 +25,7 @@ from .evidence import LIMIT as EVIDENCE_LIMIT
 from .identity import Config, confirmer_refusal, is_ai_actor, normalise_person
 from .package import STAGES
 from .results import Refusal, refuse, usage_error
+from .trace import decision_fields, is_ai_decided
 
 if TYPE_CHECKING:
     from .package import Package
@@ -47,6 +48,30 @@ _ALL_PHRASE = re.compile(
 )
 
 
+ONE_AT_A_TIME, SUMMARY = "one-at-a-time", "summary"
+DEFAULT_THRESHOLD = 8
+# Each of these sections is one entry on an inferred list, however many blocks it holds (FR-018).
+SCAFFOLDING_SECTIONS = ("Actors", "Dependencies", "Not applicable", "Inputs", "Outputs")
+SUMMARY_LIMIT = 120
+_SUMMARY_PREFIX = re.compile(r"^\s*(?:[-*]\s+\[[ xX]\]\s+)?(?:\*\*[A-Z]{2,4}-\d{3,}\*\*:|T\d{3,})\s*")
+_SUMMARY_CLAUSE = re.compile(r"\s*\((?:traces|decided|status|material|code|actor|store|accepted-by)[^)]*\)")
+_SENTENCE = re.compile(r"(?<=[.!?])\s")
+
+
+def summarise(text: str) -> str:
+    """A deterministic one-line summary: an item's title, or the first sentence, at most 120
+    characters. The AI writes no summary (D-51)."""
+    first = next((line for line in text.splitlines() if line.strip() and not line.strip().startswith("```")), "")
+    plain = _SUMMARY_CLAUSE.sub("", _SUMMARY_PREFIX.sub("", _AI_DRAFT.sub("", first))).strip()
+    plain = _SENTENCE.split(plain, maxsplit=1)[0].strip()
+    plain = " ".join(plain.split())
+    return plain if len(plain) <= SUMMARY_LIMIT else plain[: SUMMARY_LIMIT - 1].rstrip() + "…"
+
+
+def mode_for(count: int, threshold: int) -> str:
+    return ONE_AT_A_TIME if count <= threshold else SUMMARY
+
+
 @dataclass
 class ListEntry:
     key: str
@@ -59,9 +84,16 @@ class ListEntry:
     correction: str | None = None
     conflict: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
+    section: str = ""
+    summary: str = ""
+    members: dict[str, str] = field(default_factory=dict)  # a scaffolding entry's blocks: key to hash
 
     def to_json(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"key": self.key, "what": self.what, "why": self.why}
+        out: dict[str, Any] = {"key": self.key, "what": self.what, "why": self.why, "summary": self.summary}
+        if self.section:
+            out["section"] = self.section
+        if self.members:
+            out["members"] = list(self.members)
         for name in ("ai_view", "severity", "covered_by", "correction"):
             if getattr(self, name) is not None:
                 out[name] = getattr(self, name)
@@ -72,26 +104,54 @@ class ListEntry:
 
 @dataclass
 class ReviewList:
+    """A list as presented. ``entries`` are what the person is asked about now; while a review session
+    is open they are its unanswered entries, and ``all_entries`` is the whole list, which the digest,
+    the mode and the answer checks always use."""
+
     kind: str
     stage: str
     purpose: str
     entries: list[ListEntry]
     limits: list[str]
+    threshold: int = DEFAULT_THRESHOLD
+    all_entries: list[ListEntry] | None = None
+    session_mode: str | None = None
+    session: dict[str, int] | None = None
+
+    @property
+    def full(self) -> list[ListEntry]:
+        return self.entries if self.all_entries is None else self.all_entries
 
     @property
     def digest(self) -> str:
-        pairs = sorted(f"{e.key}|{e.hash}" for e in self.entries)
+        pairs = sorted(f"{e.key}|{e.hash}" for e in self.full)
         return "sha256:" + hashlib.sha256("\n".join(pairs).encode("utf-8")).hexdigest()
 
+    @property
+    def mode(self) -> str:
+        return self.session_mode or mode_for(len(self.full), self.threshold)
+
+    def groups(self) -> list[dict[str, Any]]:
+        found: dict[str, list[str]] = {}
+        for entry in self.entries:
+            found.setdefault(entry.section, []).append(entry.key)
+        return [{"section": name, "entries": keys} for name, keys in found.items()]
+
     def to_json(self) -> dict[str, Any]:
-        return {
+        out = {
             "kind": self.kind,
             "stage": self.stage,
             "purpose": self.purpose,
+            "mode": self.mode,
+            "threshold": self.threshold,
+            "groups": self.groups(),
             "entries": [e.to_json() for e in self.entries],
             "digest": self.digest,
             "limits": self.limits,
         }
+        if self.session is not None:
+            out["session"] = self.session
+        return out
 
 
 @dataclass
@@ -158,16 +218,22 @@ def _build_inferred(package: Package, stage: str) -> list[ListEntry]:
             why = f"adds {entry['adds']}"
         else:
             why = "inferred; not yet reviewed"
+        item = info.block.item
+        ai_decided = item is not None and item.kind == "DEC" and is_ai_decided(decision_fields(item).get("owner"))
         entries.append(
             ListEntry(
                 key,
                 info.block.hash,
                 _AI_DRAFT.sub("", info.block.text),
-                why,
+                f"AI-decided: {decision_fields(item).get('reason', '')}".strip() if ai_decided else why,
                 correction=f"under open correction {under[key]}" if key in under else None,
+                section=AI_DECIDED_GROUP if ai_decided else "",
             )
         )
     return entries
+
+
+AI_DECIDED_GROUP = "AI-decided decisions"
 
 
 def _settle_inferred(package: Package, stage: str, record: dict[str, Any], hashes: dict[str, str], act: Act) -> None:
@@ -191,7 +257,7 @@ def _reopen_inferred(package: Package, stage: str, record: dict[str, Any], hashe
         if isinstance(entry, dict):
             entry.pop("reviewed", None)
             entry.pop("basis", None)
-            if entry.get("class") == "adopted":
+            if entry.get("class") in ("adopted", "adopted-pending"):
                 entry["class"] = "inferred"
 
 
@@ -393,12 +459,47 @@ def answered_changes(package: Package, stage: str) -> dict[str, tuple[str, str]]
     return out
 
 
+LEGACY_STATEMENT = (
+    "This document changed since an approval the tool cannot compare section by section: the approval "
+    "predates section-level records. One reply re-signs the stage, recorded as given without a comparison."
+)
+
+
+def legacy_entry(package: Package, stage: str) -> ListEntry | None:
+    """The ``legacy:<stage>`` change entry, while the stage's approval predates section-level records and
+    its document changed since (research D-56; FR-025)."""
+    from .blockstatus import legacy_approval
+
+    if stage not in ("requirements", "functional", "technical", "completion") or not package.exists(stage):
+        return None
+    approval = legacy_approval(package, stage)
+    if approval is None:
+        return None
+    digest = _mix(f"legacy:{stage}", [str(approval.get("fingerprint")), str(package.fingerprint(stage))])
+    return ListEntry(
+        f"legacy:{stage}", digest, LEGACY_STATEMENT,
+        f"approved by {approval.get('by')} on {str(approval.get('at', ''))[:10]}, before section-level records",
+    )  # fmt: skip
+
+
+def legacy_answered(package: Package, stage: str) -> str | None:
+    """The acceptance id that answered the stage's legacy entry at its current content, if any."""
+    entry = legacy_entry(package, stage)
+    if entry is None:
+        return None
+    found = _answers(package, stage).get((entry.key, entry.hash))
+    return found[1] if found and found[0] else None
+
+
 def _build_changes(package: Package, stage: str) -> list[ListEntry]:
     from .provenance import change_rows
 
     answered = answered_changes(package, stage)
     inferred = {i.key for i in block_statuses(package).get(stage, {}).values() if i.status == NEEDS_REVIEW}
     entries = []
+    legacy = legacy_entry(package, stage)
+    if legacy is not None and legacy_answered(package, stage) is None:
+        entries.append(legacy)
     for row in change_rows(package, stage):
         if row.id in answered:
             continue
@@ -416,7 +517,11 @@ def _settle_changes(package: Package, stage: str, record: dict[str, Any], hashes
 
 
 def _settled_changes(package: Package, stage: str) -> dict[str, str]:
-    return {key: digest for key, (digest, _) in answered_changes(package, stage).items()}
+    out = {key: digest for key, (digest, _) in answered_changes(package, stage).items()}
+    legacy = legacy_entry(package, stage)
+    if legacy is not None and legacy_answered(package, stage):
+        out[legacy.key] = legacy.hash
+    return out
 
 
 # ---- the unsettled-challenges kind: a rejected or deferred challenge whose target changed since (FR-030)
@@ -601,7 +706,21 @@ KINDS: dict[str, KindSpec] = {
 # ---- building a list
 
 
+DERIVED_LIST = "derived"
+DERIVED_MEMBERS = ("ai-spec", "plan", "tasks")
+
+
 def _check_stage(package: Package, stage: str) -> None:
+    if stage == DERIVED_LIST:
+        from .profile import active
+
+        if active(package) is None:
+            raise _refuse(
+                "no-profile",
+                "the combined derived list exists only under the small-story profile",
+                "Review each stage's own list (--stage ai-spec, plan or tasks), or authorise the profile",
+            )
+        return
     if stage not in STAGES or not package.exists(stage):
         raise _refuse("unknown-stage", f"{stage!r} has no document in this story", f"Use one of: {', '.join(STAGES)}")
 
@@ -613,21 +732,136 @@ def _spec(kind: str) -> KindSpec:
     return spec
 
 
-def build_list(package: Package, stage: str, kind: str, views: dict[str, str] | None = None) -> ReviewList:
+def _scaffolding(entries: list[ListEntry]) -> list[ListEntry]:
+    """Fold the blocks of each scaffolding section into one ``§<Section>`` entry (FR-018)."""
+    wanted = {name.casefold(): name for name in SCAFFOLDING_SECTIONS}
+    folded: dict[str, ListEntry] = {}
+    out: list[ListEntry] = []
+    for entry in entries:
+        name = wanted.get(entry.section.casefold())
+        if name is None or entry.conflict:
+            out.append(entry)
+            continue
+        group = folded.get(name)
+        if group is None:
+            group = folded[name] = ListEntry(f"§{name}", "", "", section=entry.section)
+            out.append(group)
+        group.members[entry.key] = entry.hash
+        group.what = f"{group.what}\n\n{entry.what}" if group.what else entry.what
+    for name, group in folded.items():
+        group.hash = _mix("§" + name, [f"{k}:{h}" for k, h in sorted(group.members.items())])
+        count = len(group.members)
+        group.why = f"{count} block{'s' if count != 1 else ''} of {name}, answered together"
+    return out
+
+
+def _sections(package: Package, stage: str) -> dict[str, str]:
+    return {b.key: b.section for b in blocks_of(package.doc(stage))}
+
+
+def build_list(
+    package: Package,
+    stage: str,
+    kind: str,
+    views: dict[str, str] | None = None,
+    threshold: int = DEFAULT_THRESHOLD,
+    session_view: bool = True,
+) -> ReviewList:
+    """The list of ``kind`` for ``stage``. With ``session_view`` (the default), an open review session
+    narrows ``entries`` to what is still unanswered and fixes the mode to the session's."""
     spec = _spec(kind)
     _check_stage(package, stage)
+    if stage == DERIVED_LIST:
+        return _build_derived(package, kind, views, threshold, session_view)
     entries = spec.build(package, stage)
     conflicted = conflicted_keys(package, stage, {e.key: e.hash for e in entries} if kind == "changes" else None)
+    sections = _sections(package, stage)
     for entry in entries:
         if entry.key in (views or {}):
             entry.ai_view = f"AI assessment: {views[entry.key]}"  # type: ignore[index]
         entry.conflict = entry.key in conflicted
+        entry.section = entry.section or sections.get(entry.key, "")
+    if kind == "inferred":
+        entries = _scaffolding(entries)
+    for entry in entries:
+        entry.summary = entry.summary or summarise(entry.what)
     if spec.rework_first:
         entries.sort(key=lambda e: bool(e.ai_view) and _looks_valid(e.ai_view))
     limits = [*spec.limits, REPLY_LIMIT]
     if any((e.covered_by or "").startswith("CR-") or e.correction for e in entries):
         limits.append(CORRECTION_LIMIT)
-    return ReviewList(kind, stage, spec.purpose, entries, limits)
+    listed = ReviewList(kind, stage, spec.purpose, entries, limits, threshold)
+    return _with_session(package, listed, session_view)
+
+
+def _with_session(package: Package, listed: ReviewList, session_view: bool) -> ReviewList:
+    entries = listed.entries
+    stage, kind = listed.stage, listed.kind
+    if session_view:
+        found = _open_session(package, stage, kind)
+        if found is not None:
+            _, session = found
+            answered = _live_answers(session, {e.key: e.hash for e in entries})
+            listed.all_entries = entries
+            listed.entries = [e for e in entries if e.key not in answered]
+            listed.session_mode = str(session.get("mode") or listed.mode)
+            listed.session = {"answered": len(answered), "remaining": len(listed.entries)}
+    return listed
+
+
+def _build_derived(
+    package: Package, kind: str, views: dict[str, str] | None, threshold: int, session_view: bool
+) -> ReviewList:
+    """The ``derived`` list (D-52): the union of the inferred lists of the AI Specification, plan and
+    tasks, each entry carrying its stage; settling it settles each in its own stage."""
+    if kind != "inferred":
+        raise _refuse("unknown-item", f"the derived list is an inferred list, not {kind!r}", "Use --kind inferred")
+    entries: list[ListEntry] = []
+    limits: list[str] = []
+    for member in DERIVED_MEMBERS:
+        if not package.exists(member):
+            continue
+        sub = build_list(package, member, kind, views, threshold, session_view=False)
+        for entry in sub.entries:
+            entry.extra["stage"] = member
+            entry.section = f"{member}: {entry.section}" if entry.section else member
+        entries += sub.entries
+        limits += [limit for limit in sub.limits if limit not in limits]
+    listed = ReviewList(kind, DERIVED_LIST, KINDS[kind].purpose, entries, limits or [REPLY_LIMIT], threshold)
+    return _with_session(package, listed, session_view)
+
+
+def show_entries(
+    package: Package,
+    stage: str,
+    kind: str,
+    entry: str | None = None,
+    group: str | None = None,
+    all_: bool = False,
+    threshold: int = DEFAULT_THRESHOLD,
+) -> dict[str, Any]:
+    """``review show``: the full text of one entry, one section's entries, or the whole list. Reads only."""
+    listed = build_list(package, stage, kind, threshold=threshold, session_view=False)
+    if entry is not None:
+        chosen = [e for e in listed.entries if e.key == entry]
+        if not chosen:
+            raise _refuse("unknown-entry", f"{entry} is not on the {kind} list for {stage}", "Use a key from `review list`")
+    elif group is not None:
+        chosen = [e for e in listed.entries if e.section.casefold() == group.casefold() or e.key == f"§{group}"]
+        if not chosen:
+            raise _refuse("unknown-entry", f"no entry of the {kind} list for {stage} is in {group!r}", "Use a section from `review list`")
+    else:
+        chosen = list(listed.entries)
+    parts = []
+    for e in chosen:
+        parts.append(f"{e.key} ({e.why})" + (f"\n{e.ai_view}" if e.ai_view else "") + f"\n{e.what}")
+    return {
+        "ok": True,
+        "stage": stage,
+        "kind": kind,
+        "entries": [e.to_json() for e in chosen],
+        "text": "\n\n".join(parts) or "The list is empty.",
+    }
 
 
 def _looks_valid(view: str) -> bool:
@@ -693,6 +927,148 @@ def _update_conflicts(
     return rows, resolved
 
 
+def _open_session(package: Package, stage: str, kind: str) -> tuple[str, dict[str, Any]] | None:
+    """The open review session of ``stage``/``kind`` (story.review_sessions), with its key."""
+    sessions = package.story_record().get("review_sessions") or {}
+    for key, session in sessions.items():
+        if isinstance(session, dict) and session.get("stage") == stage and session.get("kind") == kind:
+            return key, session
+    return None
+
+
+def _live_answers(session: dict[str, Any], current: dict[str, str]) -> dict[str, dict[str, Any]]:
+    """The session's answers still standing: an answer lapses when its entry's content changed."""
+    return {
+        key: answer
+        for key, answer in (session.get("answers") or {}).items()
+        if isinstance(answer, dict) and current.get(key) == answer.get("hash")
+    }
+
+
+def _save_session(package: Package, key: str, session: dict[str, Any] | None) -> None:
+    sessions = dict(package.story_record().get("review_sessions") or {})
+    if session is None:
+        sessions.pop(key, None)
+    else:
+        sessions[key] = session
+    try:
+        package.write_story_record("review_sessions", sessions or None)
+    except RegionError as exc:
+        raise _refuse("not-amendable", f"cannot store the answer: {exc}", "Repair or remove eil-record.json first") from exc
+
+
+def _expand(keys: list[str], on_list: dict[str, ListEntry]) -> list[str]:
+    """Scaffolding entries stand for their member blocks when an answer is recorded."""
+    out: list[str] = []
+    for key in keys:
+        entry = on_list.get(key)
+        out += list(entry.members) if entry is not None and entry.members else [key]
+    return out
+
+
+def _hashes(keys: list[str], on_list: dict[str, ListEntry], settled: dict[str, str]) -> dict[str, str]:
+    members = {m: h for e in on_list.values() for m, h in e.members.items()}
+    return {k: members.get(k) or (on_list[k].hash if k in on_list else settled[k]) for k in keys}
+
+
+def _apply(
+    package: Package,
+    spec: KindSpec,
+    stage: str,
+    kind: str,
+    *,
+    digest: str | None,
+    by: str,
+    reply: str,
+    accepted: list[str],
+    excepted: list[str],
+    questioned: list[str],
+    reopened: list[str],
+    hashes: dict[str, str],
+    resolving: bool,
+    defer_reason: str | None,
+    summaries: dict[str, str] | None,
+    mode: str,
+    unseen: list[str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
+    """Record one acceptance and let the kind settle or reopen what it names (the one answer path)."""
+    read = package.record_read(stage, "provenance")
+    if read.error:
+        raise _refuse("not-amendable", f"{stage} has a malformed provenance region: {read.error}", "Repair or remove it first")
+    record = read.obj if read.obj is not None else (adopt(package, stage) or {"version": 1, "blocks": {}})
+    record.setdefault("blocks", {})
+    deferring = bool(accepted) and spec.defers
+    act = Act(_next_id(package), by, clock.utc_now(), reply, summaries or {}, (defer_reason or "").strip() or None)
+    acc: dict[str, Any] = {
+        "id": act.id, "stage": stage, "kind": kind, "digest": digest, "by": by, "at": act.at, "reply": reply,
+        "accepted": [] if deferring else accepted, "except": excepted, "questioned": questioned,
+        "reopened": reopened, "reason": act.reason, "hashes": hashes, "mode": mode,
+    }  # fmt: skip
+    if deferring:
+        acc["deferred"] = accepted
+    if unseen:
+        acc["unseen"] = unseen
+    if summaries:
+        acc["summaries"] = {k: v.strip() for k, v in summaries.items() if k in hashes and v.strip()}
+    if spec.settle and accepted:
+        spec.settle(package, stage, record, {k: hashes[k] for k in accepted}, act)
+    undone = {k: hashes[k] for k in (*excepted, *reopened)}
+    if spec.reopen and undone:
+        spec.reopen(package, stage, record, undone, act)
+    rows, resolved = _update_conflicts(record, acc, resolving)
+    if resolved:
+        acc["resolved_conflict"] = True
+    record.setdefault("acceptances", []).append(acc)
+    if rows or "conflicts" in record:
+        record["conflicts"] = rows
+    try:
+        package.write_record(stage, "provenance", record)
+    except RegionError as exc:
+        raise _refuse("not-amendable", f"cannot record the answer in {stage}: {exc}", "Repair the document") from exc
+    return acc, rows, resolved
+
+
+def _settled_for(spec: KindSpec, package: Package, stage: str) -> dict[str, str]:
+    if spec.settled is None:
+        return {}
+    if stage == DERIVED_LIST:
+        return {k: h for member in DERIVED_MEMBERS if package.exists(member) for k, h in spec.settled(package, member).items()}
+    return spec.settled(package, stage)
+
+
+def _apply_split(
+    package: Package, spec: KindSpec, stage: str, kind: str, on_list: dict[str, ListEntry], **kwargs: Any
+) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
+    """``_apply``, once per member stage when the list is the combined ``derived`` one."""
+    if stage != DERIVED_LIST:
+        return _apply(package, spec, stage, kind, **kwargs)
+    owner = {}
+    for entry in on_list.values():
+        for key in entry.members or [entry.key]:
+            owner[key] = entry.extra.get("stage")
+    results: list[tuple[dict[str, Any], list[dict[str, Any]], bool]] = []
+    for member in DERIVED_MEMBERS:
+        part = {name: [k for k in kwargs[name] if owner.get(k) == member] for name in ("accepted", "excepted", "questioned", "reopened")}
+        if not any(part.values()):
+            continue
+        hashes = {k: h for k, h in kwargs["hashes"].items() if owner.get(k) == member}
+        unseen = [k for k in kwargs.get("unseen") or [] if owner.get(k) == member]
+        results.append(
+            _apply(type(package)(package.root), spec, member, kind, **{**kwargs, **part, "hashes": hashes, "unseen": unseen})
+        )
+    if not results:
+        return {"id": None, "accepted": [], "questioned": [], "reopened": []}, [], False
+    accs = [r[0] for r in results]
+    merged = {
+        "id": ", ".join(a["id"] for a in accs),
+        "accepted": [k for a in accs for k in a["accepted"]],
+        "questioned": [k for a in accs for k in a["questioned"]],
+        "reopened": [k for a in accs for k in a["reopened"]],
+        "deferred": [k for a in accs for k in a.get("deferred", [])],
+    }
+    return merged, [row for r in results for row in r[1]], any(r[2] for r in results)
+
+
 def answer(
     package: Package,
     config: Config,
@@ -708,18 +1084,30 @@ def answer(
     reopen: list[str] | None = None,
     defer_reason: str | None = None,
     summaries: dict[str, str] | None = None,
+    entry: str | None = None,
+    disposition: str = "accept",
+    rest: bool = False,
+    threshold: int | None = None,
 ) -> dict[str, Any]:
+    """Record a person's reply to a list: to the whole list in one reply (``all_``, ``all_except``,
+    ``question``, ``reopen``), or to one entry (``entry``) or to every remaining one (``rest``), which are
+    stored in a review session and applied together when the last entry is answered (D-51)."""
     from .records import approvers_for
 
     spec = _spec(kind)
     _check_stage(package, stage)
-    modes = [all_, all_except is not None, bool(question), bool(reopen)]
+    threshold = config.one_at_a_time_max if threshold is None else threshold
+    modes = [all_, all_except is not None, bool(question), bool(reopen), entry is not None, rest]
     if sum(modes) != 1:
-        raise usage_error("give exactly one of --all, --all-except, --question, --reopen")
-    settling = all_ or all_except is not None
-    listed = build_list(package, stage, kind)
+        raise usage_error("give exactly one of --all, --all-except, --question, --reopen, --entry, --rest")
+    if disposition not in DISPOSITIONS:
+        raise usage_error(f"--disposition is one of {', '.join(DISPOSITIONS)}")
+    listed = build_list(package, stage, kind, threshold=threshold, session_view=False)
     on_list = {e.key: e for e in listed.entries}
-    settled = spec.settled(package, stage) if spec.settled else {}
+    settled = _settled_for(spec, package, stage)
+    authority = DERIVED_MEMBERS[0] if stage == DERIVED_LIST else stage
+    confirmer = confirmer_refusal(by, approvers_for(package, config, authority), authority) is None
+    session = _open_session(package, stage, kind)
     refusals: list[Refusal] = []
 
     def add(code: str, message: str, fix: str = "") -> None:
@@ -729,11 +1117,16 @@ def answer(
         add("ai-approval", f"{by!r} is the AI; only a person may answer a review list", "Ask the developer to reply")
     if not reply.strip():
         add("reply-required", "a reply needs the person's own words", "Ask the person and pass their words with --reply")
+    if entry is not None or rest:
+        return _answer_session(
+            package, spec, stage, kind, listed, on_list, session, refusals, confirmer=confirmer, by=by, reply=reply,
+            entry=entry, disposition=disposition, rest=rest, defer_reason=defer_reason, summaries=summaries,
+        )  # fmt: skip
+    settling = all_ or all_except is not None
     if settling and not digest:
         add("digest-required", "a settling answer must name the list the person saw", "Pass --digest from `review list`")
     elif digest and digest != listed.digest:
         add("list-changed", "the list changed since the person saw it", "Run `review list` again and show it")
-    confirmer = confirmer_refusal(by, approvers_for(package, config, stage), stage) is None
     if settling and not confirmer and not is_ai_actor(by):
         add("not-a-confirmer", f"{by!r} is not configured to confirm {stage}", "Ask a configured confirmer")
     if settling and spec.defers and not (defer_reason or "").strip():
@@ -752,60 +1145,166 @@ def answer(
         seen: dict[tuple[str, str], Refusal] = {(r.code, r.message): r for r in refusals}
         raise refuse(*seen.values())
 
-    read = package.record_read(stage, "provenance")
-    if read.error:
-        raise _refuse("not-amendable", f"{stage} has a malformed provenance region: {read.error}", "Repair or remove it first")
-    record = read.obj if read.obj is not None else (adopt(package, stage) or {"version": 1, "blocks": {}})
-    record.setdefault("blocks", {})
+    if session is not None and not reopen:
+        # A reply to the whole list while answers are being stored entry by entry answers what remains.
+        key, held = session
+        current = {e.key: e.hash for e in listed.entries}
+        answers = _live_answers(held, current)
+        stamp = clock.utc_now()
+        for k in on_list:
+            if k in answers and k not in named:
+                continue
+            if question and k not in question:
+                continue
+            chosen = "question" if question else ("except" if k in (all_except or []) else "accept")
+            answers[k] = {"by": by, "at": stamp, "disposition": chosen, "reply": reply, "hash": current[k], "seen": True}
+        held["answers"] = answers
+        return _close_or_keep(package, spec, stage, kind, listed, on_list, key, held, defer_reason, summaries, confirmer)
 
     excepted = list(all_except or [])
     accepted = [k for k in on_list if k not in excepted] if settling else []
-    hashes = {k: (on_list[k].hash if k in on_list else settled[k]) for k in named + accepted}
-    deferring = settling and spec.defers
-    act = Act(_next_id(package), by, clock.utc_now(), reply, summaries or {}, (defer_reason or "").strip() or None)
-    acc: dict[str, Any] = {
-        "id": act.id, "stage": stage, "kind": kind, "digest": digest, "by": by, "at": act.at, "reply": reply,
-        "accepted": [] if deferring else accepted, "except": excepted, "questioned": list(question or []),
-        "reopened": list(reopen or []), "reason": act.reason, "hashes": hashes,
-    }  # fmt: skip
-    if deferring:
-        acc["deferred"] = accepted
-    if summaries:
-        acc["summaries"] = {k: v.strip() for k, v in summaries.items() if k in hashes and v.strip()}
-    if spec.settle and accepted:
-        spec.settle(package, stage, record, {k: hashes[k] for k in accepted}, act)
-    undone = {k: hashes[k] for k in (*excepted, *(reopen or []))}
-    if spec.reopen and undone:
-        spec.reopen(package, stage, record, undone, act)
-
-    rows, resolved = _update_conflicts(record, acc, confirmer and settling)
-    if resolved:
-        acc["resolved_conflict"] = True
-    record.setdefault("acceptances", []).append(acc)
-    if rows or "conflicts" in record:
-        record["conflicts"] = rows
-    try:
-        package.write_record(stage, "provenance", record)
-    except RegionError as exc:
-        raise _refuse("not-amendable", f"cannot record the answer in {stage}: {exc}", "Repair the document") from exc
+    accepted_x, excepted_x = _expand(accepted, on_list), _expand(excepted, on_list)
+    questioned_x, reopened_x = _expand(list(question or []), on_list), list(reopen or [])
+    hashes = _hashes([*excepted_x, *questioned_x, *reopened_x, *accepted_x], on_list, settled)
+    acc, rows, resolved = _apply_split(
+        package, spec, stage, kind, on_list, digest=digest, by=by, reply=reply, accepted=accepted_x, excepted=excepted_x,
+        questioned=questioned_x, reopened=reopened_x, hashes=hashes, resolving=confirmer and settling,
+        defer_reason=defer_reason, summaries=summaries, mode=listed.mode,
+    )  # fmt: skip
     conflicts = sorted({r["key"] for r in rows if r["key"] in hashes})
-    lines = [f"Recorded {act.id} by {by}: {len(accepted)} accepted, {len(excepted)} excepted."]
+    lines = [f"Recorded {acc['id']} by {by}: {len(accepted_x)} accepted, {len(excepted_x)} excepted."]
     if conflicts:
         lines.append("In conflict: " + ", ".join(conflicts))
     return {
         "ok": True,
-        "id": act.id,
+        "id": acc["id"],
         "stage": stage,
         "kind": kind,
+        "mode": listed.mode,
         "accepted": acc["accepted"],
-        "except": excepted,
+        "except": excepted_x,
         "questioned": acc["questioned"],
         "reopened": acc["reopened"],
         "deferred": acc.get("deferred", []),
         "conflicts": conflicts,
         "resolved_conflict": resolved,
+        "closed": True,
         "text": "\n".join(lines),
     }
+
+
+DISPOSITIONS = ("accept", "except", "question")
+
+
+def _answer_session(
+    package: Package,
+    spec: KindSpec,
+    stage: str,
+    kind: str,
+    listed: ReviewList,
+    on_list: dict[str, ListEntry],
+    session: tuple[str, dict[str, Any]] | None,
+    refusals: list[Refusal],
+    *,
+    confirmer: bool,
+    by: str,
+    reply: str,
+    entry: str | None,
+    disposition: str,
+    rest: bool,
+    defer_reason: str | None,
+    summaries: dict[str, str] | None,
+) -> dict[str, Any]:
+    """Store one entry's answer (or "ok to the rest") in the review session; apply it when complete."""
+    settling = rest or disposition == "accept"
+    if entry is not None and entry not in on_list:
+        refusals.append(Refusal("unknown-entry", f"{entry} is not on the {kind} list for {stage}", "Name an entry from `review list`"))
+    if settling and not confirmer and not is_ai_actor(by):
+        refusals.append(Refusal("not-a-confirmer", f"{by!r} is not configured to confirm {stage}", "Ask a configured confirmer"))
+    if settling and spec.defers and not (defer_reason or "").strip():
+        refusals.append(Refusal("reason-required", "a deferral needs a reason", "Pass --defer-reason"))
+    if reply.strip() and not settling and _ALL_PHRASE.match(reply.strip()):
+        refusals.append(Refusal("reply-mismatch", f"the reply says yes but the answer is {disposition}", "Use --disposition accept, or reword the reply"))
+    if refusals:
+        seen: dict[tuple[str, str], Refusal] = {(r.code, r.message): r for r in refusals}
+        raise refuse(*seen.values())
+    current = {e.key: e.hash for e in listed.entries}
+    if session is None:
+        key = f"{stage}/{kind}/{listed.digest}"
+        held: dict[str, Any] = {
+            "stage": stage, "kind": kind, "digest": listed.digest, "mode": listed.mode,
+            "opened_at": clock.utc_now(), "entries": dict(current), "answers": {},
+        }  # fmt: skip
+    else:
+        key, held = session
+    answers = _live_answers(held, current)
+    stamp = clock.utc_now()
+    reason = (defer_reason or "").strip() or None
+    targets = [entry] if entry is not None else [k for k in on_list if k not in answers]
+    for target in targets:
+        record = {"by": by, "at": stamp, "disposition": "accept" if rest else disposition, "reply": reply, "hash": current[target], "seen": not rest}
+        earlier = answers.get(target)
+        if earlier is not None and normalise_person(earlier["by"]) != normalise_person(by) and earlier["disposition"] != record["disposition"]:
+            held.setdefault("superseded", []).append({"key": target, **earlier})
+        answers[target] = record
+        if reason:
+            held.setdefault("reasons", {})[target] = reason
+        if summaries and summaries.get(target, "").strip():
+            held.setdefault("summaries", {})[target] = summaries[target].strip()
+    held["answers"] = answers
+    return _close_or_keep(package, spec, stage, kind, listed, on_list, key, held, defer_reason, summaries, confirmer)
+
+
+def _close_or_keep(
+    package: Package,
+    spec: KindSpec,
+    stage: str,
+    kind: str,
+    listed: ReviewList,
+    on_list: dict[str, ListEntry],
+    key: str,
+    held: dict[str, Any],
+    defer_reason: str | None,
+    summaries: dict[str, str] | None,
+    confirmer: bool,
+) -> dict[str, Any]:
+    answers = held["answers"]
+    remaining = [k for k in on_list if k not in answers]
+    if remaining:
+        _save_session(package, key, held)
+        return {
+            "ok": True, "stage": stage, "kind": kind, "mode": held["mode"], "closed": False,
+            "answered": len(answers), "remaining": remaining,
+            "text": f"Stored. {len(answers)} answered, {len(remaining)} to go: {', '.join(remaining)}.",
+        }  # fmt: skip
+    groups: dict[tuple[str, str, bool, str], dict[str, list[str]]] = {}
+    ordered = [(a.get("key"), a) for a in held.get("superseded", [])] + sorted(answers.items(), key=lambda kv: kv[1]["at"])
+    ids: list[str] = []
+    for entry_key, answer_ in ordered:
+        if entry_key not in on_list:
+            continue
+        reason = (held.get("reasons") or {}).get(entry_key, "")
+        slot = groups.setdefault((answer_["by"], answer_["reply"], bool(answer_["seen"]), reason), {"accept": [], "except": [], "question": []})
+        slot[answer_["disposition"]].append(entry_key)
+    stored_summaries = {**(held.get("summaries") or {}), **(summaries or {})}
+    settled = _settled_for(spec, package, stage)
+    for (by, reply, seen, reason), slot in groups.items():
+        accepted_x, excepted_x = _expand(slot["accept"], on_list), _expand(slot["except"], on_list)
+        questioned_x = _expand(slot["question"], on_list)
+        hashes = _hashes([*excepted_x, *questioned_x, *accepted_x], on_list, settled)
+        acc, _, _ = _apply_split(
+            type(package)(package.root), spec, stage, kind, on_list, digest=held["digest"], by=by, reply=reply,
+            accepted=accepted_x, excepted=excepted_x, questioned=questioned_x, reopened=[], hashes=hashes,
+            resolving=confirmer and bool(accepted_x), defer_reason=reason or defer_reason,
+            summaries=stored_summaries, mode=held["mode"], unseen=[] if seen else accepted_x,
+        )  # fmt: skip
+        ids.append(acc["id"])
+    _save_session(type(package)(package.root), key, None)
+    return {
+        "ok": True, "stage": stage, "kind": kind, "mode": held["mode"], "closed": True, "ids": ids,
+        "answered": len(answers), "remaining": [],
+        "text": f"All {len(answers)} entries answered; recorded {', '.join(ids)}.",
+    }  # fmt: skip
 
 
 def confirm(

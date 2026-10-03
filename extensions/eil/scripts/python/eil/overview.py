@@ -50,6 +50,7 @@ _OUTCOME_LABELS = (
     ("revealed", "revealed"),
     ("skipped", "skipped"),
     ("not_applicable", "not applicable"),
+    ("own_decision", "own-decision"),
 )
 
 
@@ -90,6 +91,7 @@ class Model:
     untouched_artifacts: list[str] = field(default_factory=list)
     deferred_challenges: list[dict[str, str]] = field(default_factory=list)
     needs_review: dict[str, int] = field(default_factory=dict)
+    profile: dict[str, Any] | None = None
 
     @property
     def overall(self) -> str:
@@ -178,6 +180,14 @@ def collect(pkg: Package) -> Model:
         if stage in ("functional", "technical"):
             record_obj = pkg.record(stage, "comprehension")
             model.comprehension[stage] = comprehension.summarise(record_obj, states[stage].fingerprint or "")
+    from . import profile as profiles
+
+    model.profile = profiles.recorded(pkg)
+    held = profiles.override(pkg)
+    if held is not None:
+        model.overrides.append(
+            {"id": str(held["id"]), "stage": "story", "criterion": f"{held['criterion']} ({', '.join(held['scope'])})", "by": str(held["by"])}
+        )
     loaded = pkg.record_file()
     if loaded.error is not None:
         issues.append(Finding("malformed-record-file", "eil-record.json", loaded.error))
@@ -247,9 +257,22 @@ def _document_rows(pkg: Package, model: Model) -> str:
 
 
 def _story_notes(pkg: Package) -> str:
-    """Lines under Story from the story-level records: how the story was started (D-47)."""
+    """Lines under Story from the story-level records: how the story was started (D-47) and its profile
+    (D-52), shown with the override it carries."""
     start = pkg.story_record().get("start") or {}
     lines = []
+    from . import profile as profiles
+
+    found = profiles.recorded(pkg)
+    if found is not None:
+        line = f"- Small-story profile: authorised by {found.get('by')} on {str(found.get('at', ''))[:10]}: {found.get('reason')}"
+        held = found.get("override") or {}
+        if held:
+            line += f". Override {held.get('id')} of unreviewed-ai-content for plan and task entry"
+        withdrawn = found.get("withdrawn")
+        if withdrawn:
+            line += f" (withdrawn by {withdrawn.get('by')} on {str(withdrawn.get('at', ''))[:10]}: {withdrawn.get('reason')})"
+        lines.append(line)
     if start.get("branch_confirmed_by"):
         lines.append(
             f"- Started on branch {start.get('branch')}, confirmed by {start['branch_confirmed_by']}"
@@ -284,6 +307,8 @@ def _reached_text(approval: dict[str, Any]) -> str:
     reached = reached_of(approval)
     if reached == "first":
         return "first approval"
+    if reached == "re-signed-without-comparison":
+        return "re-signed without comparison"
     rests_on = approval.get("rests_on") or []
     label = "carried forward" if reached == "carried-forward" else "reviewed"
     return f"{label}, resting on {', '.join(rests_on)}" if rests_on else label
@@ -412,9 +437,13 @@ def _open_tasks(pkg: Package) -> int:
 
 
 def _action(
-    kind: str, stage: str | None, command: str | None, message: str, purpose: str = "awareness"
+    kind: str, stage: str | None, command: str | None, message: str, purpose: str = "awareness",
+    question: str | None = None,
 ) -> dict[str, Any]:
-    return {"kind": kind, "stage": stage, "command": command, "message": message, "purpose": purpose}
+    out = {"kind": kind, "stage": stage, "command": command, "message": message, "purpose": purpose}
+    if question:
+        out["question"] = question  # the helper's own question; the prompt asks it and nothing more (D-59)
+    return out
 
 
 def next_action(pkg: Package, model: Model) -> dict[str, Any]:
@@ -422,6 +451,10 @@ def next_action(pkg: Package, model: Model) -> dict[str, Any]:
     ``human`` (a person must decide; nothing runs automatically) or ``done``."""
     stage = model.current
     if stage is None:
+        completion = model.states["completion"]
+        if completion.state == "approved" and completion.approval:
+            a = completion.approval
+            return _action("done", None, None, f"Story complete; approved by {a.get('by')} on {str(a.get('at', ''))[:10]}.")
         return _action("done", None, None, "All stages are complete.")
     state = model.states[stage]
     command = START_COMMANDS[stage]
@@ -462,8 +495,11 @@ def next_action(pkg: Package, model: Model) -> dict[str, Any]:
             "validation",
         )
     if state.state == "in-review":
+        from .records import APPROVAL_QUESTIONS
+
         return _action(
-            "human", stage, APPROVE_COMMAND, f"Approve {stage} with {APPROVE_COMMAND}.", "approval"
+            "human", stage, APPROVE_COMMAND, f"Approve {stage} with {APPROVE_COMMAND}.", "approval",
+            question=APPROVAL_QUESTIONS.get(stage),
         )
     if stage in CRITERIA_BY_STAGE:
         unmet = check_stage(pkg, stage, write=False).unmet()
@@ -533,7 +569,6 @@ def status(pkg: Package, template: str | None = None) -> dict[str, Any]:
         "feature_dir": feature_dir,
         "title": title,
         "owner": owner,
-        "story_notes": _story_notes(pkg),
         "current_stage": model.current,
         "stages": stages,
         "outstanding": {
@@ -555,6 +590,7 @@ def status(pkg: Package, template: str | None = None) -> dict[str, Any]:
         "rederive": model.rederive,
         "corrections": model.corrections,
         "recent_changes": model.recent_changes,
+        "profile": model.profile,
         "next": action["message"],
         "next_action": action,
     }

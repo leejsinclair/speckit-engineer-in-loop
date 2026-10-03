@@ -70,6 +70,7 @@ COMMAND_KINDS: dict[str, str] = {
     "fingerprint": READ_ONLY,
     "blocks list": READ_ONLY,
     "review list": READ_ONLY,
+    "review show": READ_ONLY,
     "review start": READ_ONLY,
     "comprehension plan": READ_ONLY,
     "check": READ_ONLY,
@@ -97,6 +98,9 @@ COMMAND_KINDS: dict[str, str] = {
     "resolve": WRITES,
     "artifact register": WRITES,
     "comprehension record": WRITES,
+    "comprehension waive": WRITES,
+    "profile set": WRITES,
+    "profile withdraw": WRITES,
     "overview": WRITES,
 }
 
@@ -267,6 +271,14 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--stage", required=True)
     a.add_argument("--kind", required=True, choices=REVIEW_KINDS)
     a.add_argument("--views", metavar="FILE")
+    a = actions.add_parser("show", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--kind", required=True, choices=REVIEW_KINDS)
+    which = a.add_mutually_exclusive_group(required=True)
+    which.add_argument("--entry", metavar="KEY")
+    which.add_argument("--group", metavar="SECTION")
+    which.add_argument("--all", dest="all_", action="store_true")
     a = actions.add_parser("answer", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
@@ -279,6 +291,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     mode.add_argument("--all-except", metavar="IDS")
     mode.add_argument("--question", metavar="IDS")
     mode.add_argument("--reopen", metavar="IDS")
+    mode.add_argument("--entry", metavar="KEY", help="answer one entry; stored until the list is complete")
+    mode.add_argument("--rest", action="store_true", help='"ok to the rest": accept every remaining entry')
+    a.add_argument("--disposition", choices=("accept", "except", "question"), default="accept")
     a.add_argument("--defer-reason")
     a.add_argument("--summaries", metavar="FILE")
 
@@ -349,6 +364,7 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--stage", required=True)
     a.add_argument("--level")
     a.add_argument("--attempt", type=int, default=1)
+    a.add_argument("--by", help="the person taking the check: their own decisions are not asked")
     a = actions.add_parser("record", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
@@ -356,12 +372,30 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument(
         "--outcome",
         required=True,
-        choices=("understood", "coached", "revealed", "skipped", "not-applicable"),
+        choices=("understood", "coached", "revealed", "skipped", "not-applicable", "own-decision"),
     )
     a.add_argument("--by", required=True)
     a.add_argument("--attempts", type=int, default=1)
     a.add_argument("--items", default="")
     a.add_argument("--reason")
+    a = actions.add_parser("waive", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--by", required=True)
+    a.add_argument("--reason", required=True)
+
+    p = add("profile", "authorise or withdraw the small-story profile")
+    actions = p.add_subparsers(dest="action", metavar="ACTION", parser_class=_Parser)
+    actions.required = True
+    a = actions.add_parser("set", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("name", choices=("small",))
+    a.add_argument("--by", required=True)
+    a.add_argument("--reason", required=True)
+    a = actions.add_parser("withdraw", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--by", required=True)
+    a.add_argument("--reason", required=True)
 
     p = add("trace", "forward and reverse chains, and gaps")
     p.add_argument("--from", dest="from_id")
@@ -691,10 +725,15 @@ def _ids(text: str | None) -> list[str] | None:
 def _review_list(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
     views = _read_keyed(args.views, args.stage, "views", "views", "view", args.kind) if args.views else None
-    listed = reviews.build_list(package, args.stage, args.kind, views)
-    lines = [f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose})"]
-    for entry in listed.entries:
-        lines.append(f"  {entry.key}: {entry.what.splitlines()[0] if entry.what else ''}")
+    listed = reviews.build_list(package, args.stage, args.kind, views, threshold=_config(ctx, package).one_at_a_time_max)
+    lines = [f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose}, {listed.mode})"]
+    if listed.session:
+        lines.append(f"  {listed.session['answered']} answered already; these remain:")
+    for group in listed.groups():
+        if group["section"]:
+            lines.append(f"  {group['section']}:")
+        for entry in (e for e in listed.entries if e.key in group["entries"]):
+            lines.append(f"    {entry.key}: {entry.summary} ({entry.why})")
     lines += [f"  limit: {limit}" for limit in listed.limits]
     return {"ok": True, **listed.to_json(), "text": "\n".join(lines)}
 
@@ -720,6 +759,9 @@ def _review_answer(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         reopen=_ids(args.reopen),
         defer_reason=args.defer_reason,
         summaries=summaries,
+        entry=args.entry,
+        disposition=args.disposition,
+        rest=args.rest,
     )
     _regenerate_overview(ctx, package)
     return result
@@ -763,6 +805,12 @@ def _review(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         return _review_list(ctx, args)
     if args.action == "answer":
         return _review_answer(ctx, args)
+    if args.action == "show":
+        package = ctx.package()
+        return reviews.show_entries(
+            package, args.stage, args.kind, entry=args.entry, group=args.group, all_=args.all_,
+            threshold=_config(ctx, package).one_at_a_time_max,
+        )  # fmt: skip
     package = ctx.package()
     if args.action == "confirm":
         _persist_adoption(package)
@@ -932,12 +980,16 @@ def _artifact(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 def _comprehension(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
     if args.action == "plan":
-        result = comprehension.plan(package, args.stage, args.level, args.attempt)
+        result = comprehension.plan(package, args.stage, args.level, args.attempt, by=args.by)
         lines = [
-            f"{r['level']:<10} {r.get('target', r['status'])}  {r.get('section', '')}"
+            f"{r['level']:<10} {r.get('target', r['status'])}  {r.get('section', '') or ', '.join(r.get('items', []))}"
             for r in result["levels"]
         ]
         result["text"] = "\n".join(lines)
+        return result
+    if args.action == "waive":
+        result = comprehension.waive(package, _config(ctx, package), args.stage, args.by, args.reason)
+        _regenerate_overview(ctx, package)
         return result
     items = [i.strip() for i in args.items.split(",") if i.strip()]
     result = comprehension.record(
@@ -951,6 +1003,18 @@ def _comprehension(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         items=items,
         reason=args.reason,
     )
+    _regenerate_overview(ctx, package)
+    return result
+
+
+def _profile(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    from . import profile
+
+    package = ctx.package()
+    if args.action == "set":
+        result = profile.set_profile(package, _config(ctx, package), args.name, args.by, args.reason)
+    else:
+        result = profile.withdraw(package, _config(ctx, package), args.by, args.reason)
     _regenerate_overview(ctx, package)
     return result
 
@@ -997,10 +1061,20 @@ def _render_report(result: dict[str, Any]) -> str:
         lines.append(f"{row['id']}: {end}")
         for key in ("functional", "decisions", "ai_spec", "tasks", "code", "evidence"):
             lines.append(f"  {key:<10} {', '.join(row[key]) or '-'}")
+    from .recordfile import REACHED_TEXT
+
+    lines += [
+        f"Approved {a['stage']} by {a['by']} on {str(a['at'])[:10]} ({REACHED_TEXT.get(a['reached'], a['reached'])})"
+        for a in result.get("approvals", [])
+    ]
     lines += [
         f"Override {o['id']}: {o['criterion']} in {o['stage']} by {o['by']}" for o in result["overrides"]
     ]
     lines += [f"Abbreviated: {a['stage']} (authorised by {a['by']})" for a in result["abbreviated"]]
+    if result.get("profile"):
+        found = result["profile"]
+        state = " (withdrawn)" if found.get("withdrawn") else ""
+        lines.append(f"Small-story profile{state}: authorised by {found.get('by')}: {found.get('reason')}")
     lines += [f"Accepted risk {r['id']} ({r['by']}, {r['stage']})" for r in result["accepted_risks"]]
     return "\n".join(lines) or "No requirements."
 
@@ -1051,6 +1125,7 @@ def _render_status(report: dict[str, Any]) -> str:
 HANDLERS.update(
     {
         "abbreviate": _abbreviate,
+        "profile": _profile,
         "challenge": _challenge,
         "trace": _trace,
         "status": _status,

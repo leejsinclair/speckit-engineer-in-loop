@@ -301,7 +301,7 @@ REVIEWED_KEYS = frozenset({"by", "at", "list", "reply"})
 ACCEPTANCE_KEYS = frozenset(
     {
         "id", "stage", "kind", "digest", "by", "at", "reply", "accepted", "except", "questioned",
-        "reopened", "deferred", "reason", "resolved_conflict", "hashes", "summaries",
+        "reopened", "deferred", "reason", "resolved_conflict", "hashes", "summaries", "mode", "unseen",
     }
 )  # fmt: skip
 CORRECTION_KEYS = frozenset(
@@ -313,7 +313,7 @@ CORRECTION_KEYS = frozenset(
 FOUND_IN_KEYS = frozenset({"stage", "item"})
 CHANGE_KEYS = frozenset({"at", "item", "summary", "summary_by", "origin", "accepted_by"})
 CONFLICT_KEYS = frozenset({"key", "hash", "answers"})
-BLOCK_CLASSES = ("restated", "decided", "inferred", "adopted")
+BLOCK_CLASSES = ("restated", "decided", "inferred", "adopted", "adopted-pending")
 
 
 def _extra(where: str, obj: Any, allowed: frozenset[str]) -> list[str]:

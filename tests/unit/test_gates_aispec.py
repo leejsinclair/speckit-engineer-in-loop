@@ -324,3 +324,16 @@ def test_a_met_gate_puts_the_stage_in_review_and_never_approved(story_dir: Story
     assert Package(story_dir.root).state("ai-spec").state in ("in-review", "reviewed")  # 003 D-58: reviewed when every block is settled
 
 
+def test_the_plans_own_record_headings_need_no_trace(story_dir: Story) -> None:
+    """003 FR-036, D-58: Change Log and Record are the helper's headings, never `plan-not-derivable`."""
+    from eil.blocks import ensure_record_sections
+
+    from tests.helpers.package import plan_doc, tasks_doc
+
+    with_ai_spec(story_dir)
+    story_dir.write("plan", ensure_record_sections(plan_doc()))
+    story_dir.write("tasks", tasks_doc())
+    assert "## Change Log" in story_dir.read("plan") and "## Record" in story_dir.read("plan")
+    result = check_stage(Package(story_dir.root), "plan", write=False)
+    assert not [f for f in result.findings if f.code == "plan-not-derivable" and ("Change Log" in f.message or "Record" in f.message)]
+    assert not any("Change Log" in c.reason or "Record" in c.reason for c in result.criteria)

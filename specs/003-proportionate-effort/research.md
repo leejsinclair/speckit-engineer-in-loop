@@ -13,6 +13,15 @@ Decisions continue the numbering of 001 and 002 (D-46 onwards; risks R-22 onward
 - **Cue.** `provenance.render_cues` appends ` [ai-draft]` to the first line of each unreviewed block. An agent edit whose matched text spans that line's end therefore fails.
 - **Terminal state.** `overview.next_action` falls through to "Continue {stage}" for verification, which is never approved, even after completion is approved.
 
+- **SC-005 measured (T076, 2026-10-03).** `tests/scenario/test_interaction_count.py::first_pass` counts a developer's replies from requirements to implementation on the reference story, with the helper deciding every count it can (decisions asked, the wireframe criterion, comprehension levels planned as questions after each stage's list is answered, the lists themselves):
+  - under 002: 3 approvals, 5 decision questions, 1 wireframe export, 6 review lists, 10 comprehension questions: **25 replies**;
+  - under 003 with the profile: 1 authorisation, 3 approvals, 3 decision questions (the 2 with no observable effect are `ai-decided`), 0 exports, 4 review lists, 4 comprehension questions: **15 replies**.
+  - That is a **40%** reduction, short of SC-005's 50%. Approvals (3) and observable decisions (3) are unchanged, as SC-005 requires. The test asserting 50% is marked `xfail(strict=True)` so the gap stays visible. The remaining replies are the three definition lists, the approvals and the observable decisions, which this feature deliberately keeps; reaching 50% would need a further cut that the spec does not authorise (for example one list for all three definition stages). The human timing run (T100) is the measure that matters for SC-003.
+
+- **Manual check on the trial project (T089, 2026-10-03).** Run on a scratch clone of the rich specification viewer, never the original, with this branch's helper copied in:
+  - at `bd7a0d5`, story 001: `status` reports Functional and Technical `needs-re-review` with **0** blocks needing review (17 and 19 `settled-pending`), against 17 and 19 before this feature. `sync` moved every record to `eil-record.json`, and every stage document's fingerprint was unchanged (only the generated `s00-README.md` differs). The documents shrank only 6% to 25% at this commit, because their records were still small;
+  - at `a267058`, story 002 (the trial's): `s06-tasks.md` went from **96,894 to 12,434 bytes (87% smaller; SC-002 asks for at least 75%)**, `eil show tasks` prints 11,153 bytes, every stage fingerprint and every stage state is unchanged, and the record file holds 241,256 bytes.
+
 ## Decisions
 
 ### D-46 The active-story pointer and the target of every call (FR-001 to FR-005)
@@ -229,6 +238,13 @@ Decisions continue the numbering of 001 and 002 (D-46 onwards; risks R-22 onward
 - Judgment verdicts are already kept per criterion basis (D-29).
 - Assessment lists are kept when the document fingerprint is unchanged. Migration re-keys an assessment record written under an earlier fingerprint rule when that rule's fingerprint still matches the document.
 - The first implementation task reproduces the trial's judgment loss on the `bd7a0d5` snapshot before the re-keying is built. If the loss came only from the wrong-story overwrite (D-46), re-keying is dropped and that finding recorded.
+
+**Finding of the reproduction (T040, 2026-10-02).** On the `legacy_upgrade` fixture (`tests/unit/test_adoption.py::test_t040_the_trial_judgment_loss_is_reproduced_and_explained`):
+- `sync` itself drops no judgment.
+- The loss came from two causes, not one. The first is the wrong-story overwrite (fixed by D-46). The second is independent of it: a verdict written before 002's per-criterion basis (D-29) carries no `basis`, so `_prior_judgments` never treated it as current, and the first `check` after the upgrade discarded it even where nothing it judged had changed. The five assessment lists were dropped the same way when 002's `[ai-draft]` stripping changed the whole-document fingerprint of a tagged 001 document.
+- So the re-keying is **kept**, and done where the judgments are read rather than in the migration: a verdict with no basis is current while the record's fingerprint matches the document's, under either the current rule or the 001 rule (tags not stripped). A verdict with no basis on a document that has changed since cannot be compared section by section, so it is still re-judged.
+
+**Comprehension on a legacy re-signing.** Re-signing through the `legacy:<stage>` entry asks no comprehension question: the reply re-signs an approval the person already gave, is recorded as given without a comparison, and FR-025 names a single reply. The comprehension record already held is copied into the approval as before.
 
 **Rationale.** This reproduces and removes the trial's 17 and 19 needless review items, and replaces a full re-approval with the one reply that was clarified.
 

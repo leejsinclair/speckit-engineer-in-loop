@@ -235,3 +235,34 @@ def test_reclassify_refuses_an_unknown_block(reference_story: Story) -> None:
 # ---- 003 D-57: classification is additive; an unknown key is skipped, not fatal (determinism 49)
 
 
+def test_classifying_a_subset_keeps_the_rest(reference_story: Story) -> None:
+    classify(reference_story, "ai-spec", ("AIS-001", None), ("AIS-002", "a retry policy"))
+    first = entry(reference_story, "ai-spec", "AIS-001")
+    assert first["class"] == "restated"
+    classify(reference_story, "ai-spec", ("AIS-002", "a different addition"))
+    assert entry(reference_story, "ai-spec", "AIS-001") == first, "a restated numbered block left out is not reclassified"
+    assert entry(reference_story, "ai-spec", "AIS-002")["adds"] == "a different addition"
+
+
+def test_an_unknown_key_is_skipped_with_the_sections_current_keys(reference_story: Story) -> None:
+    result = classify(reference_story, "ai-spec", ("AIS-001", None), ("Functional Requirements#0123456789ab", "x"))
+    assert result["ok"] is True
+    (skipped,) = result["skipped"]
+    assert skipped["key"] == "Functional Requirements#0123456789ab"
+    assert skipped["section"] == "Functional Requirements"
+    assert "AIS-001" in skipped["current_keys"]
+    assert entry(reference_story, "ai-spec", "AIS-001")["class"] == "restated"
+
+
+def test_only_unknown_keys_is_nothing_classified(reference_story: Story, tmp_path: Any) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps({"stage": "ai-spec", "blocks": [{"block": "AIS-999", "adds": None}]}))
+    out = io.StringIO()
+    code = cli.main(
+        ["blocks", "classify", "--stage", "ai-spec", "--file", str(path), "--json", "--feature-dir", str(reference_story.root)],
+        cwd=reference_story.root, env={}, stdout=out, stderr=io.StringIO(),
+    )  # fmt: skip
+    assert code == 2
+    payload = json.loads(out.getvalue())
+    assert payload["error"].startswith("nothing-classified")
+    assert payload["skipped"][0]["key"] == "AIS-999"

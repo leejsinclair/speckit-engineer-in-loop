@@ -214,3 +214,12 @@ def test_accept_is_registered_and_the_superseded_commands_are_gone() -> None:
         assert not (REPO / "extensions" / "eil" / "commands" / f"speckit.eil.{name}.md").exists()
 
 
+def test_the_installed_configuration_template_carries_the_003_keys(installed: Path) -> None:
+    """003 T087: `main_branches` (D-47) and `review.one_at_a_time_max` (D-51) ship in the template, and the
+    shipped template parses to the defaults."""
+    from eil.identity import parse_simple_yaml
+
+    text = (installed / ".specify" / "extensions" / "eil" / "config-template.yml").read_text(encoding="utf-8")
+    parsed = parse_simple_yaml(text)
+    assert parsed["main_branches"] == ["main", "master"]
+    assert parsed["review"] == {"one_at_a_time_max": 8}

@@ -15,9 +15,22 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Under the small-story profile
+
+If `eil status --json` shows an active `profile`, do not present this stage's own inferred list. The AI Specification, plan and tasks are reviewed together, once, after the tasks are generated: run `eil review list --stage derived --kind inferred --json` and present it in the helper's `mode` (see Presenting a review list), recording the reply with `eil review answer --stage derived --kind inferred ...`. Planning and task generation proceed under the override the profile recorded (`overrides_used` in the `enter` result); implementation is refused until the derived list is answered.
+
 ## Reading a stage
 
 Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.
+
+## Presenting a review list
+
+Present every review list exactly as the helper returns it, in the helper's `mode`:
+
+- `one-at-a-time`: show one entry at a time, with its full text (`what`) and why it needs review, ask for that entry's answer, and store it at once with `eil review answer --stage <stage> --kind <kind> --digest <digest> --entry <key> --by "<name>" --reply "<their words, verbatim>" [--disposition except|question] --json`. Offer "ok to the rest" as you go: if the person says it, record it with `--rest` in place of `--entry`; the helper marks those entries as accepted without being shown in full.
+- `summary`: show the `groups`, with each entry's `summary` and why it needs review, and ask for one reply to the whole list (`--all`, `--all-except <keys>` or `--question <keys>`). Show the full text of an entry, a group or the whole list whenever asked: `eil review show --stage <stage> --kind <kind> --entry <key>` (or `--group "<section>"`, or `--all`).
+
+The helper stores each answer as it is given. **Never keep a tally of answers in chat**: after a pause or a compaction, run `review list` again; it returns only what is still unanswered. **Never list a block the helper did not return**, and never ask again about one it settled. A `§<Section>` entry stands for every block of that section, answered together.
 
 ## What this stage is for
 
@@ -32,7 +45,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 3. **Read** the approved Requirements, Functional and Technical Specifications, and the AI Specification, with `eil show <stage> --json` (or `--items` for the ids you need). Read the existing code the design touches.
 4. **Assemble only from the approved stages.** Under each section of the template write items, one per line: `**AIS-001**: the instruction, stated for the agent (traces: FR-001, DEC-004)`.
    - Every item traces to at least one approved `REQ`, `UC`, `FR`, `NFR`, `DEC` or `ART`. The check reports any item without a source, any trace to something that is not approved, and any text outside an item.
-   - **Do not write anything without a source.** If you find something the approved stages do not say (a missing edge case, an unstated constraint, a decision nobody made), do not fill it in: raise it as a challenge with `eil challenge add`, or put it to the human as an open question, and leave it out. The human decides; you execute. Never introduce a functional or architectural decision here.
+   - **Do not write anything without a source.** If you find something the approved stages do not say (a missing edge case, an unstated constraint, a decision nobody made), do not fill it in: raise it as a challenge with `eil challenge add ... --severity high|medium|low` (the severity is required), or put it to the human as an open question, and leave it out. The human decides; you execute. Never introduce a functional or architectural decision here.
    - **Never write `[ai-draft]` by hand.** The helper renders that cue itself, from your classification file (see the classification step). A person reviews only the blocks you mark `inferred`.
    - `Existing Code` and the optional `Agent Guidance` may name files, patterns and commands from the repository; each still needs an item tracing to the requirement or decision it serves.
 5. **List the artefacts the agent must read** under `Artefacts in Scope`, one `AIS` item per approved `ART`, tracing to its id: `**AIS-013**: Read the container view before changing the API. (traces: ART-004)`. **Draw no diagram of your own** here: the approved Mermaid diagrams are directly readable, and a wireframe is read from its export. Any wireframe, ER diagram or technical sequence diagram you list must later be covered by a task.

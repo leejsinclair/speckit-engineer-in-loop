@@ -5,7 +5,7 @@ This file is a delta to 001 `contracts/cli.md`, as amended by 002. Anything not 
 ## Every subcommand
 
 - Each subcommand is declared in one table as `writes` or `read-only`:
-  - **read-only**: `status`, `show`, `trace`, `fingerprint`, `blocks list`, `review list`, `review show`, `comprehension plan`, `check` without `--judgments`, and `enter`, which records nothing.
+  - **read-only**: `status`, `show`, `trace`, `fingerprint`, `blocks list`, `review list`, `review show`, `review start`, `artifact list`, `correct propose`, `comprehension plan`, `check` without `--judgments`, and `enter`, which records nothing. (`review start`, `artifact list` and `correct propose` were added while building US1: they write nothing.) A read-only call whose target is ambiguous runs but writes nothing at all, not even the generated overview or a refreshed assessment.
   - **writes**: every other subcommand.
 - Every result has `story` (the target directory's name). The text form begins `Story <name>: `.
 - A `writes` call whose target comes from the pointer, or from nothing, exits `1` with `ambiguous-story` when the target is ambiguous (data-model §Story target). It does so before reading any document for modification. The refusal names each candidate, and its fix is `--feature-dir <dir>` or `eil start`.

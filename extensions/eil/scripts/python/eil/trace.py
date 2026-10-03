@@ -238,6 +238,20 @@ def review_finding_fields(item: Item) -> dict[str, str]:
     return fields
 
 
+AI_DECIDED = "ai-decided"
+
+
+def is_ai_decided(owner: str | None) -> bool:
+    """Whether a DEC's ``Owner:`` is the label ``ai-decided``: a choice with no observable effect, made
+    and labelled by the AI, settled only by a person's reply on the review list (003 D-53)."""
+    return " ".join((owner or "").split()).casefold() == AI_DECIDED
+
+
+def ai_decided_ids(items: list[Item]) -> list[str]:
+    """The DEC ids among ``items`` whose owner is ``ai-decided``, in id order."""
+    return sorted(i.id for i in items if i.kind == "DEC" and is_ai_decided(decision_fields(i).get("owner")))
+
+
 def decision_fields(item: Item) -> dict[str, str]:
     """The labelled fields of a ``DEC`` item (FR-032, FR-033): decision, reason, rejected alternative,
     trade-off and owner. A field whose label is present but has no text is returned empty."""

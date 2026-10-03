@@ -164,6 +164,7 @@ REACHED_TEXT = {
     "first": "first approval",
     "carried-forward": "carried forward",
     "reviewed": "reviewed change by change",
+    "re-signed-without-comparison": "re-signed without comparison",
 }
 
 
@@ -186,6 +187,10 @@ def approval_line(record: dict[str, Any] | None) -> list[str]:
     line += "."
     if record.get("rests_on"):
         line += f" Rests on {_plain(', '.join(map(str, record['rests_on'])))}."
+    if record.get("ai_decided"):
+        line += f" AI-decided: {_plain(', '.join(map(str, record['ai_decided'])))}."
+    if record.get("profile"):
+        line += f" Under the {_plain(record['profile'])}-story profile."
     if record.get("overrides_used"):
         line += f" Overrides used: {_plain(', '.join(map(str, record['overrides_used'])))}."
     return [line]

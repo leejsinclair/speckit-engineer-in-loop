@@ -174,6 +174,8 @@ class Config:
     abbreviation_authorisers: list[str] = field(default_factory=list)
     # Branches a story may be started on without asking (D-47).
     main_branches: list[str] = field(default_factory=lambda: ["main", "master"])
+    # The longest review list presented one entry at a time (D-51).
+    one_at_a_time_max: int = 8
 
 
 def _names(value: Any, where: str) -> list[str]:
@@ -220,6 +222,14 @@ def _merge(config: Config, data: dict[str, Any]) -> None:
         if not branches:
             raise ConfigError("main_branches must name at least one branch")
         config.main_branches = branches
+    review = data.get("review")
+    if review is not None:
+        if not isinstance(review, dict) or set(review) - {"one_at_a_time_max"}:
+            raise ConfigError("review may only hold one_at_a_time_max")
+        value = review.get("one_at_a_time_max", config.one_at_a_time_max)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ConfigError("review.one_at_a_time_max must be a whole number")
+        config.one_at_a_time_max = value
 
 
 # ---- who is who

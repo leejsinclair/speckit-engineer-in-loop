@@ -60,8 +60,17 @@ def _row(graph: Graph, node_id: str) -> dict[str, Any]:
 
 
 def _context(pkg: Package) -> dict[str, Any]:
+    from .package import reached_of
+
     model = overview.collect(pkg)
+    approvals = [
+        {"stage": stage, "by": state.approval.get("by"), "at": state.approval.get("at"), "reached": reached_of(state.approval)}
+        for stage, state in model.states.items()
+        if state.state == "approved" and state.approval
+    ]
     return {
+        "profile": model.profile,
+        "approvals": approvals,
         "overrides": model.overrides,
         "abbreviated": model.abbreviated,
         "accepted_risks": model.accepted_risks,

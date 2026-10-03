@@ -29,7 +29,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 1. **Synchronise and read**: run `eil sync --json`, then `eil status --json`, and take `next_action` from it. Its `kind`, `stage`, `command`, `message` and `purpose` come from the helper; **do not choose a different step, and do not work out the step yourself.**
 2. **Act on `kind`, and only on `kind`**:
-   - `done`: say every stage is complete and stop.
+   - `done`: say the story is complete, in the helper's words (for example "Story complete; approved by ... on ..."), and stop. Name no next step.
    - `human`: **stop.** Give the `message`, say its `purpose` (awareness, understanding, decision, validation or approval), name the `command` the person should run, and if it is a challenge, show it. Run nothing.
    - `draft` or `check`: say in one line which command you are about to run and why, then run that `command` with no extra input, following it completely.
 3. If the user's input says "show", "what", "dry run" or similar, report the `message` and `command` and run nothing.

@@ -15,9 +15,26 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Proposing the small-story profile
+
+You may propose the **small-story profile** when the story looks small: for example the request already states the behaviour and how it will be accepted in detail, there are few requirements, or the change is confined to one component. Name the signals you saw and label the proposal as your own: start it with `AI assessment:`. Say what it changes (no wireframe exports, one review of the AI Specification, plan and tasks before implementation, two comprehension levels) and that every approval is still required.
+
+Only a person authorises it. **Ask who authorises it and why**, and wait for their answer. If they agree, record their words: `eil profile set small --by "<their name>" --reason "<their words>" --json`. **Never run `profile set` without the person's own words**, and never decide the story is small yourself. If they decline or say nothing, the story follows the full workflow and nothing is recorded.
+
+If later work shows the story is larger than proposed (more than one container touched, new data stored, or more requirements than you expected), say that it **outgrows the profile** and offer to withdraw it: `eil profile withdraw --by "<their name>" --reason "<their words>" --json`. Withdrawal restores the full workflow for every stage not yet approved.
+
 ## Reading a stage
 
 Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.
+
+## Presenting a review list
+
+Present every review list exactly as the helper returns it, in the helper's `mode`:
+
+- `one-at-a-time`: show one entry at a time, with its full text (`what`) and why it needs review, ask for that entry's answer, and store it at once with `eil review answer --stage <stage> --kind <kind> --digest <digest> --entry <key> --by "<name>" --reply "<their words, verbatim>" [--disposition except|question] --json`. Offer "ok to the rest" as you go: if the person says it, record it with `--rest` in place of `--entry`; the helper marks those entries as accepted without being shown in full.
+- `summary`: show the `groups`, with each entry's `summary` and why it needs review, and ask for one reply to the whole list (`--all`, `--all-except <keys>` or `--question <keys>`). Show the full text of an entry, a group or the whole list whenever asked: `eil review show --stage <stage> --kind <kind> --entry <key>` (or `--group "<section>"`, or `--all`).
+
+The helper stores each answer as it is given. **Never keep a tally of answers in chat**: after a pause or a compaction, run `review list` again; it returns only what is still unanswered. **Never list a block the helper did not return**, and never ask again about one it settled. A `§<Section>` entry stands for every block of that section, answered together.
 
 ## What this stage is for
 
@@ -64,7 +81,7 @@ Before you report, review the stage document the way a careful colleague would, 
 
 1. Look for: **gaps** (a behaviour, failure or boundary with no definition), **contradictions**, **unstated assumptions**, **untestable statements**, **implementation prescription at the wrong level**, and **unresolved decisions**. Also compare each diagram and wireframe with the text: a flow in the text missing from its sequence diagram, a diagram element the text never mentions, a screen state with no wireframe, an error path shown in one place and not the other, or a container with no data store where the text implies persistence. You may review a wireframe's content only if you can view the image, and then it is your judgment, not a structural finding.
 2. Run `eil status --json` and read the challenges already recorded on this stage. **A challenge a person has rejected or deferred is a standing constraint**: do not raise the same point again, and do not silently work against it. Treat an answer to a challenge as established.
-3. For each new finding run `eil challenge add <stage> --target <item id or section> --text "<a specific, actionable statement of the gap>" --json`. Be specific: name what is missing or contradicted and where. If the helper refuses it as `duplicate-of-closed`, that point is already settled; leave it.
+3. For each new finding run `eil challenge add <stage> --target <item id or section> --severity high|medium|low --text "<a specific, actionable statement of the gap>" --json`. The severity is required (the helper exits 2 without it): `high` for a decision or behaviour that would be wrong or missing, `medium`, or `low` for wording or polish; it is shown as the AI's rating. Be specific: name what is missing or contradicted and where. If the helper refuses it as `duplicate-of-closed`, that point is already settled; leave it.
 4. Present the challenges to the human. **The human answers**: they accept it (the content is changed), reject it (with a reason) or defer it (accepting the risk). The human may answer several at once, by id or by saying "accept all"; record each answer with its own `eil challenge answer <CH-id> --response accepted|rejected|deferred --by "<their name>" [--reason "<their words>"]` call, only for what they have actually given in this conversation. **Never answer a challenge yourself**, never pick a response on their behalf, and never write the reason for them. When an accepted challenge is fixed in the human's own dictated words, write it untagged with `(decided: CH-id)` rather than `[ai-draft]`.
 5. While any challenge is open the stage cannot be approved. Say so, and list them.
 

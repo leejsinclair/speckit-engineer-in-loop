@@ -44,7 +44,7 @@ ALIASES = {"spec.md": "s04-ai-spec.md", "plan.md": "s05-plan.md", "tasks.md": "s
 
 APPROVABLE = ("requirements", "functional", "technical", "completion")
 
-REACHED = ("first", "carried-forward", "reviewed")
+REACHED = ("first", "carried-forward", "reviewed", "re-signed-without-comparison")
 MISSING_APPROVAL = "approval record missing or unreadable"
 
 
@@ -56,7 +56,9 @@ def reached_of(approval: dict[str, Any] | None) -> str | None:
     return value if value in REACHED else "first"
 
 
-STAGE_STATES = ("not-started", "draft", "in-review", "approved", "needs-re-review")
+STAGE_STATES = ("not-started", "draft", "in-review", "reviewed", "approved", "needs-re-review")
+# The stages nobody approves; they end in ``reviewed`` (D-58).
+REVIEWABLE = ("ai-spec", "plan", "tasks", "verification")
 
 
 def resolve_feature_dir(
@@ -438,9 +440,25 @@ class Package:
             return StageState(stage, "approved", "", approval, **base)
 
         assessment = self.record(stage, "assessment")
+        if stage in REVIEWABLE and self._reviewed(stage, assessment, fingerprint):
+            return StageState(stage, "reviewed", **base)
         if _gate_is_met(assessment, fingerprint):
             return StageState(stage, "in-review", **base)
         return StageState(stage, "draft", **base)
+
+    def _reviewed(self, stage: str, assessment: dict[str, Any] | None, fingerprint: str) -> bool:
+        """D-58: the document exists, its code-decided criteria are met (as last checked, at this
+        version), and no block needs review or is stale."""
+        if not assessment or assessment.get("fingerprint") != fingerprint:
+            return False
+        criteria = [c for c in assessment.get("criteria") or [] if isinstance(c, dict)]
+        decided = [c for c in criteria if c.get("kind") != "judgment"]
+        if not decided or any(c.get("status") not in ("met", "overridden") for c in decided):
+            return False
+        from .blockstatus import NEEDS_REVIEW, SOURCE_CHANGED, block_statuses
+
+        infos = block_statuses(self).get(stage, {}).values()
+        return not any(i.status in (NEEDS_REVIEW, SOURCE_CHANGED) or i.stale for i in infos)
 
     def states(self) -> dict[str, StageState]:
         return {stage: self.state(stage) for stage in STAGES}
@@ -448,9 +466,11 @@ class Package:
     def current_stage(self) -> str | None:
         """The first stage that is not yet done. An approvable stage is done when approved; the
         others are done when their gate is met (they are never approved, spec Assumptions)."""
+        if self.exists("completion") and self.state("completion").state == "approved":
+            return None  # an approved completion ends the story, whatever a derived stage says (D-58)
         for stage in STAGES:
             state = self.state(stage).state
-            done = state == "approved" if stage in APPROVABLE else state == "in-review"
+            done = state == "approved" if stage in APPROVABLE else state in ("in-review", "reviewed")
             if not done:
                 return stage
         return None

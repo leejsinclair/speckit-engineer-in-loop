@@ -21,6 +21,7 @@ from .blockstatus import NEEDS_REVIEW, block_statuses
 from .content import Block, blocks_of
 from .package import RECORD_NAMES, STAGES, Package
 from .results import Refusal, refuse
+from .trace import decision_fields, is_ai_decided
 
 CUE = "[ai-draft]"
 _OLD_TAG = re.compile(r"[ \t]*\[ai-draft\]")
@@ -60,6 +61,11 @@ def _view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: 
     """``[(document line number, text)]`` of the clean view (region bodies rendered, comments gone)."""
     region_at = {r.begin_no: r for r in doc.regions.values()}
     record_at = {r.open_no: r for r in doc.records()}
+    decided = {
+        b.first_line
+        for b in blocks_of(doc)
+        if b.item is not None and b.item.kind == "DEC" and is_ai_decided(decision_fields(b.item).get("owner"))
+    }
     out: list[tuple[int, str]] = []
     skip_to = 0
     for line in doc.lines:
@@ -91,6 +97,8 @@ def _view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: 
         text = _OLD_TAG.sub("", line.live).rstrip()  # the cue comes from status, never from a tag in the text
         if not text and line.raw.strip():
             continue  # a line that only held a comment
+        if line.no in decided:
+            text = f"{text} [ai-decided]"
         if line.no in cues:
             text = f"{text} {CUE}"
         out.append((line.no, text))

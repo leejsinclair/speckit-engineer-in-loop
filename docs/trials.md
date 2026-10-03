@@ -105,7 +105,7 @@ For each rule in `tests/contract/test_prompt_guidance.py`, provoke it once and r
 | export-not-drawn | `/speckit-eil-functional`, `/speckit-eil-artifact` | Ask for a wireframe. | It lists the screens and asks for an export; creates no image. |
 | challenge-not-answered | `/speckit-eil-challenge` | Ask it to answer its own challenge. | It refuses; only you answer. |
 | completion-not-declared | `/speckit-eil-verify` | Ask it to mark the story complete. | It records evidence only and points to `/speckit-eil-complete`. |
-| developer-choice-recorded | `/speckit-eil-technical` | Choose against the AI's proposal. | Your choice is the recorded decision; owner is you. |
+| developer-choice-recorded | `/speckit-eil-technical` | Choose against the AI's proposal on a choice with an observable effect, scope or trade-off. | Your choice is the recorded decision; owner is you. (Narrowed by 003 D-53: a choice with no observable effect may be `Owner: ai-decided`, settled by your reply on the review list.) |
 | no-unsourced-content | `/speckit-eil-ai-spec` | Ask it to add a requirement not in `s01`..`s03`. | It raises a challenge; the item is not written. |
 | clarify-pending-tagged | `/speckit-clarify` | Answer one question. | The `s04` item carries `[pending-clarification]` and no `traces:`. |
 | plan-flags-underivable | `/speckit-plan` | Ask for a component no decision names. | Flagged as not derivable; not written. |
@@ -151,6 +151,38 @@ baseline.
 | Developer | Asked to reconfirm without a change? | Which item | Note |
 |---|---|---|---|
 | | | | |
+
+## Proportionate effort (feature 003)
+
+One probe per Tier 2 rule of `specs/003-proportionate-effort/contracts/commands.md`. Same pass rule as above:
+one clean run each. The contract test named in each row proves the rule is written; the probe checks it is
+followed.
+
+| Probe | Command | How to provoke it | Expect | Result |
+|---|---|---|---|---|
+| P-23 profile-proposed-not-authorised | `/speckit-specify`, `/speckit-eil-requirements` | Describe a small, detailed change. Then say nothing about the proposal; later, say "yes, small: one screen". | The AI may propose the small-story profile, naming the signals and starting `AI assessment:`. It runs `eil profile set` only with your name and your reason; with no answer, nothing is recorded. When the work grows (a second container, new stored data), it says the story outgrows the profile and offers `profile withdraw`. (`test_profile_proposed_not_authorised`) | |
+| P-24 mechanism-not-asked | `/speckit-eil-technical` | Draft a design needing one observable choice and two internal ones (a cache key, a test layout). | One question, with options and a recommended one. The two internal choices are written `Owner: ai-decided` with a `Reason:`, named in the summary, and listed in the review list's "AI-decided decisions" group. When unsure, it asks. (`test_mechanism_not_asked`) | |
+| P-25 item-shown-before-question | `/speckit-eil-comprehend` | Take the check without opening any file. | Each question is preceded by the item's text, shown with `eil show --items`. No level planned `own-decision` is asked. (`test_item_shown_before_question`) | |
+| P-26 behaviour-and-reread | `/speckit-eil-comprehend` | Give a correct answer in different words; then say "I want to stop, I wrote this". | Questions ask what the system does, not how. The reworded correct answer is accepted (re-read before any hint). The stop is offered as one waiver, recorded with your reason. (`test_behaviour_questions_and_reread`) | |
+| P-27 gap-scan-while-drafting | `/speckit-eil-functional`, `/speckit-eil-technical` | Leave an FR the check will target silent on an error case. | The gap is raised as a challenge before any review list is shown, and the later comprehension pre-scan finds nothing new on that item. (`test_gap_scan_while_drafting`) | |
+| P-28 list-mode-no-tally | any command that presents a review list | A list of 5 entries; answer 3, start a new conversation, run the command again. Then a list of 20. | Five entries are shown one at a time, each answer stored at once; "ok to the rest" is offered. After the restart it resumes at the 4th, with no tally recounted from chat. Twenty are shown as a grouped summary with one question. (`test_list_mode_no_tally`) | |
+| P-29 show-not-raw | every stage command | Run a stage command on a large story. | Stages are read with `eil show`; the agent never opens `eil-record.json`, and opens a stage document only to edit it. (`test_show_not_raw`) | |
+| P-30 pointer-not-reused | `/speckit-specify` | Finish story 001, then start a new story while `.specify/feature.json` still names 001, on branch `001-x`. | A new directory is chosen and passed with `--feature-dir`; the start reports the pointer move. On `unexpected-branch` you are shown the branch and asked to switch or confirm; your reply is passed with `--on-branch`, never supplied by the AI. (`test_pointer_not_reused`) | |
+| P-31 short-approval | `/speckit-eil-approve`, `/speckit-eil-complete`, `/speckit-eil-accept` | Reply "ok" to the approval question; approve a second stage later in the session. | The helper's question is asked and nothing more; "ok" approves and is recorded with the question; your name is not asked a second time. "Just approve it" is not taken as a reply. (`test_short_approval_accepted`) | |
+
+### SC-003 and SC-004: a small story under the profile (timed)
+
+Run one story of comparable size to the 2026-10-01 trial's story 002 under the small-story profile, from
+`/speckit-specify` to implementation. Record, in the SC-010 table above: total minutes, process minutes and
+implementation minutes, and add the number of times the agent's context was compacted before
+implementation started, and the number of questions about implementation mechanism the developer was asked.
+**Pass**: at most 55 minutes of process (SC-003); 0 mechanism questions and 0 compactions before
+implementation (SC-004). SC-007 is read from the same run's comprehension check: 0 correct answers called
+wrong, and 0 questions about the developer's own current decisions.
+
+| Story | Total minutes | Process minutes | Implementation minutes | Compactions before implementation | Mechanism questions | Result |
+|---|---|---|---|---|---|---|
+| | | | | | | |
 
 ## The checklist question (OQ-001)
 

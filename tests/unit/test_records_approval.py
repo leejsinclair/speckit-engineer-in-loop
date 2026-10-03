@@ -441,6 +441,23 @@ def test_an_override_is_visible_in_the_document_for_review(story_dir: Story, con
 # ---- 003 D-59: approving takes one word, recorded with the helper's question (determinism 53)
 
 
+def test_every_approvable_stage_has_a_fixed_question() -> None:
+    from eil.package import APPROVABLE
+
+    assert set(records.APPROVAL_QUESTIONS) == set(APPROVABLE)
+    assert records.APPROVAL_QUESTIONS["functional"] == "Approve the Functional Specification as the behaviour you require?"
+    assert all(q.endswith("?") for q in records.APPROVAL_QUESTIONS.values())
+
+
+def test_ok_approves_and_is_recorded_with_the_question(story_dir: Story, tmp_path: Path, config: Config) -> None:
+    package = ready(story_dir, tmp_path)
+    approve_ok(package, config, attestation="ok")
+    record = package.record("requirements", "approval")
+    assert record["attestation"] == "ok"
+    assert record["question"] == records.APPROVAL_QUESTIONS["requirements"]
+    line = story_dir.read("requirements")
+    assert '"ok" to "Approve the Requirements as the problem we intend to solve?"' in line
+
 
 def test_an_empty_reply_is_still_refused(story_dir: Story, tmp_path: Path, config: Config) -> None:
     package = ready(story_dir, tmp_path)
@@ -449,3 +466,26 @@ def test_an_empty_reply_is_still_refused(story_dir: Story, tmp_path: Path, confi
     assert "attestation-required" in refusals(exc)
 
 
+def test_status_offers_the_question_when_the_next_step_is_an_approval(story_dir: Story, tmp_path: Path) -> None:
+    from eil import overview
+
+    package = ready(story_dir, tmp_path)
+    action = overview.status(package)["next_action"]
+    assert action["kind"] == "human" and action["purpose"] == "approval"
+    assert action["question"] == records.APPROVAL_QUESTIONS["requirements"]
+
+
+def test_review_confirm_records_its_question(reference_story: Story) -> None:
+    from eil import reviews
+    from eil.records import CONFIRM_QUESTIONS
+
+    from tests.helpers.changes import summaries_for
+    from tests.helpers.derived import CONFIG, edit
+
+    edit(reference_story, "requirements", "Analysts can review each flagged pair.", "Analysts can review each flagged pair, with notes.")
+    package = Package(reference_story.root)
+    listed = reviews.build_list(package, "requirements", "changes")
+    summaries = summaries_for(package, "requirements")
+    reviews.answer(package, CONFIG, "requirements", "changes", digest=listed.digest, by="Ada Dev", reply="ok", all_=True, summaries=summaries)
+    result = reviews.confirm(Package(reference_story.root), CONFIG, "requirements", by="Ada Dev", confirmation="ok", summaries=summaries)
+    assert result["approval"]["question"] == CONFIRM_QUESTIONS["requirements"]

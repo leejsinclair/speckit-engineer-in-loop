@@ -16,6 +16,14 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Proposing the small-story profile
+
+You may propose the **small-story profile** when the story looks small: for example the request already states the behaviour and how it will be accepted in detail, there are few requirements, or the change is confined to one component. Name the signals you saw and label the proposal as your own: start it with `AI assessment:`. Say what it changes (no wireframe exports, one review of the AI Specification, plan and tasks before implementation, two comprehension levels) and that every approval is still required.
+
+Only a person authorises it. **Ask who authorises it and why**, and wait for their answer. If they agree, record their words: `eil profile set small --by "<their name>" --reason "<their words>" --json`. **Never run `profile set` without the person's own words**, and never decide the story is small yourself. If they decline or say nothing, the story follows the full workflow and nothing is recorded.
+
+If later work shows the story is larger than proposed (more than one container touched, new data stored, or more requirements than you expected), say that it **outgrows the profile** and offer to withdraw it: `eil profile withdraw --by "<their name>" --reason "<their words>" --json`. Withdrawal restores the full workflow for every stage not yet approved.
+
 ## Reading a stage
 
 Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.

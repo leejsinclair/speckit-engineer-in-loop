@@ -105,6 +105,7 @@ EXAMPLES: dict[str, tuple[list[str], int | None]] = {
     "blocks list": (["blocks", "list", "--stage", "functional"], 0),
     "review list": (["review", "list", "--stage", "functional", "--kind", "inferred"], 0),
     "review start": (["review", "start", "--stage", "functional"], None),
+    "review show": (["review", "show", "--stage", "functional", "--kind", "inferred", "--all"], 0),
     "comprehension plan": (["comprehension", "plan", "--stage", "functional"], None),
     "check": (["check", "--stage", "requirements"], 0),
     "enter": (["enter", "analyze"], 0),
@@ -143,6 +144,9 @@ EXAMPLES: dict[str, tuple[list[str], int | None]] = {
         ["comprehension", "record", "--stage", "functional", "--level", "recognise", "--outcome", "understood", "--by", "Ada Dev"],
         1,
     ),
+    "comprehension waive": (["comprehension", "waive", "--stage", "functional", "--by", "Ada Dev", "--reason", "x"], 1),
+    "profile set": (["profile", "set", "small", "--by", "Ada Dev", "--reason", "x"], 1),
+    "profile withdraw": (["profile", "withdraw", "--by", "Ada Dev", "--reason", "x"], 1),
     "overview": (["overview"], 1),
 }
 

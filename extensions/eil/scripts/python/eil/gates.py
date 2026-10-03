@@ -32,17 +32,19 @@ from .diagrams import (
     store_problems,
     zoom_problems,
 )
-from .fingerprint import fingerprint_text
+from .fingerprint import fingerprint_text, fingerprint_text_001
 from .identity import is_ai_actor
 from .package import DOC_FILES, STAGES, Package
 from .results import Finding
 from .trace import (
     _ITEM_PREFIX,
+    ADMINISTRATIVE_SECTIONS,
     DECISION_FIELDS,
     ParseResult,
     coverage_gaps,
     decision_fields,
     evidence_fields,
+    is_ai_decided,
     item_hash,
     parse_document,
     section_fingerprints,
@@ -66,6 +68,8 @@ INTEGRITY_CODES = frozenset(
         "decided-source-invalid",
     }
 )
+# The criterion the small-story profile meets by its own recorded authorisation (D-52).
+PROFILE_CRITERION = "FUN-G15"
 # Checks an override may waive besides the criteria of the stage's table.
 EXTRA_OVERRIDABLE = ("unreviewed-ai-content",)
 
@@ -750,7 +754,12 @@ def _check_decisions(ctx: GateContext) -> list[str]:
         fields = decision_fields(decision)
         problems += [f"{decision.id} has no {name}" for name in DECISION_FIELDS if not fields.get(name)]
         owner = fields.get("owner", "")
-        if owner and is_ai_actor(owner):
+        if is_ai_decided(owner):
+            if not fields.get("reason", "").strip():
+                message = f"{decision.id} is ai-decided but gives no Reason: an AI-decided decision must say why it changes nothing a user observes (D-53)"
+                problems.append(message)
+                ctx.note(Finding("ai-decided-without-reason", decision.id, message))
+        elif owner and is_ai_actor(owner):
             problems.append(
                 f"{decision.id} is owned by '{owner}'; the owner is the developer who decided, not the AI (FR-033)"
             )
@@ -1094,16 +1103,10 @@ def _check_no_ai_diagrams(ctx: GateContext) -> list[str]:
 
 # ---- plan and tasks checks (FR-057, FR-058, FR-083)
 
+# The plan's headings that derive from nothing: every administrative heading the helper writes or reads
+# (``trace.ADMINISTRATIVE_SECTIONS``, so the two cannot drift apart) and the plan's own non-derived ones.
 _PLAN_EXEMPT = frozenset(
-    normalise_name(n)
-    for n in (
-        "Not applicable",
-        "Challenges",
-        "Overrides",
-        "Quality Assessment",
-        "Approval",
-        "Comprehension Check",
-    )
+    normalise_name(n) for n in (*ADMINISTRATIVE_SECTIONS, "Not applicable")
 )
 _TRACES_IN_TITLE = re.compile(r"\(traces:\s*(?P<ids>[^)]*)\)")
 
@@ -1587,14 +1590,19 @@ def load_judgments(path: Path, stage: str) -> Judgments:
     return Judgments(verdicts, assessment)
 
 
-def _prior_judgments(region: dict[str, Any] | None, fingerprint: str) -> Judgments:
+def _prior_judgments(region: dict[str, Any] | None, fingerprint: str, same_text: tuple[str, ...] = ()) -> Judgments:
     """The AI's earlier verdicts. Each judgment verdict is kept on its own criterion-scoped basis
     (D-29), independent of what else in the document changed; the five free-text assessment lists
     are carried forward only while the whole document is unchanged, since they can reference
-    content anywhere in it."""
+    content anywhere in it.
+
+    A verdict recorded before D-29 has no basis. It is current while the record's fingerprint is the
+    document's, under the current rule or an earlier one (``same_text``, 003 D-56); otherwise it cannot
+    be compared and is judged again."""
     empty = Judgments({}, {})
     if not region:
         return empty
+    current = region.get("fingerprint") in (fingerprint, *same_text)
     verdicts: dict[str, tuple[str, str]] = {}
     bases: dict[str, str] = {}
     for entry in region.get("criteria", []):
@@ -1605,8 +1613,9 @@ def _prior_judgments(region: dict[str, Any] | None, fingerprint: str) -> Judgmen
             and entry.get("status") in ("met", "not-met")
         ):
             verdicts[entry["id"]] = (entry["status"], reason[len(AI_PREFIX) :])
-            bases[entry["id"]] = str(entry.get("basis", ""))
-    lists = region.get("assessment", {}) if region.get("fingerprint") == fingerprint else {}
+            if "basis" in entry or not current:
+                bases[entry["id"]] = str(entry.get("basis", ""))
+    lists = region.get("assessment", {}) if current else {}
     kept = {
         name: [v for v in lists.get(name, []) if not v.startswith(STRUCTURE_TAG)]
         for name in ASSESSMENT_LISTS
@@ -1713,6 +1722,12 @@ def evaluate(ctx: GateContext, judgments: Judgments) -> list[CriterionResult]:
             if not problems and criterion.id in CHECKS:
                 problems = CHECKS[criterion.id](ctx)
             status, reason = ("not-met", "; ".join(problems)) if problems else ("met", "")
+        if status == "not-met" and criterion.id == PROFILE_CRITERION:
+            from .profile import active as profile_active
+            from .profile import label as profile_label
+
+            if (in_force := profile_active(ctx.pkg)) is not None:
+                status, reason = "met", profile_label(in_force)  # met by the recorded authorisation (FR-021)
         if status == "not-met" and criterion.id in ctx.overrides:
             record = ctx.overrides[criterion.id]
             status = "overridden"
@@ -1751,7 +1766,7 @@ def check_stage(
     else:
         fingerprint = pkg.fingerprint(stage) or fingerprint_text(text)
     prior = pkg.record(stage, "assessment")
-    judgments = supplied if supplied is not None else _prior_judgments(prior, fingerprint)
+    judgments = supplied if supplied is not None else _prior_judgments(prior, fingerprint, (fingerprint_text_001(text),))
 
     ctx = build_context(pkg, stage, text, doc)
     criteria = evaluate(ctx, judgments)

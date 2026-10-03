@@ -7,6 +7,7 @@ from pathlib import Path
 
 from eil import blockstatus, cli, reviews
 from eil.blocks import Doc
+from eil.gates import check_stage
 from eil.identity import Config
 from eil.package import STAGES, Package
 
@@ -264,6 +265,81 @@ def test_t040_the_trial_judgment_loss_is_reproduced_and_explained(legacy_upgrade
     assert verdicts(legacy_upgrade, "functional") == before
 
 
+def test_a_verdict_without_a_basis_is_kept_while_its_document_is_unchanged(reference_story: Story) -> None:
+    from tests.fixtures.legacy_upgrade import _as_001_era, _record_judgments
+
+    _record_judgments(reference_story, "functional")
+    _as_001_era(reference_story, "functional")
+    check_stage(Package(reference_story.root), "functional")
+    assert set(verdicts(reference_story, "functional").values()) == {"met"}
+    record = Package(reference_story.root).record("functional", "assessment")
+    assert record["assessment"]["ambiguity"] == ["functional wording reviewed"]
+
+
+def test_a_verdict_written_under_the_001_fingerprint_rule_is_kept(reference_story: Story) -> None:
+    """A 001 assessment was fingerprinted with its `[ai-draft]` tags in; 002 strips them. The verdict
+    still describes the same text, so it is re-keyed rather than dropped."""
+    import hashlib
+
+    from eil.fingerprint import _collapse, _strip_regions
+
+    from tests.fixtures.legacy_upgrade import _as_001_era, _record_judgments
+
+    text = reference_story.read("functional").replace("A CSV file of customers.", "A CSV file of customers. [ai-draft]")
+    reference_story.write("functional", text)
+    _record_judgments(reference_story, "functional")
+    _as_001_era(reference_story, "functional")
+    package = Package(reference_story.root)
+    record = package.record("functional", "assessment")
+    old_rule = "\n".join(_collapse(_strip_regions(reference_story.read("functional").split("\n")))) + "\n"
+    record["fingerprint"] = "sha256:" + hashlib.sha256(old_rule.encode()).hexdigest()
+    package.write_record("functional", "assessment", record)
+    check_stage(Package(reference_story.root), "functional")
+    assert set(verdicts(reference_story, "functional").values()) == {"met"}
+
+
+def test_legacy_adoption_leaves_nothing_needing_review(legacy_upgrade: Story) -> None:
+    for stage in ("functional", "technical"):
+        assert "needs-review" not in statuses(legacy_upgrade, stage).values(), stage
+        assert Package(legacy_upgrade.root).state(stage).state == "needs-re-review"
+    record = blockstatus.adopt(Package(legacy_upgrade.root), "functional")
+    classes = {e["class"] for e in record["blocks"].values()}
+    assert classes == {"adopted", "adopted-pending"}
+    unnumbered = [b for b in blockstatus.blocks_of(Package(legacy_upgrade.root).doc("functional")) if not b.numbered]
+    assert all(record["blocks"][b.key]["class"] == "adopted-pending" for b in unnumbered)
+    assert {k: i.status for k, i in blockstatus.block_statuses(Package(legacy_upgrade.root))["functional"].items() if i.klass == "adopted-pending"}
+    assert "settled-pending" in statuses(legacy_upgrade, "functional").values()
+
+
+def test_the_changes_list_holds_one_legacy_entry_and_the_changed_items(legacy_upgrade: Story) -> None:
+    adopt_all(legacy_upgrade)
+    listed = reviews.build_list(Package(legacy_upgrade.root), "functional", "changes")
+    keys = [e.key for e in listed.entries]
+    assert keys[0] == "legacy:functional" and keys.count("legacy:functional") == 1
+    assert "ART-002" in keys
+    legacy = listed.entries[0]
+    assert "cannot compare" in legacy.what
+    assert not reviews.build_list(Package(legacy_upgrade.root), "functional", "inferred").entries
+
+
+def test_one_reply_re_signs_without_comparison(legacy_upgrade: Story) -> None:
+    adopt_all(legacy_upgrade)
+    package = Package(legacy_upgrade.root)
+    listed = reviews.build_list(package, "functional", "changes")
+    summaries = summaries_for(package, "functional")
+    reviews.answer(
+        package, LEGACY_CONFIG, "functional", "changes", digest=listed.digest, by="Ada Dev", reply="ok", all_=True,
+        summaries=summaries,
+    )  # fmt: skip
+    result = reviews.confirm(Package(legacy_upgrade.root), LEGACY_CONFIG, "functional", by="Ada Dev", confirmation="ok", summaries=summaries)
+    assert result["approval"]["reached"] == "re-signed-without-comparison"
+    after = Package(legacy_upgrade.root)
+    assert after.state("functional").state == "approved"
+    blocks = after.record("functional", "provenance")["blocks"]
+    assert "adopted-pending" not in {e["class"] for e in blocks.values()}
+    assert any(str(e.get("basis", "")).startswith("re-signed without comparison by Ada Dev") for e in blocks.values())
+    assert "re-signed without comparison" in legacy_upgrade.read("functional")
+
 
 def test_confirm_without_the_legacy_answer_is_refused(legacy_upgrade: Story) -> None:
     from eil.results import EilExit
@@ -279,3 +355,12 @@ def test_confirm_without_the_legacy_answer_is_refused(legacy_upgrade: Story) -> 
     assert "changes-unanswered" in codes and "amend-not-covered" not in codes
 
 
+def test_no_unreviewed_ai_content_at_any_point(legacy_upgrade: Story) -> None:
+    from eil import records
+
+    adopt_all(legacy_upgrade)
+    package = Package(legacy_upgrade.root)
+    for stage in ("functional", "technical"):
+        assert blockstatus.unreviewed(package, stage) == []
+        ctx = records.build_context(package, stage, package.read(stage))
+        assert "unreviewed-ai-content" not in [r.code for r in records._gate_refusals(package, stage, ctx, package.read(stage))]

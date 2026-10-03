@@ -29,10 +29,10 @@ Installing changes nothing you wrote. It adds files under `.specify/` and the ag
 ## Your first story
 
 1. **Start it.** Run `/speckit-specify "Detect duplicate customers on import"`. With the preset installed this begins a *story* at the Requirements stage: it creates `s00-README.md` (a generated overview) and `s01-requirements.md`, and never a `spec.md`.
-2. **Draft the Requirements.** `/speckit-eil-requirements` drafts each section from what you said, draws the system context diagram, and asks you about anything it would have had to guess. Anything the AI writes carries an `[ai-draft]` tag until you have reviewed it.
+2. **Draft the Requirements.** `/speckit-eil-requirements` drafts each section from what you said, draws the system context diagram, and asks you about anything it would have had to guess. Anything the AI wrote that you have not yet reviewed is marked `[ai-draft]` when you read the stage with `eil show` (the tag is never written into the document itself).
 3. **See the gate.** `python3 .specify/extensions/eil/scripts/python/eil check --stage requirements` (or the command above) lists each of the 14 criteria as met, not met or overridden, with the reason.
-4. **Decide.** You resolve or accept each material open question, review and untag the AI's text, and answer the AI's challenges.
-5. **Approve.** `/speckit-eil-approve` shows you the gate and asks you, directly, to confirm. Your own words are recorded with your name, the time and a fingerprint of the document. One confirmation from one configured person is enough.
+4. **Decide.** You resolve or accept each material open question, review the AI's text in one list, and answer the AI's challenges.
+5. **Approve.** `/speckit-eil-approve` shows you the gate and asks the helper's question, for example "Approve the Requirements as the problem we intend to solve?". "ok" is a complete answer: it is recorded verbatim with that question, your name, the time and a fingerprint of the document. Your name is asked once per session. One confirmation from one configured person is enough.
 
 Only then can the next stage begin: `stage-init functional` is refused while Requirements is unapproved, and edits to an approved document after the fact mean it needs a new confirmation.
 
@@ -96,6 +96,12 @@ The number in each command is the number in the document's file name, and `/spec
 - **One reply per list.** Anything that needs your review comes as a single list: what each entry is, why it is there, and the limits of the check. Reply once, in your own words: "ok to all", "ok except REQ-002" or a question about one entry. Your reply is recorded word for word; the AI never supplies or completes it. `/speckit-eil-accept` does this for changed stages, and the same list shape is used for AI-inferred content, tasks that may need rework, evidence rows, low-severity challenges and content of unknown currency.
 - **Only what depends on a change is stale.** Changing one decision marks the blocks, tasks and evidence that trace to it, not the whole package. `enter` refuses only the work that depends on the changed item (`work-blocked`); other tasks continue.
 - **Accept and correct.** `/speckit-eil-accept` brings an edited stage back; if every change is covered by a decision you already recorded, one "ok" carries the approval forward, marked as carried forward and naming what it rests on. `/speckit-eil-correct` handles a mistake found later, in implementation or verification: it proposes the owning stage, shows the corrected wording before anything is applied, and records your wording verbatim.
+- **Lists sized to you.** A list of up to 8 entries (`review.one_at_a_time_max`) is walked one entry at a time, each answer stored by the helper as you give it, with "ok to the rest" to finish early; a longer one is a grouped summary answered in one reply, with full text on request. A compacted or restarted conversation resumes where you were. Each Actors, Dependencies, Not applicable, Inputs and Outputs section is one entry.
+- **Behaviour, not mechanism.** The Technical stage asks you only about choices you would observe (behaviour, scope, a trade-off), each with a recommended option. Every other choice is recorded as `Owner: ai-decided` with its reason, listed in its own group on the review list for your one reply, and named by the approval.
+- **The comprehension check knows what you decided.** Your own recorded decisions are not asked (recorded `own-decision`); each question shows its item first; one waiver with a reason ends the check (`comprehension waive`).
+- **The small-story profile.** For a small, well-specified story the AI may propose it, labelled as its assessment; you authorise it once with a reason (`eil profile set small`). It drops wireframe exports, reviews the AI Specification, plan and tasks as one list before implementation, and cuts comprehension to two levels. Every approval still applies, and it is shown wherever it changes a gate.
+- **Records out of the documents.** Hashes, classes, review records and assessment details live in one record file per story, `eil-record.json`; each document keeps one readable line per record ("Approved by Ada on ... (first approval): ..."). Read a stage with `eil show <stage>`; nobody needs to open the record file.
+- **The right story.** `eil start` always moves the active-story pointer and says so; a write that cannot tell which story it is for is refused before anything is touched (`ambiguous-story`), and every result names its story. A story started on another story's branch waits for your one-line confirmation.
 - **Low-severity challenges do not block.** They are listed as outstanding at approval and in the overview. Anyone can raise a challenge's severity; only a configured confirmer for the stage can lower it, and both are recorded with the person's name.
 
 What the helper does not establish, stated plainly:
@@ -104,7 +110,11 @@ What the helper does not establish, stated plainly:
 - **Evidence (FR-035).** An evidence row naming a test is confirmed only by finding that test in the named file. The helper does not run it, so a row confirmed this way shows the test exists, not that it passes.
 - **Your reply (D-36).** A reply is mapped to the flags you meant, and the helper refuses only obvious mismatches (for example "ok" with an exception named). It cannot tell whether you read the list.
 - **Correction wording (D-38).** The helper records the wording as given and cannot tell who wrote it.
-- **Hand-edited provenance (R-21).** The `provenance` region is not part of the fingerprint. Editing it by hand can make a block look reviewed; this is detectable in version control and is an attestation-level limit, like the gates.
+- **The record file (R-21, R-25).** `eil-record.json` is plain project text, like the regions it replaced, and not part of any fingerprint. Editing it by hand can make a block look reviewed; deleting it, or breaking it, makes every approval it held unverifiable (never valid). Either is detectable in version control and is an attestation-level limit, like the gates.
+- **The review cue is not in the documents (R-26).** A raw stage document no longer shows which paragraphs await review. The overview counts them per stage, and `eil show` marks them.
+- **Summaries and "ok to the rest" (R-24).** A summary-mode answer accepts entries you may have read only as summaries, and "ok to the rest" accepts entries not shown in full. The record says which (`mode`, `unseen`); the helper cannot tell what you read.
+- **`ai-decided` (R-23).** Whether a choice changes what a user observes is the AI's labelled judgement. Each such decision is put to you on the review list; it asks when unsure, but it can be wrong.
+- **Re-signed without comparison (D-56).** An approval older than section-level records, on a changed document, is re-signed by one reply to a statement that the tool cannot compare it; the approval says so wherever it is shown.
 
 **Diagrams** are Mermaid text inside the stage document (C4 context, container and component; sequence; ER), so a change to a diagram is a change to the document. The helper reads them line by line and checks them against each other (an external system must have the same name in the context and container views; a technical sequence's participants must be C4 elements; an ER diagram names its data store). **It never renders them**, and Mermaid's C4 support is experimental, so a construct outside the accepted subset is reported, not skipped. A diagram from another tool can be attached as an image and is then not structurally checked.
 
@@ -127,11 +137,11 @@ What that does, and does not do:
 - The extension's commands, its helper and its four hooks are removed. No `eil` hook is left in `.specify/extensions.yml`.
 - **Your stories stay.** Every stage document, `assets/` file, and the `spec.md`, `plan.md` and `tasks.md` aliases remain in the feature directories as ordinary readable files. A mirror (where your platform could not make a link) stays as a plain file: it is a copy of the real document, so from then on edit the `s0N` file and treat the copy as stale.
 - A feature that was never governed (an ordinary `specs/NNN/spec.md` from before you installed) is never touched, at install or at removal, and is never gated.
-- Removing does not delete approvals: they are text inside the stage documents.
+- Removing does not delete approvals: they are in the stage documents and the story's `eil-record.json`, both left in place.
 
 ## Trials
 
-The automated suite covers everything that code decides (over 1,700 tests: unit, contract against a real installed Spec Kit, and scenarios that drive the installed helper). It cannot show that an AI agent *follows* the prompts, or measure how long real stories take. Those are human trials, with protocols and blank recording sheets in [`docs/trials.md`](docs/trials.md), and **none has been run yet**. Until they are, treat the prompt behaviour as designed and unproven.
+The automated suite covers everything that code decides (over 2,000 tests: unit, contract against a real installed Spec Kit, and scenarios that drive the installed helper). It cannot show that an AI agent *follows* the prompts, or measure how long real stories take. Those are human trials, with protocols and blank recording sheets in [`docs/trials.md`](docs/trials.md), and **none has been run yet**. Until they are, treat the prompt behaviour as designed and unproven.
 
 Known limits, stated plainly:
 

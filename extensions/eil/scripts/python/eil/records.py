@@ -40,9 +40,19 @@ from .identity import (
 )
 from .package import APPROVABLE, DOC_FILES, STAGES, Package
 from .results import Refusal, refuse, usage_error
-from .trace import item_hash, parse_document, section_fingerprints
+from .trace import ai_decided_ids, item_hash, parse_document, section_fingerprints
 
 DEFINITION_STAGES = ("requirements", "functional", "technical", "ai-spec")
+# The helper's fixed approval question per stage (D-59). The question states what is confirmed, so any
+# non-empty reply ("ok", "yes", "approved") is a complete approval; it is recorded with the question.
+APPROVAL_QUESTIONS = {
+    "requirements": "Approve the Requirements as the problem we intend to solve?",
+    "functional": "Approve the Functional Specification as the behaviour you require?",
+    "technical": "Approve the Technical Specification as the engineering solution we intend to build?",
+    "completion": "Approve completion: the evidence is reviewed and the story is done?",
+}
+_NAMES = {"requirements": "Requirements", "functional": "Functional Specification", "technical": "Technical Specification", "completion": "completion"}
+CONFIRM_QUESTIONS = {stage: f"Re-approve the {name} with the changes listed?" for stage, name in _NAMES.items()}
 # Completion has its own refusal codes (FR-064, FR-065); each is the reason for one criterion.
 COMPLETION_REFUSALS = {
     "CMP-G02": ("verification-missing", "Record the evidence first: /speckit-eil-verify"),
@@ -108,6 +118,9 @@ def next_override_id(pkg: Package) -> str:
             if record.kind == "override" and record.obj:
                 match = _OVERRIDE_ID.fullmatch(str(record.obj.get("id", "")))
                 highest = max(highest, int(match[1]) if match else 0)
+    held = (pkg.story_record().get("profile") or {}).get("override") or {}
+    match = _OVERRIDE_ID.fullmatch(str(held.get("id", "")))
+    highest = max(highest, int(match[1]) if match else 0)
     return f"OVR-{highest + 1:03d}"
 
 
@@ -270,6 +283,7 @@ def approve(
         "fingerprint": fingerprint,
         "reached": "first",
         "attestation": attestation.strip(),
+        "question": APPROVAL_QUESTIONS[stage],
     }
     if played_back_to and played_back_to.strip():
         record["played_back_to"] = played_back_to.strip()
@@ -284,6 +298,12 @@ def approve(
     all_parsed[stage] = ctx.parsed
     record["upstream_items"] = impact.upstream_item_hashes(pkg, stage, all_parsed)
     record["overrides_used"] = [str(o.get("id")) for o in ctx.overrides.values()]
+    if decided_by_ai := ai_decided_ids(ctx.parsed.items):
+        record["ai_decided"] = decided_by_ai  # covered by this approval, named in its line (D-53)
+    from .profile import active as profile_active
+
+    if (in_force := profile_active(pkg)) is not None:
+        record["profile"] = in_force["name"]  # kept after a withdrawal: what this approval was given under
     if outstanding := open_low_challenges(pkg, stage):
         record["outstanding"] = outstanding
     if stage == "completion" and (deferred := deferred_challenges(pkg)):

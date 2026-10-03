@@ -143,6 +143,28 @@ def _work_refusals(pkg: Package, task: str | None, blocked: dict[str, list[Cause
     return []
 
 
+def _derived_refusals(pkg: Package) -> list[Refusal]:
+    """Under the small-story profile, implementation waits until the combined derived list is answered:
+    the profile overrides plan and task entry only, never implementation (FR-022)."""
+    from . import reviews
+    from .profile import active
+
+    if active(pkg) is None:
+        return []
+    pending = reviews.build_list(pkg, reviews.DERIVED_LIST, "inferred").entries
+    if not pending:
+        return []
+    listing = ", ".join(e.key for e in pending[:10])
+    return [
+        Refusal(
+            "unreviewed-ai-content",
+            f"{len(pending)} entr{'y' if len(pending) == 1 else 'ies'} of the derived list (AI Specification, plan and tasks) "
+            f"are not answered: {listing}",
+            "Present it once and record the reply: eil review list --stage derived --kind inferred",
+        )
+    ]
+
+
 def enter(
     pkg: Package,
     command: str,
@@ -183,6 +205,8 @@ def enter(
             refusals.append(missing_refusal("plan", "Run /speckit-plan first"))
         if command == "implement" and not pkg.exists("tasks"):
             refusals.append(missing_refusal("tasks", "Run /speckit-tasks first"))
+        if command == "implement":
+            refusals.extend(_derived_refusals(pkg))
         if not refusals:
             blocked, rederive = _scope(pkg)
             if command == "implement":
@@ -210,9 +234,18 @@ def enter(
         text += " To re-derive: " + ", ".join(rederive) + "."
     if faults:
         text += f" Repaired: {', '.join(f'{s.name} ({s.fault})' for s in faults)}."
+    overrides_used: list[str] = []
+    if command in ("plan", "tasks"):
+        from .profile import override as profile_override
+
+        held = profile_override(pkg)
+        if held is not None and f"enter {command}" in held.get("scope", []):
+            overrides_used.append(str(held["id"]))
+            text += f" Under the small-story profile's override {held['id']} (unreviewed-ai-content, by {held['by']})."
     return {
         "ok": True,
         "command": command,
+        "overrides_used": overrides_used,
         "alias_faults": [s.to_json() for s in faults],
         "aliases": [s.to_json() for s in after],
         "blocked": staleness.rows(blocked),

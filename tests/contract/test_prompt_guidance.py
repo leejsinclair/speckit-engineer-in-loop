@@ -117,8 +117,8 @@ RULES: list[tuple[Path, str, list[str]]] = [
     ),
     (
         EXT / "speckit.eil.technical.md",
-        "never writes a decision the developer has not made; never hides an inconsistency",
-        [r"never write a decision the developer has not made", r"never by hiding it"],
+        "never writes an observable decision the developer has not made; never hides an inconsistency",
+        [r"never write a decision with an observable effect, scope or trade-off that the developer has not made", r"never by hiding it"],
     ),
     # abbreviation (FR-040)
     (
@@ -461,3 +461,131 @@ def test_show_not_raw(path: Path) -> None:
     assert "eil show" in text, f"{path.name} does not read stages with eil show"
     assert re.search(r"never read `eil-record\.json`", text, re.I), path.name
     assert not re.search(r"\*\*Read\*\* `s0\d", text), f"{path.name} still opens a stage document"
+
+
+LIST_PRESENTERS = [
+    EXT / f"speckit.eil.{n}.md"
+    for n in ("requirements", "functional", "technical", "ai-spec", "accept", "verify", "complete", "correct", "approve")
+] + [WRAPS / f"speckit.{n}.md" for n in ("plan", "tasks")]
+
+
+@pytest.mark.parametrize("path", LIST_PRESENTERS, ids=lambda p: p.stem)
+def test_list_mode_no_tally(path: Path) -> None:
+    """FR-014 to FR-016 (probe P-28): a list is presented in the helper's mode, each answer is stored as
+    it is given, "ok to the rest" is offered, and no tally is kept in chat."""
+    text = read(path)
+    assert re.search(r"in the helper'?s `mode`", text, re.I)
+    assert "--entry" in text and "--rest" in text and re.search(r"ok to the rest", text, re.I)
+    assert re.search(r"never keep a tally", text, re.I)
+    assert re.search(r"never list a block the helper did not return", text, re.I)
+
+
+def test_accept_resigns_a_legacy_approval_in_one_reply() -> None:
+    """FR-025: the legacy statement is shown and one reply re-signs; a full re-approval is never asked."""
+    text = read(EXT / "speckit.eil.accept.md")
+    assert "legacy:<stage>" in text and re.search(r"one reply", text, re.I)
+    assert re.search(r"never point the person to a full re-approval", text, re.I)
+    assert "re-signed without comparison" in text
+
+
+CHALLENGE_PROMPTS = [p for p in ALL_PROMPTS + [EXT / "speckit.eil.correct.md", EXT / "speckit.eil.accept.md"] if p.is_file() and "challenge add" in p.read_text(encoding="utf-8")]
+
+
+@pytest.mark.parametrize("path", CHALLENGE_PROMPTS, ids=lambda p: p.stem)
+def test_challenge_severity_written(path: Path) -> None:
+    """FR-039: every `challenge add` shows `--severity` and says it is required."""
+    text = read(path)
+    for line in [ln for ln in text.splitlines() if "challenge add" in ln]:
+        assert "--severity" in line, f"{path.name}: {line.strip()[:80]}"
+    assert re.search(r"severity[^.]{0,80}required|required[^.]{0,40}severity", text, re.I), path.name
+
+
+def test_mechanism_not_asked() -> None:
+    """FR-026 to FR-029 (probe P-24): only observable, scope or trade-off choices are asked, each with a
+    recommended option; the rest are `Owner: ai-decided` with a `Reason:`; when unsure, ask; they are named
+    in the summary. The Functional prompt never asks about mechanism."""
+    technical = read(EXT / "speckit.eil.technical.md")
+    assert re.search(r"observable effect, (the )?scope or a trade-off", technical, re.I)
+    assert re.search(r"recommended option", technical, re.I)
+    assert "Owner: ai-decided" in technical and "Reason:" in technical
+    assert re.search(r"when (you are )?unsure, ask", technical, re.I)
+    assert re.search(r"name every `ai-decided` (DEC|decision)", technical, re.I)
+    assert re.search(r"a technical decision with an observable effect is the developer'?s, never yours", technical, re.I)
+    functional = read(EXT / "speckit.eil.functional.md")
+    assert re.search(r"never ask (the developer )?about mechanism", functional, re.I)
+
+
+COMPREHEND = EXT / "speckit.eil.comprehend.md"
+
+
+def test_item_shown_before_question() -> None:
+    """FR-031 (probe P-25): the item is shown, with `eil show --items`, before each question; `--by` is
+    passed to the plan; an `own-decision` level is never asked; the waiver is offered."""
+    text = read(COMPREHEND)
+    assert re.search(r"eil show <stage> --items", text) and re.search(r"before (each|every) question", text, re.I)
+    assert "comprehension plan --stage <stage> --by" in text
+    assert re.search(r"never ask an `own-decision` level", text, re.I)
+    assert "comprehension waive" in text and re.search(r"waive", text, re.I)
+
+
+def test_behaviour_questions_and_reread() -> None:
+    """FR-030, FR-034 (probe P-26): questions are about behaviour; answers are judged on meaning and
+    re-read against the item before any hint."""
+    text = read(COMPREHEND)
+    assert re.search(r"ask about behaviour", text, re.I) and re.search(r"not (about )?mechanism", text, re.I)
+    assert re.search(r"judge (each|the) answer on (its )?meaning", text, re.I)
+    assert re.search(r"re-read the answer against the item before (giving )?(a|any) hint", text, re.I)
+
+
+@pytest.mark.parametrize("stage", ["functional", "technical"])
+def test_gap_scan_while_drafting(stage: str) -> None:
+    """FR-035 (probe P-27): before the first inferred list, the drafting command scans the items the
+    comprehension check will target, and raises any gap as a challenge first."""
+    text = read(EXT / f"speckit.eil.{stage}.md")
+    scan = text.find(f"eil comprehension plan --stage {stage}")
+    assert scan != -1, "the drafting pass does not run the plan"
+    assert scan < text.index("--kind inferred"), "the scan comes before the first inferred list"
+    assert re.search(r"silent", text, re.I) and re.search(r"ambiguous", text, re.I) and re.search(r"contradict", text, re.I)
+    assert re.search(r"raise (each|every|any) gap as a challenge (first|before)", text, re.I)
+
+
+PROFILE_PROPOSERS = [WRAPS / "speckit.specify.md", EXT / "speckit.eil.requirements.md", EXT / "speckit.eil.abbreviate.md"]
+
+
+@pytest.mark.parametrize("path", PROFILE_PROPOSERS, ids=lambda p: p.stem)
+def test_profile_proposed_not_authorised(path: Path) -> None:
+    """FR-019, FR-020, FR-045 (probe P-23): the AI may propose the small-story profile, naming the signals
+    and labelling it as its own assessment; only a person authorises it, in their own words; the AI says
+    when the story outgrows it."""
+    text = read(path)
+    assert re.search(r"small-story profile", text, re.I)
+    assert "AI assessment:" in text and re.search(r"nam(e|ing) the signals", text, re.I)
+    assert re.search(r"ask who authorises (it )?and why", text, re.I)
+    assert re.search(r"never run `(eil )?profile set` without the person'?s own words", text, re.I)
+    assert re.search(r"outgrows the profile", text, re.I) and "profile withdraw" in text
+
+
+DERIVED_PRESENTERS = [EXT / "speckit.eil.ai-spec.md", WRAPS / "speckit.plan.md", WRAPS / "speckit.tasks.md"]
+
+
+@pytest.mark.parametrize("path", DERIVED_PRESENTERS, ids=lambda p: p.stem)
+def test_profile_presents_one_derived_list(path: Path) -> None:
+    """FR-021: under the profile, the AI Specification, plan and tasks are reviewed as one list after tasks."""
+    text = read(path)
+    assert re.search(r"under the small-story profile", text, re.I)
+    assert "--stage derived" in text
+
+
+APPROVERS = [EXT / f"speckit.eil.{n}.md" for n in ("approve", "complete", "accept")]
+
+
+@pytest.mark.parametrize("path", APPROVERS, ids=lambda p: p.stem)
+def test_short_approval_accepted(path: Path) -> None:
+    """FR-047 to FR-049 (probe P-31): ask the helper's question; a one-word reply is a complete answer;
+    the name is asked once per session; the AI never supplies the reply."""
+    text = read(path)
+    assert "next_action.question" in text or "question" in text and "helper" in text
+    assert re.search(r"\"ok\", \"yes\" or \"approved\"", text)
+    assert re.search(r"(do not|never) ask for a longer statement", text, re.I)
+    assert re.search(r"name once per session|reuse it for every `--by`", text, re.I)
+    assert not re.search(r"\*\"Yes, this is", text), "a full-sentence example reads as required wording"

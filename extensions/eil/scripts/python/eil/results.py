@@ -74,6 +74,12 @@ REFUSAL_CODES = frozenset(
         # 003 Proportionate Effort (contracts/cli.md delta)
         "ambiguous-story",
         "unexpected-branch",
+        "no-profile",
+        "profile-active",
+        "unknown-entry",
+        "not-own-decision",
+        "nothing-to-waive",
+        "nothing-classified",
         "approval-record-missing",
         "malformed-record-file",
     }
@@ -124,6 +130,7 @@ FINDING_CODES = frozenset(
         # 003 Proportionate Effort
         "approval-record-missing",
         "malformed-record-file",
+        "ai-decided-without-reason",
     }
 )
 

@@ -30,7 +30,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 1. **Synchronise**: run `eil sync --json`. It refreshes the overview and reports any alias fault (a missing, wrong or diverged `spec.md`, `plan.md` or `tasks.md`); state any fault plainly.
 2. **Read the state**: run `eil status --json`.
 3. **Report**, from the helper's output only:
-   - the current stage and each stage's state (`not-started`, `draft`, `in-review`, `approved`, `needs-re-review`), with the reason for any `needs-re-review` and any abbreviated stage;
+   - the current stage and each stage's state (`not-started`, `draft`, `in-review`, `reviewed`, `approved`, `needs-re-review`; `reviewed` is the end state of the AI Specification, plan, tasks and verification, reached when every block is reviewed and none is stale), with the reason for any `needs-re-review` and any abbreviated stage;
    - the approvals (who, when) and, for Functional and Technical, the comprehension counts;
    - what is outstanding: open questions, open challenges (high first) and the low ones listed as outstanding (`low_challenges`, `outstanding_low`), blocked work (`blocked_work`), open corrections (`corrections`), the recent changes (`recent_changes`), pending clarifications, overrides, accepted risks, and any document error under `issues`;
    - the artefacts and any that are not `ok`;
