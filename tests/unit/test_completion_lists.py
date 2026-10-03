@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 from eil import records, reviews, staleness
-from eil.blocks import write_region
 from eil.results import EilExit
 
 from tests.helpers.derived import CONFIG, package_of, settle_derived
@@ -51,10 +50,10 @@ def test_a_task_without_code_touches_nothing(story: Story) -> None:
 
 
 def test_an_artefact_whose_hash_moved_since_approval_is_touched(story: Story) -> None:
-    doc = package_of(story).doc("technical")
-    approval = dict(doc.read_region("approval").obj)
+    package = package_of(story)
+    approval = dict(package.record("technical", "approval") or {})
     approval["items"] = {**approval["items"], "ART-002": "sha256:" + "1" * 64}
-    story.write("technical", write_region(story.read("technical"), "approval", approval))
+    package.write_record("technical", "approval", approval)
     assert "ART-002" in staleness.touched_artifacts(package_of(story))
 
 

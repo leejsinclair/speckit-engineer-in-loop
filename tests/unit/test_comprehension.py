@@ -288,7 +288,7 @@ def take(package: Package, config: Config, level: str, outcome: str = "understoo
 
 
 def region_of(package: Package) -> dict:
-    return package.doc("functional").read_region("comprehension").obj
+    return package.record("functional", "comprehension")
 
 
 def test_a_record_holds_only_the_allowed_keys(story_dir: Story, tmp_path: Path, config: Config) -> None:
@@ -567,7 +567,7 @@ def test_the_counts_are_copied_into_the_approval_record(
     for level, outcome in zip(LEVELS, outcomes, strict=True):
         take(package, config, level, outcome)
     approve_functional(package, config)
-    approval = package.doc("functional").read_region("approval").obj
+    approval = package.record("functional", "approval")
     assert approval["comprehension"] == {
         "understood": 3,
         "coached": 1,
@@ -584,7 +584,7 @@ def test_the_approval_records_the_upstream_fingerprint(
     for level in LEVELS:
         take(package, config, level)
     approve_functional(package, config)
-    approval = package.doc("functional").read_region("approval").obj
+    approval = package.record("functional", "approval")
     assert approval["upstream"] == {"requirements": package.fingerprint("requirements")}
 
 
@@ -609,9 +609,38 @@ def test_approving_requirements_is_unaffected_by_the_comprehension_rule(
     result = approve(package, config, "requirements", by="Ada Dev", attestation="yes")
     assert (
         result["ok"] is True
-        and "comprehension" not in package.doc("requirements").read_region("approval").obj
+        and "comprehension" not in package.record("requirements", "approval")
     )
 
 
 def test_functional_document_helper_leaves_the_region_empty_by_default() -> None:
     assert "<!-- eil:begin comprehension -->\n<!-- eil:end comprehension -->" in functional_doc()
+
+
+# ---- 003 D-54: the person's own decisions are not asked; one waiver (determinism 51)
+
+
+def technical_ready(story: Story, tmp: Path) -> Package:
+    """A Technical Specification whose one decision, DEC-001, is Ada's and settled (restated)."""
+    from eil import provenance
+    from eil.blockstatus import blocks_of
+    from eil.gates import JUDGMENT, criteria_for
+
+    from tests.helpers.package import approve_stages, with_record_sections, with_technical
+
+    with_technical(story)
+    story.write("technical", with_record_sections(story.read("technical")))
+    approve_stages(story, "requirements", "functional")
+    package = Package(story.root)
+    keys = [b.key for b in blocks_of(package.doc("technical"))]
+    provenance.classify(package, "technical", {"stage": "technical", "blocks": [{"block": k, "adds": None} for k in keys]})
+    path = tmp / "tj.json"
+    ids = [c.id for c in criteria_for("technical") if c.kind == JUDGMENT]
+    path.write_text(json.dumps({"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}))
+    check_stage(Package(story.root), "technical", judgments_path=path)
+    return Package(story.root)
+
+
+TECH_CONFIG = Config(default_developer="Ada Dev", approvers={s: ["Ada Dev", "Priya QA"] for s in ("requirements", "functional", "technical")})
+
+

@@ -21,7 +21,7 @@ from typing import Any
 
 from . import comprehension, staleness, verification
 from .artifacts import DIAGRAM_KINDS, ArtifactScan, orphan_findings, scan_document
-from .blocks import Doc, write_region
+from .blocks import Doc, RegionError, ensure_region
 from .clock import utc_now
 from .diagrams import (
     Diagram,
@@ -706,7 +706,7 @@ def _check_wireframes(ctx: GateContext) -> list[str]:
 
 def _check_comprehension(ctx: GateContext) -> list[str]:
     fingerprint = fingerprint_text(ctx.text)
-    read = ctx.doc.read_region("comprehension")
+    read = ctx.pkg.record_read(ctx.stage, "comprehension")
     if read.error:
         ctx.note(Finding("malformed-comprehension", ctx.doc.path, f"comprehension region: {read.error}"))
         return [f"malformed comprehension record: {read.error}"]
@@ -1293,7 +1293,7 @@ def _check_no_completion_claim(ctx: GateContext) -> list[str]:
             problems.append(
                 f"line {line.no}: the document declares completion; only the completion stage does"
             )
-    if ctx.doc.read_region("approval").obj:
+    if ctx.pkg.record(ctx.stage, "approval"):
         problems.append("the document carries an approval; verification is never approved")
     return problems
 
@@ -1745,12 +1745,12 @@ def check_stage(
     text = original
     doc = pkg.doc(stage)
     if "assessment" not in doc.regions:
-        text = write_region(text, "assessment", {}, heading="## Quality Assessment")
+        text = ensure_region(text, "assessment")
         doc = Doc(text, path=DOC_FILES[stage])
         fingerprint = fingerprint_text(text)
     else:
         fingerprint = pkg.fingerprint(stage) or fingerprint_text(text)
-    prior = doc.read_region("assessment").obj
+    prior = pkg.record(stage, "assessment")
     judgments = supplied if supplied is not None else _prior_judgments(prior, fingerprint)
 
     ctx = build_context(pkg, stage, text, doc)
@@ -1765,7 +1765,8 @@ def check_stage(
             k: v for k, v in _record(result, stamp).items() if k != "evaluated_at"
         }:
             stamp = str(prior.get("evaluated_at", stamp))  # unchanged assessment keeps its timestamp
-        updated = write_region(text, "assessment", _record(result, stamp))
-        if updated != original:
-            pkg.doc_path(stage).write_bytes(updated.encode("utf-8"))
+        try:
+            pkg.write_record(stage, "assessment", _record(result, stamp), text=text)
+        except RegionError:
+            pass  # a malformed record file is reported by status and never written over (FR-011)
     return result

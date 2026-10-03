@@ -38,11 +38,12 @@ from . import (
     staleness,
 )
 from . import fingerprint as fingerprint_module
+from . import target as targeting
 from .artifacts import list_artifacts, register
-from .blocks import write_provenance
+from .clock import utc_now
 from .gates import JudgmentsError, check_stage
-from .identity import Config, ConfigError, load_config
-from .package import STAGES, Package, resolve_feature_dir
+from .identity import Config, ConfigError, is_ai_actor, load_config
+from .package import STAGES, Package
 from .results import (
     EXIT_INTERNAL,
     EXIT_OK,
@@ -57,6 +58,55 @@ from .results import (
 from .templates import load_template
 
 UNGOVERNED_OK = frozenset({"start", "fingerprint"})
+
+# Every subcommand is declared here as writing records or not (contracts/cli.md delta, D-46). A
+# ``writes`` call whose story came from the pointer, or from nothing, is refused ``ambiguous-story``
+# before anything is read for modification when that story cannot be told for certain.
+READ_ONLY, WRITES = "read-only", "writes"
+COMMAND_KINDS: dict[str, str] = {
+    "status": READ_ONLY,
+    "show": READ_ONLY,
+    "trace": READ_ONLY,
+    "fingerprint": READ_ONLY,
+    "blocks list": READ_ONLY,
+    "review list": READ_ONLY,
+    "review start": READ_ONLY,
+    "comprehension plan": READ_ONLY,
+    "check": READ_ONLY,
+    "enter": READ_ONLY,
+    "artifact list": READ_ONLY,
+    "correct propose": READ_ONLY,
+    "start": WRITES,
+    "sync": WRITES,
+    "check --judgments": WRITES,
+    "stage-init": WRITES,
+    "challenge add": WRITES,
+    "challenge severity": WRITES,
+    "challenge answer": WRITES,
+    "approve": WRITES,
+    "override": WRITES,
+    "amend": WRITES,
+    "review accept": WRITES,
+    "review finish": WRITES,
+    "review confirm": WRITES,
+    "review answer": WRITES,
+    "correct open": WRITES,
+    "blocks classify": WRITES,
+    "blocks reclassify": WRITES,
+    "abbreviate": WRITES,
+    "resolve": WRITES,
+    "artifact register": WRITES,
+    "comprehension record": WRITES,
+    "overview": WRITES,
+}
+
+
+def command_key(args: argparse.Namespace) -> str:
+    """The ``COMMAND_KINDS`` entry a parsed call falls under."""
+    if args.command == "check" and getattr(args, "judgments", None):
+        return "check --judgments"
+    action = getattr(args, "action", None)
+    return f"{args.command} {action}" if action else args.command
 ENTER_COMMANDS = handoff.ENTER_COMMANDS
 # Stages whose document has a compatibility alias, created only after the document (FR-049).
 ALIAS_STAGES = ("ai-spec", "plan", "tasks")
@@ -70,9 +120,14 @@ class Context:
     env: Mapping[str, str]
     json_mode: bool
     feature_dir_arg: str | None
+    target: targeting.Target | None = None
+    # A read-only call whose story is ambiguous runs, but writes nothing at all (not even s00).
+    quiet: bool = False
 
     def feature_dir(self) -> Path | None:
-        return resolve_feature_dir(self.cwd, self.feature_dir_arg, self.env)
+        if self.target is None:
+            self.target = targeting.resolve_target(self.cwd, self.feature_dir_arg, self.env)
+        return self.target.directory
 
     def package(self) -> Package:
         """The governed package, or exit 3."""
@@ -121,6 +176,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     p = add("start", "create s00 and s01 in the feature directory")
     p.add_argument("--title", required=True)
     p.add_argument("--owner")
+    p.add_argument("--on-branch", help="confirm the story is written on this (unexpected) branch")
+    p.add_argument("--by", help="the person confirming the branch")
+    p.add_argument("--reply", help="their reply, verbatim")
 
     p = add("sync", "classify and refresh aliases, regenerate the overview")
     p.add_argument("--check-only", action="store_true")
@@ -310,6 +368,11 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     p.add_argument("--to", dest="to_id")
     p.add_argument("--report", action="store_true")
 
+    p = add("show", "print a stage as a person reads it: no records, review cues shown")
+    p.add_argument("stage")
+    p.add_argument("--items", metavar="IDS", help="only these items, under their section headings")
+    p.add_argument("--section", metavar="NAME", help="only this section")
+
     add("status", "derived state, approvals and the next action")
     add("overview", "regenerate s00-README.md")
 
@@ -390,6 +453,7 @@ def _start(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 
     owner = args.owner or next(iter(developer_identities(package, config)), None) or "unassigned"
     project = package.project_root or ctx.cwd
+    start = _branch_guard(ctx, args, directory, project, config)
     overview_template = load_template(project, "s00-readme-template")
     requirements_template = load_template(project, TEMPLATE_NAMES["requirements"])
     directory.mkdir(parents=True, exist_ok=True)
@@ -399,30 +463,87 @@ def _start(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
             requirements_template.replace("{{title}}", args.title).encode("utf-8")
         )
         created.append(package.doc_path("requirements").name)
+    pointer = _persist_feature_json(package, project)
+    start["previous_pointer"] = pointer["previous"]
+    package.write_story_record("start", {k: v for k, v in start.items() if v is not None})
     overview.write(package, overview_template, args.title, owner)
     created.insert(0, package.overview_path.name)
-    _persist_feature_json(package, project)
-    return {
+    text = f"Started {directory.name}: created {', '.join(created)}."
+    if pointer["current"] and pointer["previous"] != pointer["current"]:
+        text += f" The active story was {pointer['previous'] or 'none'} and is now {pointer['current']}."
+    if start.get("branch_confirmed_by"):
+        text += f" Written on branch {start['branch']}, confirmed by {start['branch_confirmed_by']}."
+    payload: dict[str, Any] = {
         "ok": True,
         "feature_dir": str(directory),
         "created": created,
-        "text": f"Started {directory.name}: created {', '.join(created)}.",
+        "pointer": pointer,
+        "branch": start.get("branch"),
+        "text": text,
     }
+    if start.get("note"):
+        payload["note"] = start["note"]
+        payload["text"] += f" Note: {start['note']}."
+    return payload
 
 
-def _persist_feature_json(package: Package, project: Path) -> None:
+def _branch_guard(
+    ctx: Context, args: argparse.Namespace, directory: Path, project: Path, config: Config
+) -> dict[str, Any]:
+    """D-47: refuse a start on a branch that is neither a main branch nor named for the new story,
+    unless a person confirmed it (``--on-branch``, ``--by``, ``--reply``). Returns ``story.start``."""
+    branch = targeting.current_branch(project)
+    start: dict[str, Any] = {"at": utc_now(), "branch": branch}
+    if branch is None:
+        start["note"] = "no git branch is checked out (no repository, or a detached HEAD), so none was compared"
+        return start
+    if targeting.branch_expected(branch, directory.name, config.main_branches):
+        return start
+    question = targeting.branch_question(directory.name, branch)
+    by, reply = (args.by or "").strip(), (args.reply or "").strip()
+    if args.on_branch != branch:
+        raise refuse(
+            Refusal(
+                "unexpected-branch",
+                f"the current git branch is {branch}, which is neither a main branch "
+                f"({', '.join(config.main_branches)}) nor named for {directory.name}",
+                f"Switch to a branch for {directory.name}, or ask the developer to confirm and run eil start again "
+                f"with --on-branch {branch} --by NAME --reply WORDS. The helper never creates or switches branches.",
+                question=question,
+            )
+        )
+    refusals = []
+    if not by or is_ai_actor(by):
+        refusals.append(
+            Refusal("ai-approval", "a person confirms the branch, never the AI", "Ask the developer", question=question)
+        )
+    if not reply:
+        refusals.append(
+            Refusal("reply-required", "the confirmation needs the person's reply", "Pass their words with --reply", question=question)
+        )
+    if refusals:
+        raise refuse(*refusals)
+    start.update(branch_confirmed_by=by, reply=reply, question=question)
+    return start
+
+
+def _persist_feature_json(package: Package, project: Path) -> dict[str, str | None]:
+    """Point ``.specify/feature.json`` at the new story, always (FR-001); returns the move."""
     saved = project / ".specify" / "feature.json"
-    if not (project / ".specify").is_dir() or saved.exists():
-        return
+    previous = targeting.read_pointer(project)
+    if not (project / ".specify").is_dir():
+        return {"previous": previous, "current": None}
     try:
         relative = os.path.relpath(package.root.resolve(), project.resolve())
     except ValueError:
         relative = str(package.root.resolve())
     if relative.startswith(".."):
         relative = str(package.root.resolve())
+    relative = relative.replace(os.sep, "/")
     import json
 
     saved.write_text(json.dumps({"feature_directory": relative}) + "\n", encoding="utf-8")
+    return {"previous": previous, "current": relative}
 
 
 def _known_stage(package: Package, name: str) -> str:
@@ -479,7 +600,7 @@ def _check(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         raise usage_error("--chain checks the whole story: give it without --stage")
     judgments = ctx.cwd / args.judgments if args.judgments else None
     try:
-        result = check_stage(package, stage, judgments_path=judgments)
+        result = check_stage(package, stage, judgments_path=judgments, write=not ctx.quiet)
     except JudgmentsError as exc:
         raise usage_error(str(exc)) from exc
     except NotImplementedError as exc:
@@ -683,7 +804,30 @@ def _correct(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _regenerate_overview(ctx: Context, package: Package) -> bool:
+    if ctx.quiet:
+        return False
     return overview.write(package, load_template(package.project_root or ctx.cwd, "s00-readme-template"))
+
+
+def _migrate(package: Package) -> list[str]:
+    """D-48, D-50: move every JSON region body into ``eil-record.json`` and strip the old ``[ai-draft]``
+    tags. Both are fingerprint-neutral, so no approval moves. Returns the stages that changed."""
+    from .blocks import RegionError, strip_ai_draft
+
+    changed = []
+    for stage in package.existing_stages():
+        fresh = Package(package.root)
+        text = fresh.read(stage)
+        stripped = strip_ai_draft(text)
+        if stripped != text:
+            fresh.doc_path(stage).write_bytes(stripped.encode("utf-8"))
+            changed.append(stage)
+        try:
+            if Package(package.root).migrate(stage) and stage not in changed:
+                changed.append(stage)
+        except RegionError:
+            continue  # a malformed region or record file is reported by status; it is never written over
+    return changed
 
 
 def _persist_adoption(package: Package) -> None:
@@ -691,16 +835,16 @@ def _persist_adoption(package: Package) -> None:
     for stage in package.existing_stages():
         record = blockstatus.adopt(package, stage)
         if record is not None:
-            text = write_provenance(package.read(stage), record)
-            package.doc_path(stage).write_bytes(text.encode("utf-8"))
+            package.write_record(stage, "provenance", record)
 
 
 def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
     snapshots: dict[str, Any] = {"snapshotted": [], "completed_while_blocked": [], "cleared": []}
+    migrated: list[str] = []
     if not args.check_only:
-        _persist_adoption(package)
-        provenance.refresh_cues(package)
+        migrated = _migrate(package)
+        _persist_adoption(ctx.package())
         changelog.refresh_all(ctx.package())
         snapshots = staleness.sync_task_snapshots(ctx.package())
     before, after = aliases.refresh(package, aliases.alias_mode(ctx.env), check_only=args.check_only)
@@ -715,6 +859,8 @@ def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
             )
         )
     lines = ["Synchronised."] + [f"  alias fault {s.name}: {s.fault}" for s in faults]
+    if migrated:
+        lines.append(f"  records moved to eil-record.json or tags removed: {', '.join(migrated)}")
     lines += [f"  completed-while-blocked {t}" for t in snapshots["completed_while_blocked"]]
     return {
         "ok": True,
@@ -726,6 +872,7 @@ def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         "alias_faults": [s.to_json() for s in faults],
         "aliases": [s.to_json() for s in after],
         "overview_changed": changed,
+        "migrated": migrated,
         "text": "\n".join(lines),
     }
 
@@ -858,6 +1005,13 @@ def _render_report(result: dict[str, Any]) -> str:
     return "\n".join(lines) or "No requirements."
 
 
+def _show(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    from .show import view
+
+    items = _ids(args.items)
+    return view(ctx.package(), args.stage, items=items or None, section=args.section)
+
+
 def _status(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
     try:
@@ -900,6 +1054,7 @@ HANDLERS.update(
         "challenge": _challenge,
         "trace": _trace,
         "status": _status,
+        "show": _show,
         "artifact": _artifact,
         "comprehension": _comprehension,
         "start": _start,
@@ -920,6 +1075,26 @@ HANDLERS.update(
 
 
 # ---- output
+
+
+def _guard_target(ctx: Context, args: argparse.Namespace) -> None:
+    """D-46: refuse a write whose story cannot be told for certain, before anything is touched; let a
+    read-only call through, but quietly (it writes nothing at all)."""
+    assert ctx.target is not None
+    reason = targeting.ambiguity(ctx.target, ctx.cwd)
+    if reason is None:
+        return
+    if COMMAND_KINDS.get(command_key(args), WRITES) == READ_ONLY:
+        ctx.quiet = True
+        return
+    names = ", ".join(s.name for s in ctx.target.candidates) or "none"
+    raise refuse(
+        Refusal(
+            "ambiguous-story",
+            f"cannot tell which story this is for: {reason}. Nothing was written.",
+            f"Name the story with --feature-dir <dir> (stories: {names}), or start a new one with eil start",
+        )
+    )
 
 
 def render_text(payload: Mapping[str, Any]) -> str:
@@ -972,8 +1147,15 @@ def main(
             json_mode=json_mode,
             feature_dir_arg=getattr(args, "feature_dir", None),
         )
-        if args.command not in UNGOVERNED_OK:
-            ctx.package()
+        ctx.feature_dir()
+        story = ctx.target.name if ctx.target is not None else None
+        try:
+            _guard_target(ctx, args)
+            if args.command not in UNGOVERNED_OK:
+                ctx.package()
+        except EilExit as exc:
+            exc.payload.setdefault("story", story)
+            raise
         handler = HANDLERS.get(args.command)
         if handler is None:
             raise EilExit(
@@ -981,13 +1163,18 @@ def main(
                 {"ok": False, "error": f"not implemented: {args.command}"},
                 f"not implemented: {args.command}",
             )
-        payload = handler(ctx, args)
+        try:
+            payload = handler(ctx, args)
+        except EilExit as exc:
+            exc.payload.setdefault("story", story)
+            raise
+        payload = {**payload, "story": story}
         if json_mode:
             emit_json(payload, stdout)
         else:
-            text = render_text(payload)
+            text = render_text({k: v for k, v in payload.items() if k != "story"})
             if text:
-                stdout.write(text + "\n")
+                stdout.write((f"Story {story}: {text}" if story else text) + "\n")
         return EXIT_OK
     except EilExit as exc:
         return _report_exit(exc, json_mode, stdout, stderr)

@@ -71,6 +71,11 @@ REFUSAL_CODES = frozenset(
         "owner-not-candidate",
         "summary-missing",
         "review-finding-open",
+        # 003 Proportionate Effort (contracts/cli.md delta)
+        "ambiguous-story",
+        "unexpected-branch",
+        "approval-record-missing",
+        "malformed-record-file",
     }
 )
 
@@ -116,6 +121,9 @@ FINDING_CODES = frozenset(
         # human-decided provenance
         "decided-source-invalid",
         "correction-wording-mismatch",
+        # 003 Proportionate Effort
+        "approval-record-missing",
+        "malformed-record-file",
     }
 )
 
@@ -128,6 +136,7 @@ class Refusal:
     message: str
     fix: str = ""
     existing: str = ""
+    question: str = ""  # the helper's fixed question a person answers to get past it (D-59)
 
     def __post_init__(self) -> None:
         if self.code not in REFUSAL_CODES:
@@ -135,8 +144,9 @@ class Refusal:
 
     def to_json(self) -> dict[str, str]:
         out = asdict(self)
-        if not out["existing"]:
-            del out["existing"]
+        for optional in ("existing", "question"):
+            if not out[optional]:
+                del out[optional]
         return out
 
 

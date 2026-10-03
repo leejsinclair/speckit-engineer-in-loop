@@ -172,6 +172,8 @@ class Config:
     default_developer: str | None = None
     approvers: dict[str, list[str]] = field(default_factory=lambda: {stage: [] for stage in CONFIG_STAGES})
     abbreviation_authorisers: list[str] = field(default_factory=list)
+    # Branches a story may be started on without asking (D-47).
+    main_branches: list[str] = field(default_factory=lambda: ["main", "master"])
 
 
 def _names(value: Any, where: str) -> list[str]:
@@ -213,6 +215,11 @@ def _merge(config: Config, data: dict[str, Any]) -> None:
             config.approvers[stage] = _names(names, f"approvers.{stage}")
     if "abbreviation_authorisers" in data:
         config.abbreviation_authorisers = _names(data["abbreviation_authorisers"], "abbreviation_authorisers")
+    if "main_branches" in data:
+        branches = _names(data["main_branches"], "main_branches")
+        if not branches:
+            raise ConfigError("main_branches must name at least one branch")
+        config.main_branches = branches
 
 
 # ---- who is who

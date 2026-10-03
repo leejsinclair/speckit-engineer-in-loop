@@ -20,7 +20,7 @@ from typing import Any
 
 from . import changelog, comprehension, corrections, impact, verification
 from .artifacts import scan_document
-from .blocks import Doc, RegionError, append_record, write_provenance, write_region
+from .blocks import Doc, RegionError, append_record
 from .blockstatus import adopt, source_settled, unreviewed
 from .clock import utc_now
 from .content import blocks_of
@@ -232,7 +232,7 @@ def _ensure_comprehension_current(
     if stage not in comprehension.ELIGIBLE_STAGES:
         return
     fingerprint = fingerprint_text(text)
-    state = comprehension.summarise(doc.read_region("comprehension").obj, fingerprint)
+    state = comprehension.summarise(pkg.record(stage, "comprehension"), fingerprint)
     if state["state"] == "complete":
         return
     plan = comprehension.plan(pkg, stage)
@@ -382,8 +382,8 @@ def _re_sign(
     if stage == "completion":
         record["review_findings"] = verification.finding_hashes(pkg)
     if stage in comprehension.ELIGIBLE_STAGES:
-        record["comprehension"] = comprehension.counts(doc.read_region("comprehension").obj or {})
-    pkg.doc_path(stage).write_bytes(write_region(text, "approval", record).encode("utf-8"))
+        record["comprehension"] = comprehension.counts(pkg.record(stage, "comprehension") or {})
+    pkg.write_record(stage, "approval", record, text=text)
     return {"ok": True, "stage": stage, "approval": record}
 
 
@@ -527,7 +527,7 @@ def confirm_changes(
         refusals.append(
             Refusal("changes-unanswered", f"changes with no recorded decision or answer: {', '.join(unanswered)}", f"Show `review list --kind changes` for {stage} and record the person's reply")
         )
-    stored = _load_record(pkg, stage) if pkg.doc(stage).read_provenance().error is None else {}
+    stored = _load_record(pkg, stage) if pkg.record_read(stage, "provenance").error is None else {}
     texts: dict[str, str] = {}
     for row in rows:
         text = (summaries.get(row.id) or "").strip() or changelog.stored_summary(stored, row.id, row.hash)
@@ -610,7 +610,7 @@ def acceptance_ids(pkg: Package) -> set[str]:
     found: set[str] = set()
     for stage in pkg.existing_stages():
         try:
-            obj = pkg.doc(stage).read_provenance().obj
+            obj = pkg.record(stage, "provenance")
         except UnicodeDecodeError:
             continue
         for row in (obj or {}).get("acceptances", []):
@@ -826,7 +826,8 @@ def finish(pkg: Package, config: Config, stage: str, by: str, attestation: str) 
     return result
 
 
-# ---- classification of content blocks (research D-32) and the [ai-draft] cue (D-33)
+# ---- classification of content blocks (research D-32). The [ai-draft] cue is never written into a
+# document (003 D-50): `eil show` and the review lists show it.
 
 _ID = re.compile(r"^[A-Z]+-\d+$")
 _CUE = " [ai-draft]"
@@ -858,7 +859,7 @@ def _check_classification(pkg: Package, stage: str, data: Any) -> dict[str, str 
 
 
 def _load_record(pkg: Package, stage: str) -> dict[str, Any]:
-    read = pkg.doc(stage).read_provenance()
+    read = pkg.record_read(stage, "provenance")
     if read.error:
         raise refuse(Refusal("not-amendable", f"{stage} has a malformed provenance region: {read.error}", "Repair or remove it first"))
     record = read.obj if read.obj is not None else (adopt(pkg, stage) or {"version": 1, "blocks": {}})
@@ -868,10 +869,9 @@ def _load_record(pkg: Package, stage: str) -> dict[str, Any]:
 
 def _save_record(pkg: Package, stage: str, record: dict[str, Any]) -> None:
     try:
-        text = write_provenance(pkg.read(stage), record)
+        pkg.write_record(stage, "provenance", record)
     except RegionError as exc:
         raise refuse(Refusal("not-amendable", f"cannot record in {stage}: {exc}", "Repair the document")) from exc
-    pkg.doc_path(stage).write_bytes(text.encode("utf-8"))
 
 
 def classify(pkg: Package, stage: str, data: Any) -> dict[str, Any]:
@@ -909,8 +909,6 @@ def classify(pkg: Package, stage: str, data: Any) -> dict[str, Any]:
                     entry[name] = old[name]
         entries[block.key] = entry
     _save_record(pkg, stage, record)
-    fresh = Package(pkg.root)
-    render_stage_cues(fresh, stage)
     counts: dict[str, int] = {}
     for entry in entries.values():
         counts[entry["class"]] = counts.get(entry["class"], 0) + 1
@@ -929,51 +927,10 @@ def reclassify(pkg: Package, stage: str, key: str, by: str, reason: str | None =
     note = f"reclassified by {by.strip()}" + (f": {reason.strip()}" if reason and reason.strip() else "")
     record["blocks"][key] = {"hash": entry["hash"], "class": "inferred", "adds": note}
     _save_record(pkg, stage, record)
-    render_stage_cues(Package(pkg.root), stage)
     return {"ok": True, "stage": stage, "block": key, "text": f"{key} is now inferred and needs review."}
-
-
-def render_cues(text: str, blocks: list[Any], unreviewed_keys: set[str]) -> str:
-    """Put ``[ai-draft]`` on the first line of each block in ``unreviewed_keys`` and nowhere else in a
-    block (code fences are left alone). The tag is a cue only; status never reads it."""
-    lines = text.split("\n")
-    for block in blocks:
-        if block.kind == "fence":
-            continue
-        for number in range(block.first_line, block.last_line + 1):
-            raw = lines[number - 1]
-            cr = "\r" if raw.endswith("\r") else ""
-            body = raw[: -len(cr)] if cr else raw
-            body = _AI_DRAFT_TAG.sub("", body)
-            if number == block.first_line and block.key in unreviewed_keys:
-                body = body.rstrip() + _CUE
-            lines[number - 1] = body + cr
-    return "\n".join(lines)
-
-
-def render_stage_cues(pkg: Package, stage: str) -> bool:
-    """Bring the tags of ``stage`` in line with block status. Returns whether the document changed."""
-    if not pkg.exists(stage):
-        return False
-    pending = {i.key for i in unreviewed(pkg, stage)}
-    text = pkg.read(stage)
-    out = render_cues(text, blocks_of(pkg.doc(stage)), pending)
-    if out == text:
-        return False
-    pkg.doc_path(stage).write_bytes(out.encode("utf-8"))
-    return True
-
-
-def refresh_cues(pkg: Package, stages: list[str] | None = None) -> list[str]:
-    """Render the cues of every stage (or ``stages``); returns the stages whose document changed."""
-    changed = []
-    for stage in stages or pkg.existing_stages():
-        if render_stage_cues(Package(pkg.root), stage):
-            changed.append(stage)
-    return changed
 
 
 __all__ = [
     "decided_eligible", "decided_findings", "amend", "start", "accept", "finish",
-    "classify", "reclassify", "render_cues", "refresh_cues",
+    "classify", "reclassify",
 ]  # fmt: skip

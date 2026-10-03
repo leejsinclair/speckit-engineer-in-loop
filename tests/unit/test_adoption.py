@@ -5,10 +5,12 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from eil import blockstatus, cli
+from eil import blockstatus, cli, reviews
 from eil.blocks import Doc
+from eil.identity import Config
 from eil.package import STAGES, Package
 
+from tests.helpers.changes import summaries_for
 from tests.helpers.package import (
     Story,
     block_entry,
@@ -236,3 +238,44 @@ def test_an_existing_record_is_left_alone(story_dir: Story) -> None:
     assert story_dir.read("requirements") == text
     assert Doc(text).read_provenance().obj == {"version": 1, "blocks": {}}
     assert provenance_region({"version": 1, "blocks": {}}).strip() in text
+
+
+# ---- 003 US7: an approval older than section-level records (D-56; determinism 50)
+
+LEGACY_CONFIG = Config(
+    default_developer="Ada Dev",
+    approvers={"requirements": ["Ada Dev"], "functional": ["Ada Dev"], "technical": ["Ada Dev"], "completion": ["Ada Dev"]},
+)
+
+
+def verdicts(story: Story, stage: str) -> dict[str, str]:
+    record = Package(story.root).record(stage, "assessment") or {}
+    return {c["id"]: c["status"] for c in record.get("criteria", []) if c.get("kind") == "judgment"}
+
+
+def test_t040_the_trial_judgment_loss_is_reproduced_and_explained(legacy_upgrade: Story) -> None:
+    """T040 (research D-56, Evidence): `sync` itself keeps every recorded judgment. What dropped them in
+    the trial, besides the wrong-story overwrite (US1), was that a verdict written before 002's
+    per-criterion basis carries no ``basis`` and was never treated as current, so the first `check`
+    after the upgrade discarded it even where nothing it judged had changed."""
+    before = verdicts(legacy_upgrade, "functional")
+    assert set(before.values()) == {"met"}
+    run(["sync"], legacy_upgrade)
+    assert verdicts(legacy_upgrade, "functional") == before
+
+
+
+def test_confirm_without_the_legacy_answer_is_refused(legacy_upgrade: Story) -> None:
+    from eil.results import EilExit
+
+    adopt_all(legacy_upgrade)
+    package = Package(legacy_upgrade.root)
+    try:
+        reviews.confirm(package, LEGACY_CONFIG, "functional", by="Ada Dev", confirmation="ok", summaries=summaries_for(package, "functional"))
+    except EilExit as exc:
+        codes = [r["code"] for r in exc.payload["refusals"]]
+    else:
+        codes = []
+    assert "changes-unanswered" in codes and "amend-not-covered" not in codes
+
+

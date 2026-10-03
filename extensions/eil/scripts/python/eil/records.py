@@ -14,7 +14,7 @@ from typing import Any
 
 from . import comprehension, impact, verification
 from .artifacts import scan_document
-from .blocks import Doc, append_record, replace_record, write_region
+from .blocks import Doc, append_record, ensure_region, replace_record
 from .blockstatus import unreviewed
 from .clock import utc_now
 from .fingerprint import fingerprint_text
@@ -255,9 +255,7 @@ def approve(
     refusals.extend(_open_challenge_refusals(pkg, stage))
 
     original = pkg.read(stage)
-    text = original
-    if "approval" not in Doc(text).regions:
-        text = write_region(text, "approval", {}, heading="## Approval")
+    text = ensure_region(original, "approval")
     ctx = build_context(pkg, stage, text)
     refusals.extend(_gate_refusals(pkg, stage, ctx, text))
     if refusals:
@@ -291,10 +289,10 @@ def approve(
     if stage == "completion" and (deferred := deferred_challenges(pkg)):
         record["deferred"] = deferred
     if stage in comprehension.ELIGIBLE_STAGES:  # copied so review sees skipped and revealed levels (FR-093)
-        record["comprehension"] = comprehension.counts(ctx.doc.read_region("comprehension").obj or {})
+        record["comprehension"] = comprehension.counts(pkg.record(stage, "comprehension") or {})
     if stage == "completion":
         record["review_findings"] = verification.finding_hashes(pkg)
-    pkg.doc_path(stage).write_bytes(write_region(text, "approval", record).encode("utf-8"))
+    pkg.write_record(stage, "approval", record, text=text)
     return {
         "ok": True,
         "stage": stage,

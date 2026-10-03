@@ -34,7 +34,7 @@ def story(reference_story: Story) -> Story:
 
 
 def record(story: Story, stage: str = "tasks") -> dict[str, Any]:
-    obj = package_of(story).doc(stage).read_provenance().obj
+    obj = package_of(story).record(stage, "provenance")
     assert obj is not None
     return obj["blocks"]
 

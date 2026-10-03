@@ -115,16 +115,19 @@ def provenance_story(story_dir: Story) -> Story:
 def test_the_fixture_records_two_thousand_blocks_per_document(provenance_story: Story) -> None:
     package = Package(provenance_story.root)
     for stage in STAGES:
-        region = package.doc(stage).read_region("provenance").obj
+        region = package.record(stage, "provenance")
         assert len(region["blocks"]) >= BLOCKS_PER_DOCUMENT, stage
     assert sum(1 for p in provenance_story.root.glob("s0*.md") if p.stat().st_size > 900_000) >= 7
 
 
 @pytest.mark.parametrize(
     "argv",
-    [["status"], ["check", "--stage", "technical"], ["enter", "implement"]],
+    [["status"], ["check", "--stage", "technical"], ["enter", "implement"], ["show", "technical"], ["show", "tasks", "--items", "T001"]],
 )
 def test_status_check_and_enter_stay_under_a_second_with_provenance(provenance_story: Story, argv: list[str]) -> None:
+    """003 T082: with every record in ``eil-record.json`` (the fixture's adoption write migrates them),
+    and for ``show``."""
+    assert (provenance_story.root / "eil-record.json").stat().st_size > 1_000_000
     code, elapsed = run(provenance_story, *argv)
     assert code in (0, 1), argv  # enter may refuse; only its speed is under test
     assert elapsed < LIMIT_SECONDS, f"{' '.join(argv)} took {elapsed:.2f}s"

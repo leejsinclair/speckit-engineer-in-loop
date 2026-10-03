@@ -15,6 +15,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Reading a stage
+
+Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.
+
 ## What this command is for
 
 An approval is one recorded, explicit human confirmation. It is the point where judgement is required: *"Yes, this is the problem we actually intend to solve"* (Requirements), *"Yes, this describes the behaviour we actually require"* (Functional), *"Yes, this is the engineering solution we intend to build"* (Technical), or that the evidence has been reviewed (Completion). Whether the confirmer is who they say they are, and whether they truly reviewed it, is beyond what the helper can verify; it records the person's name, the time, the document's fingerprint and their own words so that a false approval is visible in review.

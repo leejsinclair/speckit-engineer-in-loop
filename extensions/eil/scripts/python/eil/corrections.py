@@ -30,7 +30,7 @@ _CR_NUMBER = re.compile(r"^CR-(\d{3,})$")
 
 def _records(pkg: Package, stage: str) -> list[dict[str, Any]]:
     try:
-        obj = pkg.doc(stage).read_provenance().obj
+        obj = pkg.record(stage, "provenance")
     except (OSError, UnicodeDecodeError):
         return []
     found = (obj or {}).get("corrections")

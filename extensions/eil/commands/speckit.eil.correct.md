@@ -15,6 +15,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Reading a stage
+
+Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.
+
 ## What this command is for
 
 A problem found in planning, tasks, implementation, verification or code review often belongs to an earlier artefact. This command fixes it at its owner, in place, with one report, one agreement and one sign-off. The helper opens a correction (`CR-###`), works out the owner and the impact, and blocks work on what depends on the item until the correction is confirmed.

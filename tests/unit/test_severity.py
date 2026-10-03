@@ -99,7 +99,7 @@ def test_low_challenges_do_not_block_and_are_recorded_as_outstanding(package: Pa
     add(package, "Second minor point on wording?", "low")
     result = approve_after_checking(package, tmp_path)
     assert result["approval"]["outstanding"] == ["CH-001", "CH-002"]
-    assert package.doc("requirements").read_region("approval").obj["outstanding"] == ["CH-001", "CH-002"]
+    assert package.record("requirements", "approval")["outstanding"] == ["CH-001", "CH-002"]
 
 
 def test_no_outstanding_key_when_there_are_none(package: Package, tmp_path: Path) -> None:

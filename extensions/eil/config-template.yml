@@ -22,3 +22,7 @@ approvers:
 
 # Who may abbreviate a stage (empty means the story's developer).
 abbreviation_authorisers: []
+
+# Branches a new story may be started on without asking (any other branch must be named for the story,
+# for example `003-...` for story 003, or a person confirms it once).
+main_branches: [main, master]

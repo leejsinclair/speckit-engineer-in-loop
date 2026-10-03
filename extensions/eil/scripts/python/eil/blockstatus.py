@@ -49,7 +49,7 @@ def adopt(package: Package, stage: str) -> dict[str, Any] | None:
     if not package.exists(stage):
         return None
     doc = package.doc(stage)
-    if "provenance" in doc.regions or doc.read_provenance().error:
+    if "provenance" in doc.regions or package.record_read(stage, "provenance").error:
         return None
     state = package.state(stage)
     approval = state.approval
@@ -138,8 +138,7 @@ class _Computer:
         return self.done[stage]
 
     def _record(self, stage: str) -> tuple[dict[str, Any], str]:
-        doc = self.package.doc(stage)
-        read = doc.read_provenance()
+        read = self.package.record_read(stage, "provenance")
         if read.error:
             return {}, "known"
         if read.obj is None:
@@ -250,7 +249,7 @@ def stale_sources(package: Package, stage: str) -> dict[str, list[str]]:
     """``{block key: source ids whose hash no longer matches}`` from the recorded ``sources`` and ``cites``."""
     if not package.exists(stage):
         return {}
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     blocks = (obj or {}).get("blocks")
     hashes = package.current_item_hashes()
     out: dict[str, list[str]] = {}

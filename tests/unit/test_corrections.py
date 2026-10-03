@@ -186,7 +186,7 @@ def test_confirm_on_a_never_approved_owner_closes_the_correction_and_writes_no_a
     assert result["closed"] == ["CR-001"] and result["still_open"] == []
     text = reference_story.read("ai-spec")
     assert "eil:begin approval" not in text or '"by"' not in text.split("eil:begin approval")[1].split("eil:end approval")[0]
-    record = package_of(reference_story).doc("ai-spec").read_provenance().obj
+    record = package_of(reference_story).record("ai-spec", "provenance")
     assert [c["item"] for c in record["changes"]] == ["AIS-001"] and record["changes"][0]["origin"] == "CR-001"
 
 

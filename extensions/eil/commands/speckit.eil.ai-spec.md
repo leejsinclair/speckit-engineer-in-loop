@@ -15,6 +15,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Reading a stage
+
+Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.
+
 ## What this stage is for
 
 The AI Specification translates the **approved** Requirements, Functional and Technical Specifications into an implementation context that an AI coding agent can execute. It does not redesign anything and it decides nothing: it restates what a human has already approved, with a pointer back to where each thing came from. There is no human approval of this stage; the passing check is the gate, and a human review is offered. Every gate below is decided by the `eil` helper, not by you.
@@ -25,7 +29,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 1. **Synchronise**: run `eil sync --json`.
 2. **Start the stage**: run `eil stage-init ai-spec --json`. It is refused (`stage-not-approved`) until Requirements, Functional and Technical all carry a current approval; do not work around that. It creates `s04-ai-spec.md` and `spec.md` as a link to it. If `s04-ai-spec.md` already exists, continue from it.
-3. **Read** the approved `s01`, `s02` and `s03`, and `s04-ai-spec.md`. Read the existing code the design touches.
+3. **Read** the approved Requirements, Functional and Technical Specifications, and the AI Specification, with `eil show <stage> --json` (or `--items` for the ids you need). Read the existing code the design touches.
 4. **Assemble only from the approved stages.** Under each section of the template write items, one per line: `**AIS-001**: the instruction, stated for the agent (traces: FR-001, DEC-004)`.
    - Every item traces to at least one approved `REQ`, `UC`, `FR`, `NFR`, `DEC` or `ART`. The check reports any item without a source, any trace to something that is not approved, and any text outside an item.
    - **Do not write anything without a source.** If you find something the approved stages do not say (a missing edge case, an unstated constraint, a decision nobody made), do not fill it in: raise it as a challenge with `eil challenge add`, or put it to the human as an open question, and leave it out. The human decides; you execute. Never introduce a functional or architectural decision here.

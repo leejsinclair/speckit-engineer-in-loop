@@ -46,10 +46,9 @@ def _approval(pkg: Package, stage: str) -> dict | None:
     """The stage's raw recorded approval, read directly (never through ``Package.state``, which
     this module itself feeds — D-26)."""
     try:
-        doc = pkg.doc(stage)
+        read = pkg.record_read(stage, "approval")
     except (OSError, UnicodeDecodeError):
         return None
-    read = doc.read_region("approval")
     return read.obj if not read.error and isinstance(read.obj, dict) else None
 
 

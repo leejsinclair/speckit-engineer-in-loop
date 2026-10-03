@@ -7,6 +7,7 @@ the assessment region and the current fingerprints.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from collections.abc import Mapping
@@ -14,9 +15,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .blocks import Doc
+from . import recordfile
+from .blocks import Doc, RegionError, RegionRead, ensure_region, provenance_problems, set_region_lines
 from .fingerprint import fingerprint_text
 from .results import Finding
+
+# The JSON records a stage can hold (T007). Every read and write of one goes through
+# ``Package.record`` and ``Package.write_record``; nothing else reaches into the regions.
+RECORD_NAMES = ("approval", "assessment", "comprehension", "provenance")
 
 OVERVIEW = "s00-README.md"
 
@@ -39,6 +45,7 @@ ALIASES = {"spec.md": "s04-ai-spec.md", "plan.md": "s05-plan.md", "tasks.md": "s
 APPROVABLE = ("requirements", "functional", "technical", "completion")
 
 REACHED = ("first", "carried-forward", "reviewed")
+MISSING_APPROVAL = "approval record missing or unreadable"
 
 
 def reached_of(approval: dict[str, Any] | None) -> str | None:
@@ -191,6 +198,150 @@ class Package:
             self._fingerprints[stage] = cached
         return cached[1]
 
+    # ---- the record file (D-48)
+
+    def record_file(self) -> recordfile.Loaded:
+        """``eil-record.json``, parsed and checked, cached against its size and modification time."""
+        target = recordfile.path(self.root)
+        try:
+            info = target.stat()
+            key: tuple[int, int] | None = (info.st_mtime_ns, info.st_size)
+        except OSError:
+            key = None
+        held = self.__dict__.get("_record_file")
+        if held is None or held[0] != key or key is None:
+            held = (key, recordfile.load(self.root))
+            self.__dict__["_record_file"] = held
+        return held[1]
+
+    def story_record(self) -> dict[str, Any]:
+        """The story-level records (``start``, ``profile``, ``review_sessions``); empty when unreadable."""
+        loaded = self.record_file()
+        return dict(loaded.data.get("story") or {}) if loaded.error is None else {}
+
+    def write_story_record(self, key: str, value: Any) -> None:
+        """Set (or, with ``None``, remove) one story-level record. Refuses to overwrite a malformed file."""
+        loaded = self.record_file()
+        if loaded.error is not None:
+            raise RegionError(loaded.error)
+        data = copy.deepcopy(loaded.data)
+        story = data.setdefault("story", {})
+        if value is None:
+            story.pop(key, None)
+        else:
+            story[key] = value
+        self.root.mkdir(parents=True, exist_ok=True)
+        recordfile.save(self.root, data)
+
+    # ---- records (T007): the one seam for reading and writing a stage's JSON records
+
+    def record_read(self, stage: str, name: str) -> RegionRead:
+        """A stage's ``name`` record with any error that makes it unreadable.
+
+        The record lives in ``eil-record.json`` (D-48). A region that still holds a JSON body belongs to
+        a document not yet migrated: it is read as before, and wins, since the helper only ever writes a
+        rendered line there. The provenance record is also checked against its allowed keys."""
+        if name not in RECORD_NAMES:
+            raise ValueError(f"{name!r} is not a record")
+        read = self.doc(stage).read_region(name)
+        if read.obj is None and read.error is None:
+            loaded = self.record_file()
+            if loaded.error is not None:
+                return RegionRead(None, loaded.error)
+            obj = (loaded.data.get("stages", {}).get(stage) or {}).get(name)
+            read = RegionRead(copy.deepcopy(obj) if obj else None)
+        if name == "provenance" and read.obj is not None and not read.error:
+            problems = provenance_problems(read.obj)
+            if problems:
+                return RegionRead(None, "; ".join(problems[:3]))
+        return read
+
+    def record(self, stage: str, name: str) -> dict[str, Any] | None:
+        """A stage's ``name`` record, or ``None`` when it is absent or unreadable."""
+        read = self.record_read(stage, name)
+        return None if read.error else read.obj
+
+    def write_record(self, stage: str, name: str, obj: dict[str, Any] | None, text: str | None = None) -> str:
+        """Record ``obj`` as the stage's ``name`` record and return the document text.
+
+        The record goes to ``eil-record.json``; the region keeps one rendered line. Any other record of
+        the stage still held as JSON in its region moves to the file in the same write, so the next
+        write on a stage completes its migration. ``text`` is the document as the caller has already
+        edited it (the file on disk when omitted). Raises ``RegionError`` when the document or the
+        record file cannot take it; then nothing is written."""
+        if name not in RECORD_NAMES:
+            raise ValueError(f"{name!r} is not a record")
+        if name == "provenance" and obj:
+            problems = provenance_problems(obj)
+            if problems:
+                raise RegionError("; ".join(problems[:3]))
+        return self._store(stage, {name: obj}, text)
+
+    def migrate(self, stage: str) -> bool:
+        """Move every JSON region body of ``stage`` into the record file (``sync``). Idempotent;
+        returns whether anything moved."""
+        doc = self.doc(stage)
+        if not any(doc.region_is_json(n) for n in RECORD_NAMES):
+            return False
+        self._store(stage, {}, None)
+        return True
+
+    def _store(self, stage: str, changes: dict[str, dict[str, Any] | None], text: str | None) -> str:
+        base = self.read(stage) if text is None else text
+        loaded = self.record_file()
+        if loaded.error is not None:
+            raise RegionError(f"cannot record: {loaded.error}; repair or remove it first")
+        data = copy.deepcopy(loaded.data)
+        held = data.setdefault("stages", {}).setdefault(stage, {})
+        doc = Doc(base)
+        for other in RECORD_NAMES:
+            read = doc.read_region(other)
+            if read.obj is not None and not read.error and other not in changes:
+                if recordfile.stage_problems(stage, other, read.obj):
+                    continue  # a malformed record stays where it is, reported, to be repaired by a person
+                held[other] = read.obj
+        for name, obj in changes.items():
+            if obj:
+                held[name] = obj
+            else:
+                held.pop(name, None)
+        problems = recordfile.problems(data)
+        if problems:
+            raise RegionError("; ".join(problems[:3]))
+        updated = base
+        for name in changes:
+            if changes[name]:
+                updated = ensure_region(updated, name)
+        rendered = Doc(updated)
+        for name in RECORD_NAMES:
+            if name in rendered.regions and (name in held or name in changes or rendered.region_is_json(name)):
+                if rendered.region_is_json(name) and name not in held:
+                    continue  # an unreadable JSON body is left for a person to repair
+                updated = set_region_lines(updated, name, recordfile.render(name, held.get(name)))
+        self.root.mkdir(parents=True, exist_ok=True)
+        recordfile.save(self.root, data)
+        path = self.doc_path(stage)
+        if not path.is_file() or path.read_bytes() != updated.encode("utf-8"):
+            path.write_bytes(updated.encode("utf-8"))
+        return updated
+
+    def approval_line_without_record(self, stage: str) -> Finding | None:
+        """D-48 integrity: the document says it was approved but the record file holds no readable
+        approval for it (``approval-record-missing``, or ``malformed-record-file``)."""
+        doc = self.doc(stage)
+        if doc.region_is_json("approval") or not doc.region_lines("approval"):
+            return None
+        loaded = self.record_file()
+        if loaded.error is not None:
+            return Finding("malformed-record-file", recordfile.FILE, loaded.error)
+        if (loaded.data.get("stages", {}).get(stage) or {}).get("approval"):
+            return None
+        return Finding(
+            "approval-record-missing",
+            DOC_FILES[stage],
+            f"the document shows an approval but {recordfile.FILE} holds no approval record for {stage}",
+        )
+
     def state(self, stage: str) -> StageState:
         path = self.doc_path(stage)
         if not path.is_file():
@@ -210,8 +361,21 @@ class Package:
         abbreviated = any(r.kind == "abbreviation" and r.obj for r in doc.records())
 
         approval = None
-        read = doc.read_region("approval")
-        if read.error:
+        missing = self.approval_line_without_record(stage)
+        if missing is not None:
+            findings.append(missing)
+            return StageState(
+                stage,
+                "needs-re-review",
+                MISSING_APPROVAL,
+                abbreviated=abbreviated,
+                fingerprint=fingerprint,
+                findings=findings,
+            )
+        read = self.record_read(stage, "approval")
+        if read.error and read.error == self.record_file().error:
+            findings.append(Finding("malformed-record-file", recordfile.FILE, read.error))
+        elif read.error:
             findings.append(Finding("malformed-approval", path.name, f"approval region: {read.error}"))
         elif read.obj is not None:
             if isinstance(read.obj.get("fingerprint"), str):
@@ -273,7 +437,7 @@ class Package:
                 )
             return StageState(stage, "approved", "", approval, **base)
 
-        assessment = doc.read_region("assessment").obj
+        assessment = self.record(stage, "assessment")
         if _gate_is_met(assessment, fingerprint):
             return StageState(stage, "in-review", **base)
         return StageState(stage, "draft", **base)

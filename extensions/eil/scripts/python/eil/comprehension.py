@@ -20,7 +20,7 @@ import hashlib
 import re
 from typing import TYPE_CHECKING, Any
 
-from .blocks import Doc, write_region
+from .blocks import Doc, ensure_region
 from .clock import utc_now
 from .fingerprint import fingerprint_text
 from .identity import Config, confirmer_refusal, is_ai_actor
@@ -441,12 +441,10 @@ def record(
         raise refuse(*refusals)
     _require_prerequisites(pkg, stage)
 
-    text = pkg.read(stage)
-    if "comprehension" not in Doc(text).regions:
-        text = write_region(text, "comprehension", {}, heading="## Comprehension Check")
+    text = ensure_region(pkg.read(stage), "comprehension")
     fingerprint = fingerprint_text(text)
     now = utc_now()
-    existing = Doc(text).read_region("comprehension").obj
+    existing = pkg.record(stage, "comprehension")
     current = (
         bool(existing)
         and validate_record(existing, stage) is None
@@ -474,7 +472,7 @@ def record(
     error = validate_record(saved, stage)
     if error:  # only reachable through a bug or an out-of-range argument
         raise refuse(Refusal("reason-required", error, "Correct the arguments"))
-    pkg.doc_path(stage).write_bytes(write_region(text, "comprehension", saved).encode("utf-8"))
+    pkg.write_record(stage, "comprehension", saved, text=text)
     state = summarise(saved, fingerprint)
     return {
         "ok": True,

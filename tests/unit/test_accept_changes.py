@@ -305,7 +305,7 @@ def test_a_covered_change_to_a_checked_stage_carries_forward_without_a_question(
     story_dir.append("requirements", "\n" + record_block("challenge", CHALLENGE).rstrip("\n") + "\n")
     approval = confirm(story_dir, "ok", stage="functional")["approval"]
     assert approval["reached"] == "carried-forward" and approval["rests_on"] == ["CH-004"]
-    comp = package_of(story_dir).doc("functional").read_region("comprehension").obj
+    comp = package_of(story_dir).record("functional", "comprehension")
     assert comp and {row["outcome"] for row in comp["levels"]} == {"not-applicable"}
 
 

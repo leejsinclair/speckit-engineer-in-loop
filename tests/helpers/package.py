@@ -794,3 +794,16 @@ def rf_row(
     if reason is not None:
         lines.append(f"Reason: {reason}")
     return "\n".join(lines)
+
+
+# ---- 003: a project the helper can start stories in, without Spec Kit (T004)
+
+
+def install_templates(project: Path) -> None:
+    """Copy the preset's templates into ``project/.specify/templates``, where ``load_template`` finds them."""
+    import shutil
+
+    target = project / ".specify" / "templates"
+    target.mkdir(parents=True, exist_ok=True)
+    for path in (Path(__file__).resolve().parents[2] / "templates").glob("*.md"):
+        shutil.copy(path, target / path.name)

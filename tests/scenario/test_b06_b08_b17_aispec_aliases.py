@@ -360,4 +360,4 @@ def test_b17_the_task_list_and_the_plan_are_judged_by_the_ai_and_show_as_such(
     judged = write_judgments(project, "tasks", ["TSK-G03"])
     result = eil(["check", "--stage", "tasks", "--judgments", str(judged), "--json"])
     assert result.json["ok"]
-    assert Package(feature(project)).state("tasks").state == "in-review"
+    assert Package(feature(project)).state("tasks").state in ("in-review", "reviewed")  # 003 D-58

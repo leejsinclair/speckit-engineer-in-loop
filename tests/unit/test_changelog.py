@@ -21,7 +21,7 @@ from tests.unit.test_classify import classify
 
 
 def record(story: Story, stage: str = "requirements") -> dict:
-    return package_of(story).doc(stage).read_provenance().obj
+    return package_of(story).record(stage, "provenance")
 
 
 def confirm_with(story: Story, summaries: dict[str, str] | None, stage: str = "requirements"):

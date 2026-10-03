@@ -15,6 +15,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Reading a stage
+
+Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.
+
 ## What this stage is for
 
 Requirements answer **why**: the problem, the outcome wanted, who is affected, and what success looks like. They describe the problem and outcome without prescribing an implementation. The AI drafts and challenges; **a human decides and approves**. Every gate below is decided by the `eil` helper, not by you.
@@ -23,8 +27,12 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 ## Steps
 
-1. **Synchronise**: run `eil sync --json`. If it exits 3 there is no story yet: start one. Use `.specify/feature.json` if it names a feature directory; otherwise ask the user for a title and choose `specs/<NNN>-<short-name>` (the next free number), then run `eil start --title "<title>" --feature-dir "<directory>" --json`.
-2. **Read** `s01-requirements.md` in the feature directory. Its headings are the process standard's; its HTML comments say what each section holds.
+1. **Synchronise**: run `eil sync --feature-dir "<directory>" --json` when you know the story's directory. If there is no story yet, start one:
+   - **Never reuse `.specify/feature.json` when it names a governed story** (a directory holding `s00-README.md`): that is an earlier story, and writing to it would change its records. Use the pointer only when it names a directory that is not yet a story. Otherwise ask the user for a title and choose `specs/<NNN>-<short-name>` (the next free number).
+   - **Always pass `--feature-dir`**: run `eil start --title "<title>" --feature-dir "<directory>" --json`, and pass the same `--feature-dir` on every later call. The start always moves the pointer to the new story and reports the move (`pointer.previous`); tell the user.
+   - `ambiguous-story` means the helper could not tell which story a call was for; it wrote nothing. Ask the user which story, and pass it with `--feature-dir`.
+   - `unexpected-branch` means the current git branch is neither the main branch nor named for the new story. Show the branch and the refusal's `question`, and **ask the developer to switch branch or confirm** that the story belongs on this branch. If they confirm, run the start again with `--on-branch <branch> --by "<their name>" --reply "<their words>"`. Never pass `--on-branch` yourself without their reply. The helper never creates or switches a branch; neither do you.
+2. **Read the stage** with `eil show requirements --json`. Its headings are the process standard's. When you draft a section, open `s01-requirements.md` to edit it: its HTML comments say what each section holds.
 3. **Draft from what the user said, and only from that.** Fill each section with what the user's input, the repository and the human's answers support. Where you would have to guess, do not guess: write an open question instead.
    - **Never turn an open question into an assumption.** An open question is `**OQ-001**: text (status: open) (material: yes)`. An assumption is a separate statement in Assumptions. Moving something from one to the other is a human decision, never yours (FR-022).
    - **Never write `[ai-draft]` by hand.** The helper renders that cue itself, from what you classify. Where a passage is your own inference rather than a restatement of an approved source, leave it plain: it is listed for review when you run the `inferred` list (below). Approval is refused while any block is unreviewed.

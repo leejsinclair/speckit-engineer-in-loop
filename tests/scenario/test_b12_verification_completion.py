@@ -94,7 +94,7 @@ def test_b12_a_row_for_every_item_with_evidence_and_open_tasks_listed_meets_the_
     result = eil(["check", "--stage", "verification", "--json"])
     assert result.json["ok"], unmet(result)
     status = eil(["status", "--json"]).json
-    assert status["stages"]["verification"]["state"] == "in-review"
+    assert status["stages"]["verification"]["state"] in ("in-review", "reviewed")  # 003 D-58
     assert status["current_stage"] == "completion"
 
 

@@ -80,8 +80,10 @@ def eil(reference_story: Story, eil_json: Eil, tmp_path: Path) -> Driver:
     return Driver(reference_story, eil_json, tmp_path)
 
 
-def tagged(story: Story) -> set[str]:
-    return {line.split("**")[1] for line in story.read("ai-spec").splitlines() if "[ai-draft]" in line and "**AIS-" in line}
+def tagged(eil: Driver) -> set[str]:
+    """The AIS items `eil show` cues as needing review (003 D-50: the cue is never in the document)."""
+    text = eil("show", "ai-spec")[1]["text"]
+    return {line.split("**")[1] for line in text.splitlines() if "[ai-draft]" in line and "**AIS-" in line}
 
 
 def test_b21_review_effort_follows_provenance(eil: Driver) -> None:
@@ -93,16 +95,18 @@ def test_b21_review_effort_follows_provenance(eil: Driver) -> None:
     statuses = eil.statuses("ai-spec")
     assert {k for k, s in statuses.items() if s == "needs-review"} == INFERRED
     assert sum(1 for s in statuses.values() if s == "settled") == 26
-    assert tagged(story) == INFERRED
+    assert tagged(eil) == INFERRED
+    assert "[ai-draft]" not in story.read("ai-spec")
     listed = eil("review", "list", "--stage", "ai-spec", "--kind", "inferred")[1]
     assert {e["key"] for e in listed["entries"]} == INFERRED
     assert next(e for e in listed["entries"] if e["key"] == "AIS-007")["why"] == "adds a retry policy"
 
-    # 3: a tag removed by hand changes no status, and sync puts it back
-    story.write("ai-spec", story.read("ai-spec").replace("Retry each failed analysis three times. (traces: DEC-002) [ai-draft]", "Retry each failed analysis three times. (traces: DEC-002)"))
-    assert "AIS-007" not in tagged(story) and eil.statuses("ai-spec") == statuses
+    # 3: a tag added by hand changes no status, and sync removes it
+    story.write("ai-spec", story.read("ai-spec").replace("Retry each failed analysis three times. (traces: DEC-002)", "Retry each failed analysis three times. (traces: DEC-002) [ai-draft]"))
+    assert eil.statuses("ai-spec") == statuses
     assert eil("sync")[0] == 0
-    assert tagged(story) == INFERRED and eil.statuses("ai-spec") == statuses
+    assert "[ai-draft]" not in story.read("ai-spec")
+    assert tagged(eil) == INFERRED and eil.statuses("ai-spec") == statuses
 
     # 4: a task tracing to AIS-007 is blocked; others proceed
     edit(story, "tasks", "T011 Build part 11 in src/part11.py (traces: AIS-011)", "T011 Build part 11 in src/part11.py (traces: AIS-007)")
@@ -122,7 +126,7 @@ def test_b21_review_effort_follows_provenance(eil: Driver) -> None:
     assert sorted(data["accepted"]) == sorted(INFERRED - {"AIS-029"})
     after = eil("review", "list", "--stage", "ai-spec", "--kind", "inferred")[1]
     assert [e["key"] for e in after["entries"]] == ["AIS-029"]
-    assert tagged(story) == {"AIS-029"}
+    assert tagged(eil) == {"AIS-029"}
     assert eil("enter", "implement", "--task", "T011")[0] == 0
 
     # 6: edit DEC-002; the restated blocks citing it become source-changed, the others stay settled
@@ -135,4 +139,4 @@ def test_b21_review_effort_follows_provenance(eil: Driver) -> None:
     code, data = eil("blocks", "reclassify", "--stage", "ai-spec", "--block", "AIS-001", "--to", "inferred", "--by", "Sam QA")
     assert code == 0, data
     assert eil.statuses("ai-spec")["AIS-001"] == "needs-review"
-    assert "Sam QA" in json.dumps(package_of(story).doc("ai-spec").read_provenance().obj)
+    assert "Sam QA" in json.dumps(package_of(story).record("ai-spec", "provenance"))

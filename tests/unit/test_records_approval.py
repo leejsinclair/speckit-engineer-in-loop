@@ -71,7 +71,7 @@ def test_a_met_gate_and_a_configured_confirmer_records_the_approval(
     fingerprint = package.fingerprint("requirements")
     result = approve_ok(package, config)
     assert result["ok"] is True
-    record = package.doc("requirements").read_region("approval").obj
+    record = package.record("requirements", "approval")
     assert record["stage"] == "requirements"
     assert record["by"] == "Ada Dev"
     assert record["at"] == NOW
@@ -92,7 +92,7 @@ def test_the_approval_covers_the_current_content_and_the_stage_becomes_approved(
     assert package.state("requirements").state == "approved"
     assert (
         package.fingerprint("requirements")
-        == package.doc("requirements").read_region("approval").obj["fingerprint"]
+        == package.record("requirements", "approval")["fingerprint"]
     )
 
 
@@ -101,7 +101,7 @@ def test_the_record_carries_each_items_hash_for_impact_analysis(
 ) -> None:
     package = ready(story_dir, tmp_path)
     approve_ok(package, config)
-    record = package.doc("requirements").read_region("approval").obj
+    record = package.record("requirements", "approval")
     doc = package.doc("requirements")
     parsed = parse_document(doc)
     scan_document(doc, "requirements", parsed)  # attaches the diagram, which is part of an artifact's hash
@@ -114,7 +114,7 @@ def test_a_played_back_note_is_recorded_when_given(story_dir: Story, tmp_path: P
     package = ready(story_dir, tmp_path)
     approve_ok(package, config, played_back_to="Sam (business), Priya (QA)")
     assert (
-        package.doc("requirements").read_region("approval").obj["played_back_to"]
+        package.record("requirements", "approval")["played_back_to"]
         == "Sam (business), Priya (QA)"
     )
 
@@ -157,7 +157,7 @@ def test_a_second_approval_replaces_the_first_rather_than_appending(
     approve_ok(package, config, attestation="Re-confirmed after the edit.")
     text = story_dir.read("requirements")
     assert text.count("<!-- eil:begin approval -->") == 1
-    record = package.doc("requirements").read_region("approval").obj
+    record = package.record("requirements", "approval")
     assert record["attestation"] == "Re-confirmed after the edit."
     assert package.state("requirements").state == "approved"
 
@@ -264,7 +264,7 @@ def test_unreviewed_ai_content_can_be_overridden_by_a_confirmer(
     )
     check_stage(package, "requirements", judgments_path=judgments(tmp_path))
     approve_ok(package, config)
-    assert package.doc("requirements").read_region("approval").obj["overrides_used"] == ["OVR-001"]
+    assert package.record("requirements", "approval")["overrides_used"] == ["OVR-001"]
 
 
 def test_a_blank_attestation_is_refused(story_dir: Story, tmp_path: Path, config: Config) -> None:
@@ -436,3 +436,16 @@ def test_an_override_is_visible_in_the_document_for_review(story_dir: Story, con
     )
     override(Package(story_dir.root), config, "requirements", "REQ-G06", by="Ada Dev", reason="visible")
     assert "visible" in story_dir.read("requirements") and '"CH-001"' in story_dir.read("requirements")
+
+
+# ---- 003 D-59: approving takes one word, recorded with the helper's question (determinism 53)
+
+
+
+def test_an_empty_reply_is_still_refused(story_dir: Story, tmp_path: Path, config: Config) -> None:
+    package = ready(story_dir, tmp_path)
+    with pytest.raises(EilExit) as exc:
+        approve_ok(package, config, attestation="  ")
+    assert "attestation-required" in refusals(exc)
+
+

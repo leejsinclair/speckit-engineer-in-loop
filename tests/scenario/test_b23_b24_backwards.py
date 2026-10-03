@@ -91,7 +91,7 @@ def test_b23_a_correction_from_implementation_needs_three_interactions(reference
     assert code == 0, done["refusals"][0]["message"]
     approval = done["approval"]
     assert approval["reached"] == "carried-forward" and approval["rests_on"] == ["CR-001"]
-    record = package_of(reference_story).doc("requirements").read_provenance().obj
+    record = package_of(reference_story).record("requirements", "provenance")
     assert [c["status"] for c in record["corrections"]] == ["closed"]
     assert record["changes"][0]["origin"] == "CR-001" and record["changes"][0]["summary_by"] == "ai"
     assert "implementation" in reference_story.read("requirements") and "CR-001" in reference_story.read("requirements")

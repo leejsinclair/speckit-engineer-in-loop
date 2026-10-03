@@ -15,6 +15,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 If `.specify/extensions/eil/scripts/python/eil` does not exist, STOP. Tell the user to run `specify extension add eil` and then `specify preset add engineer-in-the-loop`, and do nothing else: continuing without the helper would let a story bypass its gates.
 
+## Reading a stage
+
+Read a stage with `python3 .specify/extensions/eil/scripts/python/eil show <stage> --json` (add `--items <ids>` for just those items, or `--section "<heading>"` for one section), never by opening the whole document: `show` gives the content as a person reads it, with `[ai-draft]` after each block that still needs review and one readable line in place of each record. Open a stage document only to edit the part you are changing. **Never read `eil-record.json`**: it is the helper's record file, and `eil status` and `eil show` report what is in it.
+
 ## What this stage is for
 
 The Technical Specification answers **how** the approved behaviour will be built and **why this approach is appropriate**. It is deliberately implementation-oriented, and **the developer owns it**. You may propose alternatives, identify risks and challenge decisions, and you draft the documentation, but a technical decision is the developer's, never yours. Every gate below is decided by the `eil` helper, not by you.
@@ -25,7 +29,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
 
 1. **Synchronise**: run `eil sync --json`.
 2. **Start the stage**: run `eil stage-init technical --json`. It is refused (`stage-not-approved`) until the Functional Specification carries an approval; do not work around that. If `s03-technical-spec.md` already exists, continue from it.
-3. **Read** the approved `s01-requirements.md` and `s02-functional-spec.md`, and `s03-technical-spec.md`. The template's comments say what each section and diagram holds.
+3. **Read** the approved Requirements and Functional Specification, and the Technical Specification, with `eil show <stage> --json`. When you draft a section, open `s03-technical-spec.md` to edit it: the template's comments say what each section and diagram holds.
 4. **Capture the decisions with the developer, one at a time.** For each significant choice (asynchronous processing, retries and idempotency, authentication, integration, storage and so on) ask the developer what they decide, and write it as a `DEC` item with **all** of these fields: the decision, the reason, the rejected alternative, the accepted trade-off and the owner.
 
    ```text

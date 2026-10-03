@@ -22,6 +22,8 @@ from .records import challenge_severity
 from .results import Finding
 from .trace import ParseResult, parse_document, story_findings
 
+# A record file that is missing or cannot be read makes approvals unverifiable (D-48, FR-011).
+RECORD_INTEGRITY_CODES = frozenset({"approval-record-missing", "malformed-record-file"})
 NOTICE = "<!-- eil:generated — edit the stage documents, not this file -->"
 _TITLE = re.compile(r"^- Title:\s*(?P<v>.*)$", re.MULTILINE)
 _OWNER = re.compile(r"^- Owner:\s*(?P<v>.*)$", re.MULTILINE)
@@ -87,6 +89,7 @@ class Model:
     touched_artifacts: dict[str, str] = field(default_factory=dict)
     untouched_artifacts: list[str] = field(default_factory=list)
     deferred_challenges: list[dict[str, str]] = field(default_factory=list)
+    needs_review: dict[str, int] = field(default_factory=dict)
 
     @property
     def overall(self) -> str:
@@ -123,8 +126,10 @@ def collect(pkg: Package) -> Model:
             continue
         parsed = parse_document(doc)
         parsed_by_stage[stage] = parsed
+        model.needs_review[stage] = blockstatus.counts(pkg, stage)["needs_review"]
         scan = scan_document(doc, stage, parsed, root=pkg.root)
         issues.extend(f for f in [*doc.findings, *parsed.findings] if f.code in INTEGRITY_CODES)
+        issues.extend(f for f in states[stage].findings if f.code in RECORD_INTEGRITY_CODES)
         rule_findings = check_stage(pkg, stage, write=False).findings if stage in CRITERIA_BY_STAGE else []
         for artifact in scan.artifacts:
             model.artifacts.append(
@@ -171,8 +176,11 @@ def collect(pkg: Package) -> Model:
             elif record.kind == "abbreviation":
                 model.abbreviated.append({"stage": stage, "by": str(body.get("by", "unknown"))})
         if stage in ("functional", "technical"):
-            record_obj = doc.read_region("comprehension").obj
+            record_obj = pkg.record(stage, "comprehension")
             model.comprehension[stage] = comprehension.summarise(record_obj, states[stage].fingerprint or "")
+    loaded = pkg.record_file()
+    if loaded.error is not None:
+        issues.append(Finding("malformed-record-file", "eil-record.json", loaded.error))
     seen: set[tuple[str, str]] = set()
     for finding in [*issues, *[f for f in story_findings(parsed_by_stage) if f.code in INTEGRITY_CODES]]:
         if (finding.code, finding.where) not in seen:
@@ -223,12 +231,33 @@ def _join(values: list[str], empty: str = "none") -> str:
 
 
 def _document_rows(pkg: Package, model: Model) -> str:
-    rows = ["| Document | State |", "|---|---|", f"| [{OVERVIEW}]({OVERVIEW}) | generated |"]
+    """One row per document. The count of blocks needing review stands in for the ``[ai-draft]`` cue,
+    which is no longer written into a document (D-50, R-26): `eil show` marks the blocks themselves."""
+    rows = [
+        "| Document | State | Blocks needing review |",
+        "|---|---|---|",
+        f"| [{OVERVIEW}]({OVERVIEW}) | generated | |",
+    ]
     for stage in STAGES:
         name = DOC_FILES[stage]
         label = f"[{name}]({name})" if pkg.exists(stage) else name
-        rows.append(f"| {label} | {model.states[stage].state} |")
+        pending = model.needs_review.get(stage)
+        rows.append(f"| {label} | {model.states[stage].state} | {pending if pending is not None else ''} |")
     return "\n".join(rows)
+
+
+def _story_notes(pkg: Package) -> str:
+    """Lines under Story from the story-level records: how the story was started (D-47)."""
+    start = pkg.story_record().get("start") or {}
+    lines = []
+    if start.get("branch_confirmed_by"):
+        lines.append(
+            f"- Started on branch {start.get('branch')}, confirmed by {start['branch_confirmed_by']}"
+            + (f' ("{start["reply"]}" to "{start["question"]}")' if start.get("reply") and start.get("question") else "")
+        )
+    elif start.get("branch"):
+        lines.append(f"- Started on branch {start['branch']}")
+    return "".join(f"{line}\n" for line in lines)
 
 
 def _artefact_rows(model: Model) -> str:
@@ -329,6 +358,7 @@ def render(pkg: Package, template: str, title: str, owner: str) -> str:
     values = {
         "title": title,
         "owner": owner,
+        "story_notes": _story_notes(pkg),
         "current_stage": model.current or "complete",
         "overall_status": model.overall,
         "documents": _document_rows(pkg, model),
@@ -503,6 +533,7 @@ def status(pkg: Package, template: str | None = None) -> dict[str, Any]:
         "feature_dir": feature_dir,
         "title": title,
         "owner": owner,
+        "story_notes": _story_notes(pkg),
         "current_stage": model.current,
         "stages": stages,
         "outstanding": {

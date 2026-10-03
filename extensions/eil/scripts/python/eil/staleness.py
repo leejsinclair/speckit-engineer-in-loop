@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from .blocks import RegionError, write_provenance
+from .blocks import RegionError
 from .blockstatus import DERIVED, NEEDS_REVIEW, SETTLED, SOURCE_CHANGED, adopt, block_statuses
 from .content import Block, blocks_of
 
@@ -71,7 +71,7 @@ def _pending(block: Block) -> bool:
 
 
 def _sources_moved(package: Package, stage: str, key: str, hashes: dict[str, str]) -> list[str]:
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     entry = ((obj or {}).get("blocks") or {}).get(key)
     if not isinstance(entry, dict):
         return []
@@ -236,7 +236,7 @@ def sync_task_snapshots(package: Package) -> dict[str, Any]:
     if not package.exists("tasks"):
         return result
     doc = package.doc("tasks")
-    read = doc.read_provenance()
+    read = package.record_read("tasks", "provenance")
     if read.error:
         return result
     record = read.obj if read.obj is not None else (adopt(package, "tasks") or {"version": 1, "blocks": {}})
@@ -264,10 +264,9 @@ def sync_task_snapshots(package: Package) -> dict[str, Any]:
             dirty = True
     if dirty:
         try:
-            text = write_provenance(package.read("tasks"), record)
+            package.write_record("tasks", "provenance", record)
         except RegionError:
             return result
-        package.doc_path("tasks").write_bytes(text.encode("utf-8"))
     return result
 
 

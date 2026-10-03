@@ -63,7 +63,7 @@ def test_b01_starting_a_story_creates_only_the_overview_and_requirements(
     result = start(eil)
     assert result.code == 0, result.stderr
     feature = project / FEATURE
-    assert listing(feature) == ["s00-README.md", "s01-requirements.md"]
+    assert listing(feature) == ["eil-record.json", "s00-README.md", "s01-requirements.md"]  # 003: the record file
     for absent in ("spec.md", "plan.md", "tasks.md", "s02-functional-spec.md", "assets"):
         assert not (feature / absent).exists(), absent
 
@@ -182,11 +182,9 @@ def test_b02_an_accepted_question_lets_one_confirmation_approve(project: Path, e
     assert check(project, eil).json["ok"] is True
     result = approve(eil, "Ada Dev", played_back_to="Sam (business), Priya (QA)")
     assert result.code == 0, result.stdout + result.stderr
-    text = path.read_text(encoding="utf-8")
-    start_at = text.index("<!-- eil:begin approval -->")
-    record = json.loads(
-        text[text.index("```json", start_at) + 7 : text.index("```", text.index("```json", start_at) + 7)]
-    )
+    saved = json.loads((path.parent / "eil-record.json").read_text(encoding="utf-8"))  # 003: the record file
+    record = saved["stages"]["requirements"]["approval"]
+    assert "Approved by Ada Dev" in path.read_text(encoding="utf-8")  # the document keeps one readable line
     assert record["by"] == "Ada Dev" and record["stage"] == "requirements"
     assert record["fingerprint"].startswith("sha256:") and record["at"].endswith("Z")
     assert record["attestation"].startswith("Yes, this is the problem")

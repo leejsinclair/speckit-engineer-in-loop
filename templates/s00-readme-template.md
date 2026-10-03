@@ -5,7 +5,7 @@
 
 - Title: {{title}}
 - Owner: {{owner}}
-
+{{story_notes}}
 ## Status
 
 - Current stage: {{current_stage}}

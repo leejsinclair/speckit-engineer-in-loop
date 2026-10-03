@@ -29,7 +29,7 @@ def entry(story: Story, stage: str, key: str) -> dict[str, Any]:
 
 
 def story_record(story: Story, stage: str) -> dict[str, Any]:
-    obj = package_of(story).doc(stage).read_provenance().obj
+    obj = package_of(story).record(stage, "provenance")
     assert obj is not None
     return obj
 
@@ -230,3 +230,8 @@ def test_reclassify_refuses_an_unknown_block(reference_story: Story) -> None:
     with pytest.raises(EilExit) as exc:
         provenance.reclassify(package_of(reference_story), "ai-spec", "AIS-404", by="Sam QA")
     assert exc.value.payload["refusals"][0]["code"] == "unknown-item"
+
+
+# ---- 003 D-57: classification is additive; an unknown key is skipped, not fatal (determinism 49)
+
+

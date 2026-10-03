@@ -56,7 +56,7 @@ def test_an_existing_feature_is_untouched_and_never_gated(project_with_legacy: P
     assert sorted(p.name for p in legacy.iterdir()) == ["spec.md"]
     for command in ("status", "check", "sync", "overview"):
         result = run_helper(project, command, "--json", feature=legacy)
-        assert result.returncode == 3 and json.loads(result.stdout) == {"governed": False}, command
+        assert result.returncode == 3 and json.loads(result.stdout) == {"governed": False, "story": "000-legacy"}, command
     assert sorted(p.name for p in legacy.iterdir()) == ["spec.md"], "nothing was created there"
     started = run_helper(project, "start", "--title", "x", "--json", feature=legacy)
     assert started.returncode == 1 and "directory-has-spec-md" in started.stdout, (
@@ -71,6 +71,10 @@ def test_removal_leaves_the_story_readable_and_standard_spec_kit_restored(projec
     feature = project / "specs" / "001-duplicates"
     story = Story(feature)
     with_plan_and_tasks(story)
+    from eil import cli
+
+    cli._persist_adoption(Package(feature))  # writes the story's record file (003 FR-013)
+    assert (feature / "eil-record.json").is_file()
     aliases.refresh(Package(feature), aliases.MIRROR)
     scratch.git(project, "add", "-A")
     scratch.git(project, "commit", "-q", "-m", "a governed story")
@@ -80,6 +84,7 @@ def test_removal_leaves_the_story_readable_and_standard_spec_kit_restored(projec
     scratch.remove_extension(project)
 
     assert {p.name: p.read_bytes() for p in feature.iterdir() if p.is_file()} == before
+    assert "eil-record.json" in before, "the record file is left in place, like every document"
     for name in ("spec.md", "plan.md", "tasks.md"):
         assert (feature / name).read_text(encoding="utf-8") == (
             feature

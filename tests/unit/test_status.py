@@ -373,3 +373,26 @@ def test_open_tasks_send_the_story_to_implementation_before_verification(story_d
     )
     story_dir.write("tasks", "# Tasks\n\n- [x] T001 done\n")
     assert overview.next_action(package, model)["command"] == "/speckit-eil-7-verify"
+
+
+# ---- 003 D-58: the `reviewed` terminal state, and `done` after completion (FR-040)
+
+
+def _reviewed_story(reference_story: Story) -> Package:
+    from eil.gates import check_stage
+
+    from tests.helpers.derived import settle_derived
+
+    settle_derived(reference_story)
+    for stage in ("ai-spec", "plan", "tasks", "verification"):
+        check_stage(Package(reference_story.root), stage)
+    return Package(reference_story.root)
+
+
+
+def test_the_current_stage_skips_a_reviewed_stage(reference_story: Story) -> None:
+    package = _reviewed_story(reference_story)
+    current = package.current_stage()
+    assert current is None or package.state(current).state != "reviewed"
+
+

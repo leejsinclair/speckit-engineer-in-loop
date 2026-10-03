@@ -1,5 +1,5 @@
-"""``[ai-draft]`` is a cue the helper renders from block status, never the source of it (T034; determinism
-requirement 25; FR-046; research D-33)."""
+"""Status comes from hashes, never from an ``[ai-draft]`` tag (002 D-33), and the helper writes no tag into
+a document at all: the cue is shown by ``eil show`` and the review lists (003 T019, D-50, FR-037)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from eil import blockstatus, cli, provenance, records, reviews
-from eil.blocks import Doc, write_provenance
+from eil.blocks import write_provenance
 from eil.gates import check_stage
 from eil.identity import Config
 from eil.package import Package
@@ -102,57 +102,65 @@ def test_approve_passes_once_the_blocks_are_reviewed_even_if_a_tag_was_hand_adde
     assert package_of(story).state("requirements").state == "approved"
 
 
-def test_sync_renders_the_tag_on_exactly_the_unreviewed_inferred_blocks(story: Story) -> None:
+def test_sync_writes_no_tag_into_the_document(story: Story) -> None:
+    """003 D-50: the cue is shown by `eil show` and the review lists, never written into a document."""
     assert sync(story) == 0
-    assert tagged_sections(story) == set(UNREVIEWED)
+    assert "[ai-draft]" not in story.read("requirements")
+    assert tagged_sections(story) == set()
 
 
-def test_sync_removes_a_tag_from_a_block_that_is_not_unreviewed_inferred(story: Story) -> None:
-    story.write("requirements", story.read("requirements").replace("Customer IDs are stable.", "Customer IDs are stable. [ai-draft]"))
-    sync(story)
-    assert tagged_sections(story) == set(UNREVIEWED)
-
-
-def test_removing_a_tag_by_hand_changes_nothing_and_sync_puts_it_back(story: Story) -> None:
-    sync(story)
-    before = {k: i.status for k, i in blockstatus.block_statuses(package_of(story))["requirements"].items()}
-    story.write("requirements", story.read("requirements").replace(" [ai-draft]", ""))
-    assert {k: i.status for k, i in blockstatus.block_statuses(package_of(story))["requirements"].items()} == before
-    assert try_approve(story) == ["unreviewed-ai-content"]
-    sync(story)
-    assert tagged_sections(story) == set(UNREVIEWED)
-
-
-def test_re_rendering_leaves_the_fingerprint_unchanged(story: Story) -> None:
+def test_sync_strips_existing_tags_and_keeps_every_fingerprint_and_status(story: Story) -> None:
+    text = story.read("requirements")
+    for old in ("Imports create duplicate customers.", "Customer IDs are stable."):
+        text = text.replace(old, old + " [ai-draft]")
+    story.write("requirements", text)
     fingerprint = package_of(story).fingerprint("requirements")
+    before = {k: i.status for k, i in blockstatus.block_statuses(package_of(story))["requirements"].items()}
     sync(story)
-    assert story.read("requirements").count("[ai-draft]") == len(UNREVIEWED)
+    assert "[ai-draft]" not in story.read("requirements")
     assert package_of(story).fingerprint("requirements") == fingerprint
+    assert {k: i.status for k, i in blockstatus.block_statuses(package_of(story))["requirements"].items()} == before
 
 
-def test_rendering_touches_only_the_first_line_of_a_block_and_is_idempotent(story: Story) -> None:
-    sync(story)
-    once = story.read("requirements")
-    sync(story)
-    assert story.read("requirements") == once
-    plain = once.replace(" [ai-draft]", "")
-    assert plain == story.read("requirements").replace(" [ai-draft]", "")
+def test_a_tag_in_an_html_comment_is_left_alone() -> None:
+    from eil.blocks import strip_ai_draft
+
+    text = "# T\n\n<!-- write [ai-draft] by hand? never -->\nBody [ai-draft]\n\n```text\nliteral [ai-draft]\n```\n"
+    assert strip_ai_draft(text) == "# T\n\n<!-- write [ai-draft] by hand? never -->\nBody\n\n```text\nliteral\n```\n"
 
 
-def test_reviewing_removes_the_tags(story: Story) -> None:
-    sync(story)
+def test_classify_and_answer_write_no_tag(story: Story, tmp_path: Path) -> None:
+    package = package_of(story)
+    keys = [b.key for b in blockstatus.blocks_of(package.doc("requirements")) if b.section in UNREVIEWED]
+    path = tmp_path / "classes.json"
+    path.write_text(json.dumps({"stage": "requirements", "blocks": [{"block": k, "adds": "an inference"} for k in keys]}))
+    provenance.classify(package, "requirements", json.loads(path.read_text()))
+    assert "[ai-draft]" not in story.read("requirements")
     review_all(story)
     assert "[ai-draft]" not in story.read("requirements")
 
 
-def test_render_cues_adds_and_removes_a_tag_on_the_first_line_only() -> None:
-    text = "# T\n\n## S\n\nFirst line\nsecond line [ai-draft]\n\n```text\ncode [ai-draft]\n```\n"
-    blocks = blockstatus.blocks_of(Doc(text))
-    out = provenance.render_cues(text, blocks, set())
-    assert out == "# T\n\n## S\n\nFirst line\nsecond line\n\n```text\ncode [ai-draft]\n```\n"
-    key = blockstatus.blocks_of(Doc(out))[0].key
-    again = provenance.render_cues(out, blockstatus.blocks_of(Doc(out)), {key})
-    assert again == "# T\n\n## S\n\nFirst line [ai-draft]\nsecond line\n\n```text\ncode [ai-draft]\n```\n"
+def test_an_agent_edit_by_matching_its_own_text_applies_after_classification(story: Story, tmp_path: Path) -> None:
+    """FR-037: the text the agent wrote is still in the document, byte for byte, after the helper ran."""
+    written = "Imports create duplicate customers.\n"  # an edit whose match spans the end of the line
+    package = package_of(story)
+    keys = [b.key for b in blockstatus.blocks_of(package.doc("requirements")) if b.section == "Background"]
+    provenance.classify(package, "requirements", {"stage": "requirements", "blocks": [{"block": k, "adds": "x"} for k in keys]})
+    sync(story)
+    text = story.read("requirements")
+    assert text.count(written) == 1
+    story.write("requirements", text.replace(written, "Imports create duplicate customer records.\n"))
+    assert "duplicate customer records." in story.read("requirements")
+
+
+def test_reviewing_settles_the_blocks_without_touching_the_prose(story: Story) -> None:
+    def texts() -> list[str]:
+        return [b.text for b in blockstatus.blocks_of(package_of(story).doc("requirements"))]
+
+    before = texts()
+    review_all(story)
+    assert try_approve(story) == []
+    assert texts() == before
 
 
 def test_the_override_of_unreviewed_ai_content_still_works(story: Story, tmp_path: Path) -> None:

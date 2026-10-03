@@ -169,7 +169,7 @@ def test_c04_an_ungoverned_project_is_left_alone_by_every_other_command(installe
         text=True,
         check=False,
     )
-    assert proc.returncode == 3 and json.loads(proc.stdout) == {"governed": False}
+    assert proc.returncode == 3 and json.loads(proc.stdout) == {"governed": False, "story": None}
 
 
 def test_c01_removal_restores_a_project_without_the_preset_or_extension(scratch_project: Path) -> None:
@@ -212,3 +212,5 @@ def test_accept_is_registered_and_the_superseded_commands_are_gone() -> None:
     for name in ("amend", "review"):
         assert f"speckit.eil.{name}" not in manifest
         assert not (REPO / "extensions" / "eil" / "commands" / f"speckit.eil.{name}.md").exists()
+
+

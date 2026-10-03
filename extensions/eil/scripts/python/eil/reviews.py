@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from . import clock
-from .blocks import RegionError, write_provenance
+from .blocks import RegionError
 from .blockstatus import DERIVED, NEEDS_REVIEW, SETTLED, UNKNOWN_CURRENCY, adopt, block_statuses
 from .content import blocks_of
 from .evidence import LIMIT as EVIDENCE_LIMIT
@@ -130,7 +130,7 @@ def _refuse(code: str, message: str, fix: str = "") -> Any:
 
 
 def _record_blocks(package: Package, stage: str) -> dict[str, Any]:
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     blocks = (obj or {}).get("blocks")
     return blocks if isinstance(blocks, dict) else {}
 
@@ -368,7 +368,7 @@ def _answers(package: Package, stage: str) -> dict[tuple[str, str], tuple[bool, 
 
     An answer on the ``inferred`` list counts too: the person already saw this content at this hash (D-45).
     """
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     latest: dict[tuple[str, str], tuple[bool, str]] = {}
     for acc in (obj or {}).get("acceptances") or []:
         if not isinstance(acc, dict) or acc.get("kind") not in ("changes", "inferred"):
@@ -432,7 +432,7 @@ def _challenge_entries(package: Package, stage: str) -> list[tuple[Any, dict[str
 
 
 def _accepted_challenge_hashes(package: Package, stage: str, kind: str = "unsettled-challenges") -> dict[str, str]:
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     latest: dict[str, str] = {}
     for acc in (obj or {}).get("acceptances") or []:
         if not isinstance(acc, dict) or acc.get("kind") != kind:
@@ -447,7 +447,7 @@ def _accepted_challenge_hashes(package: Package, stage: str, kind: str = "unsett
 
 
 def _unsettled_rows(package: Package, stage: str) -> list[tuple[str, str, dict[str, Any]]]:
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     changed = {}
     for c in (obj or {}).get("changes") or []:
         if isinstance(c, dict):
@@ -638,7 +638,7 @@ def conflicted_keys(package: Package, stage: str, extra: dict[str, str] | None =
     """Entries of ``stage`` whose recorded answers conflict at their current content (FR-050)."""
     if not package.exists(stage):
         return set()
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     rows = (obj or {}).get("conflicts") or []
     if not rows:
         return set()
@@ -752,7 +752,7 @@ def answer(
         seen: dict[tuple[str, str], Refusal] = {(r.code, r.message): r for r in refusals}
         raise refuse(*seen.values())
 
-    read = package.doc(stage).read_provenance()
+    read = package.record_read(stage, "provenance")
     if read.error:
         raise _refuse("not-amendable", f"{stage} has a malformed provenance region: {read.error}", "Repair or remove it first")
     record = read.obj if read.obj is not None else (adopt(package, stage) or {"version": 1, "blocks": {}})
@@ -785,13 +785,9 @@ def answer(
     if rows or "conflicts" in record:
         record["conflicts"] = rows
     try:
-        text = write_provenance(package.read(stage), record)
+        package.write_record(stage, "provenance", record)
     except RegionError as exc:
         raise _refuse("not-amendable", f"cannot record the answer in {stage}: {exc}", "Repair the document") from exc
-    package.doc_path(stage).write_bytes(text.encode("utf-8"))
-    from .provenance import render_stage_cues
-
-    render_stage_cues(type(package)(package.root), stage)
     conflicts = sorted({r["key"] for r in rows if r["key"] in hashes})
     lines = [f"Recorded {act.id} by {by}: {len(accepted)} accepted, {len(excepted)} excepted."]
     if conflicts:

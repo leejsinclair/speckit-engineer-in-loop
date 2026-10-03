@@ -49,7 +49,7 @@ def test_a_complete_document_meets_the_gate_and_the_stage_is_in_review_never_app
     with_verification(story_dir)
     result = check(story_dir)
     assert result.ok, [(c.id, c.reason) for c in result.criteria if c.status != "met"]
-    assert Package(story_dir.root).state("verification").state == "in-review"
+    assert Package(story_dir.root).state("verification").state in ("in-review", "reviewed")  # 003 D-58: reviewed when every block is settled
 
 
 # ---- the sections (FR-060)

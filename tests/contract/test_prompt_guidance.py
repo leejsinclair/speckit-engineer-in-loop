@@ -425,3 +425,39 @@ def test_complete_prompt_asks_only_what_implementation_touched() -> None:
     assert "--defer-reason" in text and re.search(r"purpose", text)
     assert "--found-in completion" in text and re.search(r"correct.{0,80}not.{0,40}(?:annotat|deviation)", text, re.I | re.S)
     assert re.search(r"exists; result attested", text)
+
+
+# ---- 003 Proportionate Effort: Tier 2 rules (contracts/commands.md, last table)
+
+STARTING = [WRAPS / "speckit.specify.md", EXT / "speckit.eil.requirements.md"]
+
+
+@pytest.mark.parametrize("path", STARTING, ids=lambda p: p.stem)
+def test_pointer_not_reused(path: Path) -> None:
+    """FR-005, FR-006 (probe P-30): a governed story's pointer is never reused for a new story,
+    `--feature-dir` is always passed, and an unexpected branch is put to a person."""
+    text = read(path)
+    assert re.search(r"never reuse `\.specify/feature\.json` when it names a governed story", text, re.I)
+    assert re.search(r"always pass `--feature-dir`", text, re.I)
+    assert "unexpected-branch" in text and "--on-branch" in text
+    assert re.search(r"ask the (developer|person) to switch branch or confirm", text, re.I)
+    assert re.search(r"never (pass|supply) `--on-branch` (yourself|without)", text, re.I)
+
+
+STAGE_COMMANDS = [
+    EXT / f"speckit.eil.{n}.md"
+    for n in (
+        "requirements", "functional", "technical", "ai-spec", "verify", "complete", "comprehend", "approve",
+        "accept", "correct", "challenge", "resolve", "trace", "status", "next",
+    )
+] + [WRAPS / f"speckit.{n}.md" for n in WRAP_PROMPTS]
+
+
+@pytest.mark.parametrize("path", STAGE_COMMANDS, ids=lambda p: p.stem)
+def test_show_not_raw(path: Path) -> None:
+    """FR-012 (probe P-29): stages are read with `eil show`, never by opening the document, and the
+    record file is never read."""
+    text = read(path)
+    assert "eil show" in text, f"{path.name} does not read stages with eil show"
+    assert re.search(r"never read `eil-record\.json`", text, re.I), path.name
+    assert not re.search(r"\*\*Read\*\* `s0\d", text), f"{path.name} still opens a stage document"

@@ -94,6 +94,31 @@ def reference_story(tmp_path: Path) -> Story:
 
 
 @pytest.fixture
+def legacy_upgrade(tmp_path: Path) -> Story:
+    """The ``bd7a0d5``-shaped story: legacy approvals, changed since, judgments recorded (T003, B-30)."""
+    from tests.fixtures import legacy_upgrade as legacy
+
+    return legacy.build(tmp_path / "specs" / "001-story")
+
+
+@pytest.fixture
+def two_stories(tmp_path: Path) -> Any:
+    """Completed story A, in-progress story B, and the pointer on A (T004, B-29)."""
+    from tests.fixtures import two_stories as fixture
+
+    return fixture.build(tmp_path / "project")
+
+
+def files_snapshot(root: Path) -> dict[str, bytes]:
+    """``{relative path: bytes}`` of every file under ``root`` (``.git`` excluded), for byte-identity checks."""
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and ".git" not in path.relative_to(root).parts
+    }
+
+
+@pytest.fixture
 def eil_json(run_eil: Callable[..., EilResult]) -> Callable[..., tuple[int, Any]]:
     """``eil_json(args, cwd, env=None)`` runs the helper with ``--json``; returns ``(exit code, parsed JSON)``."""
 

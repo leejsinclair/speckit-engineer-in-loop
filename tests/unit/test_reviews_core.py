@@ -53,7 +53,7 @@ def refused(story: Story, **kwargs: Any) -> list[str]:
 
 
 def record(story: Story) -> dict[str, Any]:
-    obj = package_of(story).doc(STAGE).read_provenance().obj
+    obj = package_of(story).record(STAGE, "provenance")
     assert obj is not None
     return obj
 

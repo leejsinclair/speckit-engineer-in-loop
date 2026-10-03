@@ -5,6 +5,39 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed: Proportionate Effort (feature 003)
+
+Each entry names the human interactions it adds or removes, and their purpose (constitution Principle IV).
+
+- **Change 8, story targeting** (US1, FR-001 to FR-006). `eil start` always points `.specify/feature.json`
+  at the new story and reports the move (`pointer.previous`, `pointer.current`). Every subcommand is
+  declared `writes` or `read-only`; every result names its `story` (text form: `Story <name>: `). A writing
+  call whose story came from the pointer, or from nothing, is refused `ambiguous-story` before anything is
+  touched when the story cannot be told for certain (no pointer and several stories, a pointer to a missing
+  directory, or a pointer to a completed story while another is in progress). `eil start` on a branch that
+  is neither a main branch (`main_branches`, default `main`, `master`) nor named for the new story is
+  refused `unexpected-branch` until a person confirms (`--on-branch`, `--by`, `--reply`); the helper never
+  creates or switches a branch.
+  - Added: choosing the story, only when the target is ambiguous (decision).
+  - Added: confirming an unexpected branch, one reply, only when it applies (decision).
+  - Removed: naming the story on every call (was repetition).
+- **Change 7, records out of the documents** (US2, FR-007 to FR-013, FR-037). Every JSON record
+  (`approval`, `assessment`, `comprehension`, `provenance`) moves to one record file per story,
+  `specs/<story>/eil-record.json` (sorted, two-space JSON). Each region in a document keeps one readable
+  line ("Approved by Ada on 2026-10-02 (first approval): ..."). Fingerprints are unchanged, so no approval
+  moves. `eil sync` migrates an existing story (idempotent); a document not yet migrated is read as before.
+  A missing or malformed record file makes the approvals it held unverifiable (`approval-record-missing`,
+  `malformed-record-file`), never valid. `eil show <stage> [--items IDS] [--section NAME]` prints a stage as
+  a person reads it, with the review cue and without records; every stage command and wrap reads stages
+  with it and never reads the record file. The overview gains a per-stage count of blocks needing review.
+  - The `[ai-draft]` cue is no longer written into documents (amends 002 FR-046): it appears in `eil show`
+    and the review lists, and `sync` strips existing tags. An agent's edit that matches text it wrote no
+    longer fails because the helper appended a tag.
+  - No interaction added or removed. The agent's context and the developer's reading are reduced.
+  - Attestation limit: the record file is plain project text, exactly as the regions it replaces were; a
+    hand edit is detectable, not prevented (R-25). A reader of a raw document no longer sees which
+    paragraphs await review; the overview's count and `eil show` do (R-26).
+
 ### Removed
 
 - The `speckit.eil.amend` and `speckit.eil.review` prompt commands. Use `/speckit-eil-accept`. The `eil amend`
