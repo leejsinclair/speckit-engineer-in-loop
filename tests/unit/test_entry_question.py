@@ -36,7 +36,13 @@ def test_an_inferred_block_and_a_scaffolding_section(review_page_story: Any) -> 
 def test_changed_and_added_change_entries(tmp_path: Path) -> None:
     built = review_page.build(tmp_path / "specs" / "001-story", changes=True)
     text = built.story.read("functional")
-    built.story.write("functional", text.replace("## Business Rules", "**FR-009**: The system shall export flagged pairs. (traces: REQ-001)\n\n## Business Rules"))
+    built.story.write(
+        "functional",
+        text.replace(
+            "## Business Rules",
+            "**FR-009**: The system shall export flagged pairs. (traces: REQ-001)\n\n## Business Rules",
+        ),
+    )
     found = questions(built.root, kind="changes")
     assert found["FR-001"] == "Accept FR-001 as it now reads?"
     assert found["FR-009"] == "Accept the new FR-009 as written?"
@@ -60,7 +66,9 @@ def answer_with_question(root: Path, text: str) -> tuple[int, Any]:
     )  # fmt: skip
 
 
-@pytest.mark.parametrize("text", ["Accept FR-001?", "accept fr-001 as written?", "Accept FR-002 as written?", ""])
+@pytest.mark.parametrize(
+    "text", ["Accept FR-001?", "accept fr-001 as written?", "Accept FR-002 as written?", ""]
+)
 def test_any_other_wording_is_refused_question_mismatch(review_page_story: Any, text: str) -> None:
     before = files_snapshot(review_page_story.root)
     code, payload = answer_with_question(review_page_story.root, text)

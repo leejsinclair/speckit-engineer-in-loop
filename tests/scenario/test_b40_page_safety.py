@@ -25,8 +25,17 @@ def test_b40_attacks_are_refused_and_nothing_changes(tmp_path: Path, monkeypatch
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     built = review_page.build(tmp_path / "specs" / "001-story")
     root = built.root
-    entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001")
-    answer = {"stage": "functional", "kind": "inferred", "entry": "FR-001", "disposition": "accept", "shown": entry.hash, "question": entry.question}
+    entry = next(
+        e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001"
+    )
+    answer = {
+        "stage": "functional",
+        "kind": "inferred",
+        "entry": "FR-001",
+        "disposition": "accept",
+        "shown": entry.hash,
+        "question": entry.question,
+    }
     page = start_page(root)
     try:
         assert page.server.server_address[0] == "127.0.0.1"
@@ -46,7 +55,10 @@ def test_b40_attacks_are_refused_and_nothing_changes(tmp_path: Path, monkeypatch
         for path in ("/doc/../../etc/passwd", "/doc/notastage", "/eil-record.json", "/static/x.js"):
             assert page.get(path)[0] in (403, 404)
         text = built.story.read("functional")
-        built.story.write("functional", text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."))
+        built.story.write(
+            "functional",
+            text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."),
+        )
         stale_before = files_snapshot(root)
         status, payload = page.post("/answer", answer)
         assert [r["code"] for r in payload["refusals"]] == ["entry-changed"]

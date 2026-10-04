@@ -21,7 +21,13 @@ from tests.helpers.page import eil, start_page
 
 pytestmark = pytest.mark.scenario
 
-ANSWERS = [("accept", None), ("accept", None), ("except", "Name the pairs this applies to."), ("question", "Why this order?"), ("accept", None)]
+ANSWERS = [
+    ("accept", None),
+    ("accept", None),
+    ("except", "Name the pairs this applies to."),
+    ("question", "Why this order?"),
+    ("accept", None),
+]
 
 
 def body(root: Path, key: str, disposition: str, comment: str | None) -> dict[str, Any]:

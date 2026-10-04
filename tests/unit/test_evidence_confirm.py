@@ -23,7 +23,9 @@ def project(tmp_path: Path) -> Path:
     tests = tmp_path / "tests" / "unit"
     tests.mkdir(parents=True)
     (tests / "test_x.py").write_text("def test_y():\n    pass\n\nclass TestZ:\n    def test_w(self): ...\n")
-    (tests / "widget.test.ts").write_text("describe('suite', () => {\n  it('flags duplicates', () => {});\n});\n")
+    (tests / "widget.test.ts").write_text(
+        "describe('suite', () => {\n  it('flags duplicates', () => {});\n});\n"
+    )
     return tmp_path
 
 
@@ -60,7 +62,9 @@ def test_a_path_alone_names_no_test_and_is_unconfirmed(project: Path) -> None:
     assert not evidence.confirm(project, "tests/unit/test_x.py").confirmed
 
 
-def test_path_outside_the_project_is_unconfirmed(project: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+def test_path_outside_the_project_is_unconfirmed(
+    project: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     outside = tmp_path_factory.mktemp("outside")
     (outside / "test_o.py").write_text("def test_o(): ...\n")
     assert evidence.confirm(project, f"{outside}/test_o.py::test_o").confirmed is False
@@ -68,7 +72,9 @@ def test_path_outside_the_project_is_unconfirmed(project: Path, tmp_path_factory
     assert evidence.confirm(project, "tests/../../escape.py::test_o").confirmed is False
 
 
-def test_a_symlink_out_of_the_project_is_unconfirmed(project: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+def test_a_symlink_out_of_the_project_is_unconfirmed(
+    project: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     outside = tmp_path_factory.mktemp("outside")
     (outside / "test_o.py").write_text("def test_o(): ...\n")
     (project / "link.py").symlink_to(outside / "test_o.py")
@@ -76,7 +82,7 @@ def test_a_symlink_out_of_the_project_is_unconfirmed(project: Path, tmp_path_fac
 
 
 def test_javascript_style_names_are_found(project: Path) -> None:
-    assert evidence.confirm(project, "tests/unit/widget.test.ts \"flags duplicates\"").confirmed
+    assert evidence.confirm(project, 'tests/unit/widget.test.ts "flags duplicates"').confirmed
 
 
 def test_free_text_with_no_path_is_unconfirmed(project: Path) -> None:

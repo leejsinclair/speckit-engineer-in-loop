@@ -97,7 +97,10 @@ def test_open_stores_the_wording_verbatim_and_allocates_story_wide_ids(reference
     assert (first["id"], second["id"]) == ("CR-001", "CR-002")
     assert first["wording"] == WORDING and second["wording"] == "  Analysts review   each pair.  "
     assert first["status"] == "open" and first["owner"] == "requirements"
-    assert [c["id"] for c in corrections.open_for(package_of(reference_story), "requirements")] == ["CR-001", "CR-002"]
+    assert [c["id"] for c in corrections.open_for(package_of(reference_story), "requirements")] == [
+        "CR-001",
+        "CR-002",
+    ]
 
 
 # ---- what an open correction blocks
@@ -108,7 +111,10 @@ def test_an_open_correction_blocks_only_its_item_and_what_traces_to_it(reference
     open_cr(reference_story, "FR-003", None)
     pkg = package_of(reference_story)
     blocked = corrections.blocked_keys(pkg)
-    assert set(blocked) == {"FR-003", *build_graph(__import__("eil.impact", fromlist=["x"]).parsed_story(pkg)).downstream(["FR-003"])}
+    assert set(blocked) == {
+        "FR-003",
+        *build_graph(__import__("eil.impact", fromlist=["x"]).parsed_story(pkg)).downstream(["FR-003"]),
+    }
     assert "T003" in blocked and "T001" not in blocked
     hard, _ = staleness.scoped_work(pkg)
     assert "T003" in hard and "T001" not in hard
@@ -133,7 +139,9 @@ def test_the_persons_recorded_wording_carries_forward_on_a_short_ok(reference_st
     assert closed["status"] == "closed" and closed["closed_by"] == "Ada Dev"
 
 
-def test_text_that_differs_from_the_wording_is_not_covered_and_is_a_non_blocking_finding(reference_story: Story) -> None:
+def test_text_that_differs_from_the_wording_is_not_covered_and_is_a_non_blocking_finding(
+    reference_story: Story,
+) -> None:
     prepared(reference_story)
     open_cr(reference_story)
     reword(reference_story, wording="The system detects duplicates on import, quickly.")
@@ -169,25 +177,44 @@ def test_a_clause_naming_no_correction_stays_a_blocking_finding(reference_story:
 # ---- a stage nobody approves
 
 
-def test_confirm_on_a_never_approved_owner_closes_the_correction_and_writes_no_approval(reference_story: Story) -> None:
+def test_confirm_on_a_never_approved_owner_closes_the_correction_and_writes_no_approval(
+    reference_story: Story,
+) -> None:
     classify(reference_story, "ai-spec", ("AIS-001", None))
     open_cr(reference_story, "AIS-001", AIS1_WORDING, owner="ai-spec")
     edit(reference_story, "ai-spec", "Implement behaviour 1.", AIS1_WORDING)
     pkg = package_of(reference_story)
     with pytest.raises(EilExit) as exc:
-        reviews.confirm(pkg, CONFIG, "ai-spec", by="Ada Dev", confirmation="ok", summaries={"AIS-001": "Tighter."})
+        reviews.confirm(
+            pkg, CONFIG, "ai-spec", by="Ada Dev", confirmation="ok", summaries={"AIS-001": "Tighter."}
+        )
     assert codes(exc) == ["not-amendable"]
-    edit(reference_story, "ai-spec", f"{AIS1_WORDING} (traces: FR-001)", f"{AIS1_WORDING} (traces: FR-001) (decided: CR-001)")
+    edit(
+        reference_story,
+        "ai-spec",
+        f"{AIS1_WORDING} (traces: FR-001)",
+        f"{AIS1_WORDING} (traces: FR-001) (decided: CR-001)",
+    )
     classify(reference_story, "ai-spec", ("AIS-001", None))
     assert block_statuses(package_of(reference_story))["ai-spec"]["AIS-001"].status == "settled"
     result = reviews.confirm(
-        package_of(reference_story), CONFIG, "ai-spec", by="Ada Dev", confirmation="ok", summaries={"AIS-001": "Tighter."}
+        package_of(reference_story),
+        CONFIG,
+        "ai-spec",
+        by="Ada Dev",
+        confirmation="ok",
+        summaries={"AIS-001": "Tighter."},
     )
     assert result["closed"] == ["CR-001"] and result["still_open"] == []
     text = reference_story.read("ai-spec")
-    assert "eil:begin approval" not in text or '"by"' not in text.split("eil:begin approval")[1].split("eil:end approval")[0]
+    assert (
+        "eil:begin approval" not in text
+        or '"by"' not in text.split("eil:begin approval")[1].split("eil:end approval")[0]
+    )
     record = package_of(reference_story).record("ai-spec", "provenance")
-    assert [c["item"] for c in record["changes"]] == ["AIS-001"] and record["changes"][0]["origin"] == "CR-001"
+    assert [c["item"] for c in record["changes"]] == ["AIS-001"] and record["changes"][0][
+        "origin"
+    ] == "CR-001"
 
 
 # ---- the trace
@@ -196,6 +223,10 @@ def test_confirm_on_a_never_approved_owner_closes_the_correction_and_writes_no_a
 def test_trace_shows_the_correction_with_its_origin(reference_story: Story) -> None:
     prepared(reference_story)
     open_cr(reference_story)
-    result = chain.trace(package_of(reference_story), to_ref="REQ-001") if False else chain.trace(package_of(reference_story), from_id="REQ-001")
+    result = (
+        chain.trace(package_of(reference_story), to_ref="REQ-001")
+        if False
+        else chain.trace(package_of(reference_story), from_id="REQ-001")
+    )
     assert [c["id"] for c in result["corrections"]] == ["CR-001"]
     assert "Correction CR-001 of REQ-001" in chain._render(result)

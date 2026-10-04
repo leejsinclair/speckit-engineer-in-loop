@@ -64,7 +64,12 @@ def _context(pkg: Package) -> dict[str, Any]:
 
     model = overview.collect(pkg)
     approvals = [
-        {"stage": stage, "by": state.approval.get("by"), "at": state.approval.get("at"), "reached": reached_of(state.approval)}
+        {
+            "stage": stage,
+            "by": state.approval.get("by"),
+            "at": state.approval.get("at"),
+            "reached": reached_of(state.approval),
+        }
         for stage, state in model.states.items()
         if state.state == "approved" and state.approval
     ]

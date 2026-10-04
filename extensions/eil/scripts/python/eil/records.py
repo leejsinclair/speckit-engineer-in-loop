@@ -51,8 +51,15 @@ APPROVAL_QUESTIONS = {
     "technical": "Approve the Technical Specification as the engineering solution we intend to build?",
     "completion": "Approve completion: the evidence is reviewed and the story is done?",
 }
-_NAMES = {"requirements": "Requirements", "functional": "Functional Specification", "technical": "Technical Specification", "completion": "completion"}
-CONFIRM_QUESTIONS = {stage: f"Re-approve the {name} with the changes listed?" for stage, name in _NAMES.items()}
+_NAMES = {
+    "requirements": "Requirements",
+    "functional": "Functional Specification",
+    "technical": "Technical Specification",
+    "completion": "completion",
+}
+CONFIRM_QUESTIONS = {
+    stage: f"Re-approve the {name} with the changes listed?" for stage, name in _NAMES.items()
+}
 # Completion has its own refusal codes (FR-064, FR-065); each is the reason for one criterion.
 COMPLETION_REFUSALS = {
     "CMP-G02": ("verification-missing", "Record the evidence first: /speckit-eil-verify"),
@@ -217,7 +224,8 @@ def _unreviewed_evidence(pkg: Package) -> list[Refusal]:
     return [
         Refusal(
             "unreviewed-ai-content",
-            f"{len(keys)} block(s) of the verification document have not been reviewed: " + ", ".join(keys[:8]),
+            f"{len(keys)} block(s) of the verification document have not been reviewed: "
+            + ", ".join(keys[:8]),
             "Answer the inferred list for verification, or record an override for unreviewed-ai-content",
         )
     ]
@@ -557,7 +565,9 @@ def add_challenge(
     }
 
 
-def set_challenge_severity(pkg: Package, config: Config, challenge_id: str, to: str, by: str) -> dict[str, Any]:
+def set_challenge_severity(
+    pkg: Package, config: Config, challenge_id: str, to: str, by: str
+) -> dict[str, Any]:
     """Change a challenge's severity (FR-030, FR-048). Anyone may raise it; lowering needs a configured
     confirmer of the stage. Every change is recorded with the person's name."""
     if to not in SEVERITIES:
@@ -565,7 +575,11 @@ def set_challenge_severity(pkg: Package, config: Config, challenge_id: str, to: 
     located = _find_challenge(pkg, challenge_id)
     if located is None:
         raise refuse(
-            Refusal("unknown-item", f"{challenge_id} is not a challenge of this story", "Check the id with eil status")
+            Refusal(
+                "unknown-item",
+                f"{challenge_id} is not a challenge of this story",
+                "Check the id with eil status",
+            )
         )
     stage, record = located
     current: dict[str, Any] = dict(record.obj)
@@ -580,7 +594,11 @@ def set_challenge_severity(pkg: Package, config: Config, challenge_id: str, to: 
     if SEVERITIES.index(to) < SEVERITIES.index(before):
         if is_ai_actor(by):
             raise refuse(
-                Refusal("ai-approval", f"{by!r} is the AI; a person lowers a challenge's severity", "Ask the developer")
+                Refusal(
+                    "ai-approval",
+                    f"{by!r} is the AI; a person lowers a challenge's severity",
+                    "Ask the developer",
+                )
             )
         problem = confirmer_refusal(by, approvers_for(pkg, config, stage), stage)
         if problem:

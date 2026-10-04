@@ -42,7 +42,18 @@ def test_b29_story_targeting(project: Path, eil: Callable[..., EilResult]) -> No
 
     # Naming the story lets the write through, and only that story changes.
     a_before = files_snapshot(stories.a.root)
-    named = eil(["check", "--stage", "functional", "--judgments", str(judgments), "--feature-dir", "specs/002-b", "--json"])
+    named = eil(
+        [
+            "check",
+            "--stage",
+            "functional",
+            "--judgments",
+            str(judgments),
+            "--feature-dir",
+            "specs/002-b",
+            "--json",
+        ]
+    )
     assert named.code == 0, named.stderr
     assert named.json["story"] == "002-b"
     assert files_snapshot(stories.a.root) == a_before

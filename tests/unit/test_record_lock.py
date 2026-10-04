@@ -53,7 +53,9 @@ def test_save_replaces_the_file_atomically(tmp_path: Path, monkeypatch: pytest.M
     assert leftovers(tmp_path) == []
 
 
-def test_a_failure_mid_write_leaves_the_old_file_and_no_temporary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_failure_mid_write_leaves_the_old_file_and_no_temporary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     recordfile.save(tmp_path, {"version": 1, "story": {"profile": {"name": "small"}}, "stages": {}})
     before = recordfile.path(tmp_path).read_bytes()
 
@@ -82,7 +84,9 @@ def test_the_lock_is_reentrant_in_one_thread(tmp_path: Path) -> None:
     assert not lock_path(tmp_path).exists()
 
 
-def test_a_second_holder_waits_then_refuses_record_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_second_holder_waits_then_refuses_record_busy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     lock_path(tmp_path).write_text(json.dumps({"pid": os.getpid(), "at": "2026-10-04T00:00:00Z"}))
     clock = iter(range(0, 1000))
     monkeypatch.setattr(recordfile, "_monotonic", lambda: float(next(clock)))
@@ -126,7 +130,9 @@ def test_a_stale_lock_of_a_dead_process_is_broken_and_said(tmp_path: Path) -> No
     assert not lock_path(tmp_path).exists()
 
 
-def test_a_young_lock_of_a_dead_process_is_not_broken(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_young_lock_of_a_dead_process_is_not_broken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     lock_path(tmp_path).write_text(json.dumps({"pid": dead_pid(), "at": "2026-10-04T00:00:00Z"}))
     clock = iter(range(0, 1000))
     monkeypatch.setattr(recordfile, "_monotonic", lambda: float(next(clock)))

@@ -33,23 +33,89 @@ def test_b35_comprehension(project: Path, eil: Callable[..., EilResult], tmp_pat
 
     keys = [b["key"] for b in run("blocks", "list", "--stage", "technical").json["blocks"]]
     classes = tmp_path / "c.json"
-    classes.write_text(json.dumps({"stage": "technical", "blocks": [{"block": k, "adds": None} for k in keys]}))
+    classes.write_text(
+        json.dumps({"stage": "technical", "blocks": [{"block": k, "adds": None} for k in keys]})
+    )
     assert run("blocks", "classify", "--stage", "technical", "--file", str(classes)).code == 0
     judgments = tmp_path / "j.json"
     ids = [c.id for c in criteria_for("technical") if c.kind == JUDGMENT]
-    judgments.write_text(json.dumps({"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}))
+    judgments.write_text(
+        json.dumps(
+            {"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}
+        )
+    )
     assert run("check", "--stage", "technical", "--judgments", str(judgments)).code == 0
     listed = run("review", "list", "--stage", "technical", "--kind", "inferred").json
     if listed["entries"]:
-        assert run("review", "answer", "--stage", "technical", "--kind", "inferred", "--digest", listed["digest"], "--all", "--by", ME, "--reply", "ok").code == 0
+        assert (
+            run(
+                "review",
+                "answer",
+                "--stage",
+                "technical",
+                "--kind",
+                "inferred",
+                "--digest",
+                listed["digest"],
+                "--all",
+                "--by",
+                ME,
+                "--reply",
+                "ok",
+            ).code
+            == 0
+        )
 
-    rows = {r["level"]: r for r in run("comprehension", "plan", "--stage", "technical", "--by", ME).json["levels"]}
+    rows = {
+        r["level"]: r for r in run("comprehension", "plan", "--stage", "technical", "--by", ME).json["levels"]
+    }
     assert all(r.get("target") != "DEC-001" for r in rows.values())
     assert rows["explain"]["status"] == "own-decision" and rows["explain"]["items"] == ["DEC-001"]
     recognise = rows["recognise"]["target"]
-    assert run("comprehension", "record", "--stage", "technical", "--level", "recognise", "--outcome", "understood", "--by", ME, "--items", recognise).code == 0
-    assert run("comprehension", "record", "--stage", "technical", "--level", "explain", "--outcome", "own-decision", "--by", ME, "--items", "DEC-001").code == 0
-    waived = run("comprehension", "waive", "--stage", "technical", "--by", ME, "--reason", "I made these decisions this morning")
+    assert (
+        run(
+            "comprehension",
+            "record",
+            "--stage",
+            "technical",
+            "--level",
+            "recognise",
+            "--outcome",
+            "understood",
+            "--by",
+            ME,
+            "--items",
+            recognise,
+        ).code
+        == 0
+    )
+    assert (
+        run(
+            "comprehension",
+            "record",
+            "--stage",
+            "technical",
+            "--level",
+            "explain",
+            "--outcome",
+            "own-decision",
+            "--by",
+            ME,
+            "--items",
+            "DEC-001",
+        ).code
+        == 0
+    )
+    waived = run(
+        "comprehension",
+        "waive",
+        "--stage",
+        "technical",
+        "--by",
+        ME,
+        "--reason",
+        "I made these decisions this morning",
+    )
     assert waived.code == 0, waived.stdout
     assert waived.json["state"] == "complete"
 

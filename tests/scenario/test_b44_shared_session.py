@@ -19,7 +19,9 @@ from tests.helpers.page import eil, start_page
 pytestmark = pytest.mark.scenario
 
 
-def test_b44_answers_on_the_page_and_in_chat_share_one_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_b44_answers_on_the_page_and_in_chat_share_one_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import tempfile
 
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
@@ -29,7 +31,13 @@ def test_b44_answers_on_the_page_and_in_chat_share_one_session(tmp_path: Path, m
     page = start_page(root, "Ada Dev")
     try:
         for key in keys[:3]:
-            entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred", session_view=False).entries if e.key == key)
+            entry = next(
+                e
+                for e in reviews.build_list(
+                    Package(root), "functional", "inferred", session_view=False
+                ).entries
+                if e.key == key
+            )
             status, payload = page.post(
                 "/answer",
                 {"stage": "functional", "kind": "inferred", "entry": key, "disposition": "accept", "shown": entry.hash,
@@ -45,7 +53,21 @@ def test_b44_answers_on_the_page_and_in_chat_share_one_session(tmp_path: Path, m
     assert [a["key"] for a in listed["answers"]] == keys[:3]
     closed = []
     for key in keys[3:]:
-        code, payload = eil(root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--entry", key, "--by", "Ada Dev", "--reply", "ok")
+        code, payload = eil(
+            root,
+            "review",
+            "answer",
+            "--stage",
+            "functional",
+            "--kind",
+            "inferred",
+            "--entry",
+            key,
+            "--by",
+            "Ada Dev",
+            "--reply",
+            "ok",
+        )
         assert code == 0, payload
         closed.append(payload["closed"])
     assert closed == [False, False, True], "the session closes once"

@@ -90,10 +90,7 @@ def test_the_approval_covers_the_current_content_and_the_stage_becomes_approved(
     package = ready(story_dir, tmp_path)
     approve_ok(package, config)
     assert package.state("requirements").state == "approved"
-    assert (
-        package.fingerprint("requirements")
-        == package.record("requirements", "approval")["fingerprint"]
-    )
+    assert package.fingerprint("requirements") == package.record("requirements", "approval")["fingerprint"]
 
 
 def test_the_record_carries_each_items_hash_for_impact_analysis(
@@ -113,10 +110,7 @@ def test_the_record_carries_each_items_hash_for_impact_analysis(
 def test_a_played_back_note_is_recorded_when_given(story_dir: Story, tmp_path: Path, config: Config) -> None:
     package = ready(story_dir, tmp_path)
     approve_ok(package, config, played_back_to="Sam (business), Priya (QA)")
-    assert (
-        package.record("requirements", "approval")["played_back_to"]
-        == "Sam (business), Priya (QA)"
-    )
+    assert package.record("requirements", "approval")["played_back_to"] == "Sam (business), Priya (QA)"
 
 
 def test_one_confirmation_is_enough(story_dir: Story, tmp_path: Path) -> None:
@@ -445,11 +439,16 @@ def test_every_approvable_stage_has_a_fixed_question() -> None:
     from eil.package import APPROVABLE
 
     assert set(records.APPROVAL_QUESTIONS) == set(APPROVABLE)
-    assert records.APPROVAL_QUESTIONS["functional"] == "Approve the Functional Specification as the behaviour you require?"
+    assert (
+        records.APPROVAL_QUESTIONS["functional"]
+        == "Approve the Functional Specification as the behaviour you require?"
+    )
     assert all(q.endswith("?") for q in records.APPROVAL_QUESTIONS.values())
 
 
-def test_ok_approves_and_is_recorded_with_the_question(story_dir: Story, tmp_path: Path, config: Config) -> None:
+def test_ok_approves_and_is_recorded_with_the_question(
+    story_dir: Story, tmp_path: Path, config: Config
+) -> None:
     package = ready(story_dir, tmp_path)
     approve_ok(package, config, attestation="ok")
     record = package.record("requirements", "approval")
@@ -466,7 +465,9 @@ def test_an_empty_reply_is_still_refused(story_dir: Story, tmp_path: Path, confi
     assert "attestation-required" in refusals(exc)
 
 
-def test_status_offers_the_question_when_the_next_step_is_an_approval(story_dir: Story, tmp_path: Path) -> None:
+def test_status_offers_the_question_when_the_next_step_is_an_approval(
+    story_dir: Story, tmp_path: Path
+) -> None:
     from eil import overview
 
     package = ready(story_dir, tmp_path)
@@ -482,10 +483,32 @@ def test_review_confirm_records_its_question(reference_story: Story) -> None:
     from tests.helpers.changes import summaries_for
     from tests.helpers.derived import CONFIG, edit
 
-    edit(reference_story, "requirements", "Analysts can review each flagged pair.", "Analysts can review each flagged pair, with notes.")
+    edit(
+        reference_story,
+        "requirements",
+        "Analysts can review each flagged pair.",
+        "Analysts can review each flagged pair, with notes.",
+    )
     package = Package(reference_story.root)
     listed = reviews.build_list(package, "requirements", "changes")
     summaries = summaries_for(package, "requirements")
-    reviews.answer(package, CONFIG, "requirements", "changes", digest=listed.digest, by="Ada Dev", reply="ok", all_=True, summaries=summaries)
-    result = reviews.confirm(Package(reference_story.root), CONFIG, "requirements", by="Ada Dev", confirmation="ok", summaries=summaries)
+    reviews.answer(
+        package,
+        CONFIG,
+        "requirements",
+        "changes",
+        digest=listed.digest,
+        by="Ada Dev",
+        reply="ok",
+        all_=True,
+        summaries=summaries,
+    )
+    result = reviews.confirm(
+        Package(reference_story.root),
+        CONFIG,
+        "requirements",
+        by="Ada Dev",
+        confirmation="ok",
+        summaries=summaries,
+    )
     assert result["approval"]["question"] == CONFIRM_QUESTIONS["requirements"]

@@ -76,7 +76,9 @@ def runtime_files(runtime_dir: Path) -> list[Path]:
 def test_serve_prints_its_address_on_loopback_from_8100(serve: Any, built: Any, runtime_dir: Path) -> None:
     proc, line = serve("--by", "Ada Dev")
     assert line is not None, proc.stderr.read() if proc.stderr else ""
-    assert set(line) >= {"story", "address", "pid"} and line["story"] == "001-story" and line["pid"] == proc.pid
+    assert (
+        set(line) >= {"story", "address", "pid"} and line["story"] == "001-story" and line["pid"] == proc.pid
+    )
     assert line["address"].startswith("http://127.0.0.1:")
     port = int(line["address"].split(":")[2].split("/")[0])
     assert port >= 8100
@@ -93,7 +95,12 @@ def test_status_and_stop(serve: Any, built: Any, runtime_dir: Path) -> None:
     if os.name == "posix":
         assert stat.S_IMODE(runtime.stat().st_mode) == 0o600
     code, status = eil(built.root, runtime_dir, "review", "serve", "--status")
-    assert code == 0 and status["running"] is True and status["address"] == line["address"] and status["pid"] == proc.pid
+    assert (
+        code == 0
+        and status["running"] is True
+        and status["address"] == line["address"]
+        and status["pid"] == proc.pid
+    )
     assert status["started_at"]
     code, stopped = eil(built.root, runtime_dir, "review", "serve", "--stop")
     assert code == 0 and stopped["stopped"] is True
@@ -104,7 +111,9 @@ def test_status_and_stop(serve: Any, built: Any, runtime_dir: Path) -> None:
     assert files_snapshot(built.root.parents[1]) == before, "determinism 68: no project file changes"
 
 
-def test_status_removes_a_runtime_file_whose_process_is_gone(serve: Any, built: Any, runtime_dir: Path) -> None:
+def test_status_removes_a_runtime_file_whose_process_is_gone(
+    serve: Any, built: Any, runtime_dir: Path
+) -> None:
     proc, _ = serve("--by", "Ada Dev")
     proc.kill()
     proc.wait(timeout=10)
@@ -148,7 +157,9 @@ def test_a_second_start_is_refused_page_running(serve: Any, built: Any, runtime_
     proc.wait(timeout=10)
     assert proc.returncode == 1
     refusal = json.loads(second if isinstance(second, str) else json.dumps(second))["refusals"][0]
-    assert refusal["code"] == "page-running" and line["address"] in refusal["message"] + refusal.get("fix", "")
+    assert refusal["code"] == "page-running" and line["address"] in refusal["message"] + refusal.get(
+        "fix", ""
+    )
 
 
 @pytest.mark.parametrize("name", ["Claude", "AI", "assistant"])

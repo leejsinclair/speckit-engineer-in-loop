@@ -526,7 +526,9 @@ def _cell(value: Any) -> str:
     return " ".join(str(value if value is not None else "").split()).replace("|", "\\|")
 
 
-def render_changelog(changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None) -> list[str]:
+def render_changelog(
+    changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None
+) -> list[str]:
     """The table lines for ``changes``, oldest first, or no lines when there are none."""
     if not changes:
         return []
@@ -535,11 +537,7 @@ def render_changelog(changes: list[dict[str, Any]], corrections: list[dict[str, 
     for change in changes:
         origin = str(change.get("origin") or "")
         found = by_id.get(origin, {}).get("found_in") if origin.startswith("CR-") else None
-        where = (
-            f"{found.get('stage')} ({found.get('item')}), {origin}"
-            if isinstance(found, dict)
-            else origin
-        )
+        where = f"{found.get('stage')} ({found.get('item')}), {origin}" if isinstance(found, dict) else origin
         cells = [
             str(change.get("at") or "")[:10],
             change.get("item"),
@@ -604,7 +602,9 @@ def write_provenance(text: str, obj: dict[str, Any]) -> str:
     return write_region(ensure_record_sections(text), "provenance", obj)
 
 
-def write_changelog(text: str, changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None) -> str:
+def write_changelog(
+    text: str, changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None
+) -> str:
     """Rewrite the ``changelog`` region from ``changes`` (a generated table, never parsed)."""
     text = ensure_record_sections(text)
     doc = Doc(text)
@@ -612,5 +612,7 @@ def write_changelog(text: str, changes: list[dict[str, Any]], corrections: list[
     nl = _newline(text)
     suffix = "\r" if nl == "\r\n" else ""
     pieces = text.split("\n")
-    pieces[region.begin_no : region.end_no - 1] = [line + suffix for line in render_changelog(changes, corrections)]
+    pieces[region.begin_no : region.end_no - 1] = [
+        line + suffix for line in render_changelog(changes, corrections)
+    ]
     return "\n".join(pieces)

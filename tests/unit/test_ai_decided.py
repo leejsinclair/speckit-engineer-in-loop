@@ -41,7 +41,11 @@ def write(story: Story, decision: str = AI_DECIDED) -> None:
 def judgments(tmp: Path) -> Path:
     path = tmp / "technical-judgments.json"
     ids = [c.id for c in criteria_for("technical") if c.kind == JUDGMENT]
-    path.write_text(json.dumps({"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}))
+    path.write_text(
+        json.dumps(
+            {"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}
+        )
+    )
     return path
 
 
@@ -51,7 +55,12 @@ def reasons(story: Story) -> list[str]:
 
 
 def test_ai_decided_without_a_reason_is_a_finding_and_unmet(story_dir: Story) -> None:
-    write(story_dir, AI_DECIDED.replace("Reason: Rendering is the slowest step; this choice changes nothing a user sees.\n", ""))
+    write(
+        story_dir,
+        AI_DECIDED.replace(
+            "Reason: Rendering is the slowest step; this choice changes nothing a user sees.\n", ""
+        ),
+    )
     found = reasons(story_dir)
     assert "ai-decided-without-reason" in found
     assert any("DEC-002" in r and "ai-decided" in r for r in found)
@@ -69,7 +78,14 @@ def test_any_other_owner_must_still_be_a_person(story_dir: Story) -> None:
 
 def test_an_ai_decided_decision_is_always_inferred(story_dir: Story) -> None:
     write(story_dir)
-    provenance.classify(Package(story_dir.root), "technical", {"stage": "technical", "blocks": [{"block": "DEC-002", "adds": None}, {"block": "DEC-001", "adds": None}]})
+    provenance.classify(
+        Package(story_dir.root),
+        "technical",
+        {
+            "stage": "technical",
+            "blocks": [{"block": "DEC-002", "adds": None}, {"block": "DEC-001", "adds": None}],
+        },
+    )
     record = Package(story_dir.root).record("technical", "provenance")
     assert record["blocks"]["DEC-002"]["class"] == "inferred"
     assert "AI-decided" in record["blocks"]["DEC-002"]["adds"]
@@ -97,10 +113,27 @@ def approve_technical(story: Story, tmp: Path) -> dict[str, Any]:
     check_stage(package, "technical", judgments_path=judgments(tmp))
     listed = reviews.build_list(Package(story.root), "technical", "inferred")
     if listed.entries:
-        reviews.answer(Package(story.root), CONFIG, "technical", "inferred", digest=listed.digest, by="Ada Dev", reply="ok", all_=True)
+        reviews.answer(
+            Package(story.root),
+            CONFIG,
+            "technical",
+            "inferred",
+            digest=listed.digest,
+            by="Ada Dev",
+            reply="ok",
+            all_=True,
+        )
     plan = comprehension.plan(Package(story.root), "technical")
     for row in plan["levels"]:
-        comprehension.record(Package(story.root), CONFIG, "technical", row["level"], "skipped", by="Ada Dev", items=[row["target"]] if row.get("target") else [])
+        comprehension.record(
+            Package(story.root),
+            CONFIG,
+            "technical",
+            row["level"],
+            "skipped",
+            by="Ada Dev",
+            items=[row["target"]] if row.get("target") else [],
+        )
     check_stage(Package(story.root), "technical", judgments_path=judgments(tmp))
     return records.approve(Package(story.root), CONFIG, "technical", "Ada Dev", "ok")
 

@@ -26,7 +26,9 @@ def twelve(tmp_path: Path) -> Any:
 
 
 def answer(root: Path, *argv: str) -> Any:
-    code, payload = eil(root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--by", "Ada Dev", *argv)
+    code, payload = eil(
+        root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--by", "Ada Dev", *argv
+    )
     assert code == 0, payload
     return payload
 
@@ -41,11 +43,15 @@ def test_determinism_59_the_rest_of_one_section(twelve: Any) -> None:
     answer(root, "--entry", A[0], "--reply", "ok")
     answer(root, "--entry", A[1], "--reply", "not this", "--disposition", "except")
     earlier = {k: dict(v) for k, v in session(root)["answers"].items()}
-    answer(root, "--rest", "--section", "Functional Requirements", "--reply", "ok to the rest of this section")
+    answer(
+        root, "--rest", "--section", "Functional Requirements", "--reply", "ok to the rest of this section"
+    )
     answers = session(root)["answers"]
     assert set(answers) == set(A), "B and C have no answers"
     for key in A[2:]:
-        assert answers[key]["disposition"] == "accept" and answers[key]["together"] == "Functional Requirements"
+        assert (
+            answers[key]["disposition"] == "accept" and answers[key]["together"] == "Functional Requirements"
+        )
         assert answers[key]["seen"] is True
     assert {k: answers[k] for k in A[:2]} == earlier, "the two earlier answers are unchanged"
 
@@ -56,7 +62,9 @@ def test_rest_without_a_section_keeps_seen_false(twelve: Any) -> None:
     assert payload["closed"] is True
     accs = Package(twelve.root).record("functional", "provenance")["acceptances"]
     rest = next(a for a in accs if a["reply"] == "ok to the rest")
-    assert sorted(rest["unseen"]) == sorted(k for k in A + B + [f"FR-{n:03d}" for n in range(9, 13)] if k != A[0])
+    assert sorted(rest["unseen"]) == sorted(
+        k for k in A + B + [f"FR-{n:03d}" for n in range(9, 13)] if k != A[0]
+    )
     assert "together" not in rest
 
 
@@ -74,7 +82,38 @@ def test_the_closing_acceptance_carries_together(twelve: Any) -> None:
 
 
 def test_section_needs_rest_and_a_section_with_unanswered_entries(twelve: Any) -> None:
-    code, _ = eil(twelve.root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--by", "Ada Dev", "--reply", "ok", "--entry", "FR-001", "--section", "Validation")
+    code, _ = eil(
+        twelve.root,
+        "review",
+        "answer",
+        "--stage",
+        "functional",
+        "--kind",
+        "inferred",
+        "--by",
+        "Ada Dev",
+        "--reply",
+        "ok",
+        "--entry",
+        "FR-001",
+        "--section",
+        "Validation",
+    )
     assert code == 2
-    code, payload = eil(twelve.root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--by", "Ada Dev", "--reply", "ok", "--rest", "--section", "Nowhere")
+    code, payload = eil(
+        twelve.root,
+        "review",
+        "answer",
+        "--stage",
+        "functional",
+        "--kind",
+        "inferred",
+        "--by",
+        "Ada Dev",
+        "--reply",
+        "ok",
+        "--rest",
+        "--section",
+        "Nowhere",
+    )
     assert code == 1 and [r["code"] for r in payload["refusals"]] == ["unknown-entry"]

@@ -138,7 +138,16 @@ def test_a_persons_confirmation_lets_the_start_through_and_is_recorded(project: 
 def test_a_confirmation_for_another_branch_does_not_count(project: Path) -> None:
     on_branch(project, "001-x")
     code, payload = run(
-        project, "start", "--feature-dir", "specs/002-b", "--title", "B", "--on-branch", "001-y", "--by", "Ada"
+        project,
+        "start",
+        "--feature-dir",
+        "specs/002-b",
+        "--title",
+        "B",
+        "--on-branch",
+        "001-y",
+        "--by",
+        "Ada",
     )
     assert code == 1 and codes(payload) == ["unexpected-branch"]
 
@@ -146,7 +155,16 @@ def test_a_confirmation_for_another_branch_does_not_count(project: Path) -> None
 def test_the_ai_cannot_confirm_the_branch(project: Path) -> None:
     on_branch(project, "001-x")
     code, payload = run(
-        project, "start", "--feature-dir", "specs/002-b", "--title", "B", "--on-branch", "001-x", "--by", "Claude"
+        project,
+        "start",
+        "--feature-dir",
+        "specs/002-b",
+        "--title",
+        "B",
+        "--on-branch",
+        "001-x",
+        "--by",
+        "Claude",
     )
     assert code == 1 and "ai-approval" in codes(payload)
 
@@ -159,7 +177,18 @@ def test_outside_a_repository_the_start_proceeds_with_no_branch(project: Path) -
 
 def test_a_detached_head_proceeds_with_no_branch(project: Path) -> None:
     git(project, "init", "-q")
-    git(project, "-c", "user.name=T", "-c", "user.email=t@example.test", "commit", "-q", "--allow-empty", "-m", "x")
+    git(
+        project,
+        "-c",
+        "user.name=T",
+        "-c",
+        "user.email=t@example.test",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "x",
+    )
     git(project, "checkout", "-q", "--detach")
     code, payload = run(project, "start", "--feature-dir", "specs/002-b", "--title", "B")
     assert code == 0, payload
@@ -168,5 +197,16 @@ def test_a_detached_head_proceeds_with_no_branch(project: Path) -> None:
 
 def test_the_helper_never_switches_branch(project: Path) -> None:
     on_branch(project, "001-x")
-    run(project, "start", "--feature-dir", "specs/002-b", "--title", "B", "--on-branch", "001-x", "--by", "Ada")
+    run(
+        project,
+        "start",
+        "--feature-dir",
+        "specs/002-b",
+        "--title",
+        "B",
+        "--on-branch",
+        "001-x",
+        "--by",
+        "Ada",
+    )
     assert git(project, "symbolic-ref", "--short", "HEAD").strip() == "001-x"

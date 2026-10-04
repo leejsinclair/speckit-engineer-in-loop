@@ -316,7 +316,9 @@ class Package:
                 updated = ensure_region(updated, name)
         rendered = Doc(updated)
         for name in RECORD_NAMES:
-            if name in rendered.regions and (name in held or name in changes or rendered.region_is_json(name)):
+            if name in rendered.regions and (
+                name in held or name in changes or rendered.region_is_json(name)
+            ):
                 if rendered.region_is_json(name) and name not in held:
                     continue  # an unreadable JSON body is left for a person to repair
                 updated = set_region_lines(updated, name, recordfile.render(name, held.get(name)))

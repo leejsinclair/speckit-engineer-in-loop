@@ -27,7 +27,11 @@ def show(story: Story, *argv: str, json_mode: bool = True) -> tuple[int, Any]:
 
 
 def needs_review(story: Story, stage: str) -> dict[str, Any]:
-    return {k: i for k, i in blockstatus.block_statuses(Package(story.root))[stage].items() if i.status == "needs-review"}
+    return {
+        k: i
+        for k, i in blockstatus.block_statuses(Package(story.root))[stage].items()
+        if i.status == "needs-review"
+    }
 
 
 @pytest.mark.parametrize("migrated", [False, True], ids=["inline", "migrated"])
@@ -52,7 +56,11 @@ def test_the_cue_follows_exactly_the_blocks_that_need_review(legacy_upgrade: Sto
     assert len(cued) == len(pending)
     rows = {row["key"]: row for row in payload["blocks"]}
     assert {k for k, r in rows.items() if r["status"] == "needs-review"} == set(pending)
-    settled = [i for i in blockstatus.block_statuses(Package(legacy_upgrade.root))["plan"].values() if i.status != "needs-review"]
+    settled = [
+        i
+        for i in blockstatus.block_statuses(Package(legacy_upgrade.root))["plan"].values()
+        if i.status != "needs-review"
+    ]
     for info in settled:
         first = info.block.text.split("\n")[0].strip()
         assert not any(line.startswith(first) and "[ai-draft]" in line for line in lines if first), info.key
@@ -108,4 +116,3 @@ def test_show_writes_nothing(legacy_upgrade: Story) -> None:
 def test_the_text_form_is_the_view(legacy_upgrade: Story) -> None:
     code, text = show(legacy_upgrade, "plan", json_mode=False)
     assert code == 0 and text.startswith("Story 001-story: # Implementation Plan")
-

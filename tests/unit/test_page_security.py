@@ -92,10 +92,15 @@ def test_determinism_55_no_path_reaches_another_file(page: Page, reads: list[Pat
     assert reads == [], f"read {reads}"
 
 
-def test_determinism_55_a_stage_document_is_the_only_document_read(page: Page, review_page_story: Any, reads: list[Path]) -> None:
+def test_determinism_55_a_stage_document_is_the_only_document_read(
+    page: Page, review_page_story: Any, reads: list[Path]
+) -> None:
     status, _, _ = page.get("/doc/requirements")
     assert status == 200
-    allowed = {review_page_story.root / name for name in ("s01-requirements.md", "s02-functional-spec.md", "eil-record.json", "s00-README.md")}
+    allowed = {
+        review_page_story.root / name
+        for name in ("s01-requirements.md", "s02-functional-spec.md", "eil-record.json", "s00-README.md")
+    }
     outside = [p for p in reads if p.resolve().parent != review_page_story.root.resolve() or p not in allowed]
     assert outside == [], f"read outside the story's documents: {outside}"
 
@@ -110,7 +115,9 @@ def test_determinism_55_a_stage_document_is_the_only_document_read(page: Page, r
         ("PUT", "/", None),
     ],
 )
-def test_every_response_carries_the_security_headers(page: Page, method: str, path: str, headers: dict[str, str] | None) -> None:
+def test_every_response_carries_the_security_headers(
+    page: Page, method: str, path: str, headers: dict[str, str] | None
+) -> None:
     _, got, _ = page.call(method, path, ANSWER if method == "POST" else None, headers)
     assert got.get("X-Content-Type-Options") == "nosniff"
     assert got.get("Referrer-Policy") == "no-referrer"
@@ -130,7 +137,12 @@ def test_a_get_without_the_token_says_to_open_the_address(page: Page, review_pag
 
 def test_the_host_check_accepts_loopback_names_only(page: Page) -> None:
     port = page.origin.rsplit(":", 1)[1]
-    for host, expected in ((f"127.0.0.1:{port}", 200), (f"localhost:{port}", 200), (f"attacker.example:{port}", 403), ("", 403)):
+    for host, expected in (
+        (f"127.0.0.1:{port}", 200),
+        (f"localhost:{port}", 200),
+        (f"attacker.example:{port}", 403),
+        ("", 403),
+    ):
         status, _, _ = page.call("GET", f"/?t={page.token}", headers={"Host": host} if host else {"Host": ""})
         assert status == expected, host
 
@@ -144,7 +156,9 @@ def test_state_needs_the_token_header(page: Page) -> None:
 def test_an_oversized_body_is_refused(page: Page, review_page_story: Any) -> None:
     before = files_snapshot(review_page_story.root)
     try:
-        status, _, _ = page.call("POST", "/answer", b"{" + b" " * (2 * 1024 * 1024) + b"}", same_origin(page.origin, page.token))
+        status, _, _ = page.call(
+            "POST", "/answer", b"{" + b" " * (2 * 1024 * 1024) + b"}", same_origin(page.origin, page.token)
+        )
     except OSError:
         status = 413  # the server answered and closed before the client finished sending
     assert status in (400, 413)
@@ -172,9 +186,14 @@ def test_determinism_56_page_half_a_stale_answer_is_refused(page: Page, review_p
     from eil.package import Package
 
     root = review_page_story.root
-    entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001")
+    entry = next(
+        e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001"
+    )
     text = review_page_story.story.read("functional")
-    review_page_story.story.write("functional", text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."))
+    review_page_story.story.write(
+        "functional",
+        text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."),
+    )
     before = files_snapshot(root)
     status, payload = page.post("/answer", {**ANSWER, "shown": entry.hash, "question": entry.question})
     assert status == 200 and [r["code"] for r in payload["refusals"]] == ["entry-changed"]
@@ -210,13 +229,18 @@ def test_a_public_name_is_accepted_only_off_loopback(review_page_story: Any) -> 
         assert everywhere.address.startswith("http://box.local:")
         origin = f"http://127.0.0.1:{port}"
         assert call("GET", f"{origin}/?t={everywhere.token}", headers={"Host": f"box.local:{port}"})[0] == 200
-        assert call("GET", f"{origin}/?t={everywhere.token}", headers={"Host": f"attacker.example:{port}"})[0] == 403
+        assert (
+            call("GET", f"{origin}/?t={everywhere.token}", headers={"Host": f"attacker.example:{port}"})[0]
+            == 403
+        )
     finally:
         everywhere.stop()
 
 
 @pytest.mark.slow
-def test_determinism_67_page_half_page_and_cli_writers_together(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_determinism_67_page_half_page_and_cli_writers_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import os
     import subprocess
     import sys
@@ -238,7 +262,9 @@ def test_determinism_67_page_half_page_and_cli_writers_together(tmp_path: Path, 
     page = start_page(root)
 
     def by_page(key: str) -> bool:
-        _, payload = page.post("/answer", {**ANSWER, "entry": key, "shown": entries[key].hash, "question": entries[key].question})
+        _, payload = page.post(
+            "/answer", {**ANSWER, "entry": key, "shown": entries[key].hash, "question": entries[key].question}
+        )
         return bool(payload.get("ok"))
 
     def by_cli(key: str) -> bool:
@@ -251,7 +277,12 @@ def test_determinism_67_page_half_page_and_cli_writers_together(tmp_path: Path, 
 
     try:
         with ThreadPoolExecutor(max_workers=20) as pool:
-            done = list(pool.map(lambda job: job[0](job[1]), [(by_page, k) for k in on_page] + [(by_cli, k) for k in in_cli]))
+            done = list(
+                pool.map(
+                    lambda job: job[0](job[1]),
+                    [(by_page, k) for k in on_page] + [(by_cli, k) for k in in_cli],
+                )
+            )
     finally:
         page.stop()
     assert all(done)

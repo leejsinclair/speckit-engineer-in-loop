@@ -34,7 +34,9 @@ def render(root: Path, name: str = "Ada Dev", **extra: Any) -> str:
 def controls(page: str) -> dict[str, str]:
     """``{entry key: the control's HTML}`` for every answer control on the page."""
     found = {}
-    for match in re.finditer(r'<div class="control[^"]*" data-entry="([^"]+)"(.*?)</div><!--/control-->', page, re.S):
+    for match in re.finditer(
+        r'<div class="control[^"]*" data-entry="([^"]+)"(.*?)</div><!--/control-->', page, re.S
+    ):
         found[pagerender.html.unescape(match.group(1))] = match.group(0)
     return found
 
@@ -54,7 +56,9 @@ def blocks(page: str) -> dict[str, str]:
     }
 
 
-def page_answer(root: Path, key: str, disposition: str = "accept", comment: str | None = None, by: str = "Ada Dev") -> None:
+def page_answer(
+    root: Path, key: str, disposition: str = "accept", comment: str | None = None, by: str = "Ada Dev"
+) -> None:
     listed = reviews.build_list(Package(root), "functional", "inferred", session_view=False)
     entry = next(e for e in listed.entries if e.key == key)
     reviews.answer(
@@ -92,7 +96,10 @@ def test_each_control_shows_its_question_and_three_labelled_buttons(review_page_
         entry = next(e for e in listed.entries if e.key == key)
         assert pagerender.esc(reviews.entry_question("inferred", entry)) in html
         for label, act in (("Accept", "accept"), ("Send back", "except"), ("Question", "question")):
-            assert re.search(rf'<button type="button" data-act="{act}" aria-label="{label} {re.escape(pagerender.esc(key))}">{label}</button>', html), (key, label)
+            assert re.search(
+                rf'<button type="button" data-act="{act}" aria-label="{label} {re.escape(pagerender.esc(key))}">{label}</button>',
+                html,
+            ), (key, label)
 
 
 def test_each_highlighted_block_says_it_needs_review(review_page_story: Any) -> None:
@@ -120,7 +127,9 @@ def test_the_footer_when_nothing_is_listed(tmp_path: Path) -> None:
     assert controls(page) == {}
 
 
-def test_the_footer_when_every_entry_is_answered_in_the_open_session(review_page_story: Any, monkeypatch: Any) -> None:
+def test_the_footer_when_every_entry_is_answered_in_the_open_session(
+    review_page_story: Any, monkeypatch: Any
+) -> None:
     root = review_page_story.root
     for key in review_page_story.listed()[:-1]:
         page_answer(root, key)
@@ -149,7 +158,9 @@ def test_stored_answers_show_and_count(review_page_story: Any) -> None:
     assert "Sent back by Ada Dev" in found["FR-002"] and "Name the pairs." in found["FR-002"]
     first_open = re.search(r'<div class="control" data-entry="([^"]+)"', page)
     assert first_open is not None
-    assert pagerender.html.unescape(first_open.group(1)) == "§Actors", "the first unanswered control in document order"
+    assert pagerender.html.unescape(first_open.group(1)) == "§Actors", (
+        "the first unanswered control in document order"
+    )
 
 
 # ---- determinism 63
@@ -158,7 +169,10 @@ def test_stored_answers_show_and_count(review_page_story: Any) -> None:
 def test_determinism_63_everything_from_a_document_or_a_person_is_escaped(review_page_story: Any) -> None:
     root = review_page_story.root
     text = review_page_story.story.read("functional")
-    review_page_story.story.write("functional", text.replace("dismiss a flagged pair.", "dismiss a flagged pair. <script>alert(1)</script>"))
+    review_page_story.story.write(
+        "functional",
+        text.replace("dismiss a flagged pair.", "dismiss a flagged pair. <script>alert(1)</script>"),
+    )
     page_answer(root, "FR-001", "except", comment="<img src=x onerror=alert(1)>")
     page = render(root, name='"><b>x')
     assert "<script>alert(1)</script>" not in page
@@ -204,8 +218,12 @@ def test_a_removed_entry_has_a_panel_with_its_full_text(tmp_path: Path) -> None:
     built = review_page.build(tmp_path / "specs" / "001-story", changes=True)
     package = Package(built.root)
     listed = reviews.build_list(package, "functional", "changes")
-    removed_text = "**FR-007**: The system shall email every analyst. Every word of the removed block is shown."
-    listed.entries.append(reviews.ListEntry("FR-007", "removed", removed_text, "removed since it was approved"))
+    removed_text = (
+        "**FR-007**: The system shall email every analyst. Every word of the removed block is shown."
+    )
+    listed.entries.append(
+        reviews.ListEntry("FR-007", "removed", removed_text, "removed since it was approved")
+    )
     page = pagerender.review_page(package, ctx(), NONCE, listed=listed, current=("functional", "changes"))
     panel = page[page.index('<section class="panel removed"') :]
     panel = panel[: panel.index("</section>")]

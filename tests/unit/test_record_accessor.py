@@ -36,7 +36,11 @@ def recorded(legacy_upgrade: Story) -> Story:
     (legacy_upgrade.root / "eil-record.json").unlink()
     text = legacy_upgrade.read("functional")
     for name in NAMES:
-        text = write_provenance(text, held[name]) if name == "provenance" else write_region(text, name, held[name])
+        text = (
+            write_provenance(text, held[name])
+            if name == "provenance"
+            else write_region(text, name, held[name])
+        )
     legacy_upgrade.write("functional", text)
     return legacy_upgrade
 
@@ -74,10 +78,15 @@ def test_write_creates_a_missing_region(story_dir: Story) -> None:
 
     with_functional(story_dir)
     text = story_dir.read("functional")
-    story_dir.write("functional", text.replace("<!-- eil:begin approval -->\n<!-- eil:end approval -->\n", ""))
+    story_dir.write(
+        "functional", text.replace("<!-- eil:begin approval -->\n<!-- eil:end approval -->\n", "")
+    )
     package = Package(story_dir.root)
     package.write_record("functional", "approval", {"stage": "functional", "fingerprint": "sha256:x"})
-    assert Package(story_dir.root).record("functional", "approval") == {"stage": "functional", "fingerprint": "sha256:x"}
+    assert Package(story_dir.root).record("functional", "approval") == {
+        "stage": "functional",
+        "fingerprint": "sha256:x",
+    }
     assert "## Approval" in story_dir.read("functional")
 
 
@@ -85,7 +94,9 @@ def test_record_read_reports_a_malformed_provenance(story_dir: Story) -> None:
     from tests.helpers.package import with_functional, with_record_sections
 
     with_functional(story_dir)
-    story_dir.write("functional", with_record_sections(story_dir.read("functional"), {"version": 1, "bogus": 1}))
+    story_dir.write(
+        "functional", with_record_sections(story_dir.read("functional"), {"version": 1, "bogus": 1})
+    )
     read = Package(story_dir.root).record_read("functional", "provenance")
     assert read.obj is None and read.error and "bogus" in read.error
 

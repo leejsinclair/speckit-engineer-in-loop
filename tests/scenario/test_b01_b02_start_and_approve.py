@@ -63,7 +63,11 @@ def test_b01_starting_a_story_creates_only_the_overview_and_requirements(
     result = start(eil)
     assert result.code == 0, result.stderr
     feature = project / FEATURE
-    assert listing(feature) == ["eil-record.json", "s00-README.md", "s01-requirements.md"]  # 003: the record file
+    assert listing(feature) == [
+        "eil-record.json",
+        "s00-README.md",
+        "s01-requirements.md",
+    ]  # 003: the record file
     for absent in ("spec.md", "plan.md", "tasks.md", "s02-functional-spec.md", "assets"):
         assert not (feature / absent).exists(), absent
 

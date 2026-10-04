@@ -23,11 +23,17 @@ from tests.helpers.package import Story
 # (stage, old text, new text): one prose paragraph and one sequence diagram per approved stage.
 CHANGES = {
     "functional": (
-        ("Two customers with the same tax id are duplicates.", "Two customers with the same tax id or email are duplicates."),
+        (
+            "Two customers with the same tax id are duplicates.",
+            "Two customers with the same tax id or email are duplicates.",
+        ),
         ("Analyst->>System: Upload customer file", "Analyst->>System: Upload a customer file"),
     ),
     "technical": (
-        ("Each analysis logs its duration and match count.", "Each analysis logs its duration, match count and file size."),
+        (
+            "Each analysis logs its duration and match count.",
+            "Each analysis logs its duration, match count and file size.",
+        ),
         ("API->>Worker: Queue analysis", "API->>Worker: Queue the analysis"),
     ),
 }

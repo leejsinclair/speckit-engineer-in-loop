@@ -121,7 +121,11 @@ def test_json_mode_prints_exactly_one_object(restore_handlers: Callable, story_d
     cli.HANDLERS["status"] = lambda ctx, args: {"ok": True, "governed": True}
     code, out, _ = run_main(["status", "--json", "--feature-dir", str(story_dir.root)], story_dir.root)
     assert code == 0
-    assert out.count("\n") == 1 and json.loads(out) == {"ok": True, "governed": True, "story": story_dir.root.name}
+    assert out.count("\n") == 1 and json.loads(out) == {
+        "ok": True,
+        "governed": True,
+        "story": story_dir.root.name,
+    }
 
 
 def test_global_flags_are_accepted_before_or_after_the_subcommand(

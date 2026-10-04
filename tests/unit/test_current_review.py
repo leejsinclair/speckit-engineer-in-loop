@@ -27,7 +27,12 @@ def current(root: Path) -> dict[str, Any]:
 
 def list_current(root: Path) -> tuple[int, Any]:
     out = io.StringIO()
-    code = cli.main(["review", "list", "--current", "--json", "--feature-dir", str(root)], cwd=root, stdout=out, stderr=io.StringIO())
+    code = cli.main(
+        ["review", "list", "--current", "--json", "--feature-dir", str(root)],
+        cwd=root,
+        stdout=out,
+        stderr=io.StringIO(),
+    )
     return code, json.loads(out.getvalue())
 
 
@@ -47,7 +52,9 @@ def test_after_requirements_approval_the_functional_draft_is_current(tmp_path: P
 def test_an_edited_approved_requirement_makes_its_changes_list_current(tmp_path: Path) -> None:
     built = review_page.build(tmp_path / "specs" / "001-story")
     text = built.story.read("requirements")
-    built.story.write("requirements", text.replace("Every dismissal is logged.", "Every dismissal is logged with a reason."))
+    built.story.write(
+        "requirements", text.replace("Every dismissal is logged.", "Every dismissal is logged with a reason.")
+    )
     found = current(built.root)
     assert (found["stage"], found["kind"]) == ("requirements", "changes")
     assert "REQ-003" in [e.key for e in found["entries"]]

@@ -112,7 +112,9 @@ def test_enter_plan_refuses_a_stage_that_was_never_approved(story_dir: Story) ->
     with_ai_spec(story_dir)
     text = story_dir.read("functional")
     start, end = text.index("<!-- eil:begin approval -->"), text.index("<!-- eil:end approval -->")
-    story_dir.write("functional", text[:start] + "<!-- eil:begin approval -->\n```json\n{}\n```\n" + text[end:])
+    story_dir.write(
+        "functional", text[:start] + "<!-- eil:begin approval -->\n```json\n{}\n```\n" + text[end:]
+    )
     assert "stage-not-approved" in refused(story_dir, "plan")
 
 

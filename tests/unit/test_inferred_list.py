@@ -39,7 +39,14 @@ def answer(story: Story, **kwargs: Any) -> dict[str, Any]:
     excepted = kwargs.get("all_except")
     reply = f"ok except {', '.join(excepted)}" if excepted else "ok"
     return reviews.answer(
-        package_of(story), CONFIG, "ai-spec", "inferred", digest=listed.digest, by="Ada Dev", reply=reply, **kwargs
+        package_of(story),
+        CONFIG,
+        "ai-spec",
+        "inferred",
+        digest=listed.digest,
+        by="Ada Dev",
+        reply=reply,
+        **kwargs,
     )
 
 
@@ -57,7 +64,9 @@ def test_the_list_shows_full_text_and_the_reason_for_each_entry(reference_story:
     assert listed.purpose == "validation"
 
 
-def test_a_reply_of_ok_except_settles_the_rest_and_the_excepted_block_reappears_alone(reference_story: Story) -> None:
+def test_a_reply_of_ok_except_settles_the_rest_and_the_excepted_block_reappears_alone(
+    reference_story: Story,
+) -> None:
     classify_ai_spec(reference_story)
     result = answer(reference_story, all_except=["AIS-003"])
     assert sorted(result["accepted"]) == ["AIS-005", "AIS-007"] and result["except"] == ["AIS-003"]
@@ -73,11 +82,18 @@ def test_an_edited_reviewed_block_reappears_and_an_unchanged_one_never_does(refe
     assert "changed since it was reviewed" in the_list(reference_story).entries[0].why
 
 
-def test_a_hand_written_block_is_inferred_and_listed_once_the_stage_has_a_record(reference_story: Story) -> None:
+def test_a_hand_written_block_is_inferred_and_listed_once_the_stage_has_a_record(
+    reference_story: Story,
+) -> None:
     classify_ai_spec(reference_story)
     answer(reference_story, all_=True)
     old = "**AIS-008**: Implement behaviour 8. (traces: FR-008)"
-    edit(reference_story, "ai-spec", old, old + "\n\n**AIS-020**: A block a person typed straight into the file. (traces: FR-001)")
+    edit(
+        reference_story,
+        "ai-spec",
+        old,
+        old + "\n\n**AIS-020**: A block a person typed straight into the file. (traces: FR-001)",
+    )
     assert keys(the_list(reference_story)) == ["AIS-020"]
 
 
@@ -88,7 +104,9 @@ def test_every_list_shows_the_fidelity_limit(reference_story: Story) -> None:
     assert reviews.FIDELITY_LIMIT in the_list(reference_story).limits
 
 
-def test_an_unreviewed_inferred_ai_spec_item_blocks_only_the_work_that_traces_to_it(reference_story: Story) -> None:
+def test_an_unreviewed_inferred_ai_spec_item_blocks_only_the_work_that_traces_to_it(
+    reference_story: Story,
+) -> None:
     classify_ai_spec(reference_story)
     got = blocked(reference_story)
     assert {"T003", "T005", "T007"} <= set(got)
@@ -104,7 +122,9 @@ def test_review_lifts_the_block_and_an_exception_keeps_it(reference_story: Story
     assert blocked(reference_story) == {}
 
 
-def test_a_plan_section_tracing_an_unreviewed_item_is_blocked_and_so_is_what_traces_it(reference_story: Story) -> None:
+def test_a_plan_section_tracing_an_unreviewed_item_is_blocked_and_so_is_what_traces_it(
+    reference_story: Story,
+) -> None:
     edit(reference_story, "plan", "Summary (traces: DEC-001)", "Summary (traces: AIS-007)")
     classify_ai_spec(reference_story)
     got = blocked(reference_story)
@@ -115,10 +135,14 @@ def test_an_unreviewed_inferred_plan_section_or_task_blocks_nothing_else(referen
     classify_ai_spec(reference_story)
     answer(reference_story, all_=True)
     provenance.classify(
-        package_of(reference_story), "plan", {"stage": "plan", "blocks": [{"block": "§Queue Design", "adds": "a new queue"}]}
+        package_of(reference_story),
+        "plan",
+        {"stage": "plan", "blocks": [{"block": "§Queue Design", "adds": "a new queue"}]},
     )
     provenance.classify(
-        package_of(reference_story), "tasks", {"stage": "tasks", "blocks": [{"block": "T009", "adds": "extra work"}]}
+        package_of(reference_story),
+        "tasks",
+        {"stage": "tasks", "blocks": [{"block": "T009", "adds": "extra work"}]},
     )
     assert "§Queue Design" in keys(the_list(reference_story, "plan"))
     assert "T009" in keys(the_list(reference_story, "tasks"))

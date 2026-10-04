@@ -40,7 +40,11 @@ def record_line(kind: str, obj: dict[str, Any] | None) -> str:
     get = obj.get
     if kind == "challenge":
         state = get("status", "open")
-        answer = f"; {get('response')} by {get('responder')}" + (f": {get('reason')}" if get("reason") else "") if get("response") else ""
+        answer = (
+            f"; {get('response')} by {get('responder')}" + (f": {get('reason')}" if get("reason") else "")
+            if get("response")
+            else ""
+        )
         return f"{get('id')} ({state}, {get('severity', 'medium')}, on {get('target')}, raised by {get('raised_by')}): {get('text')}{answer}"
     if kind == "override":
         return f"{get('id')}: {get('criterion')} overridden by {get('by')} on {str(get('at', ''))[:10]}: {get('reason')}"
@@ -53,12 +57,19 @@ def record_line(kind: str, obj: dict[str, Any] | None) -> str:
             f"by {source.get('exported_by')})"
         )
     if kind == "review":
-        return f"{get('id')}: {get('unit')} {get('target')} reviewed by {get('by')} on {str(get('at', ''))[:10]}"
+        return (
+            f"{get('id')}: {get('unit')} {get('target')} reviewed by {get('by')} on {str(get('at', ''))[:10]}"
+        )
     return f"(eil:{kind} record {get('id', '')})".replace(" )", ")")
 
 
 def view_lines(
-    pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: set[int], notes: dict[int, str] | None = None
+    pkg: Package,
+    stage: str,
+    doc: Doc,
+    cues: set[int],
+    fence_cues: set[int],
+    notes: dict[int, str] | None = None,
 ) -> list[tuple[int, str]]:
     """``[(document line number, text)]`` of the clean view (region bodies rendered, comments gone).
     ``notes`` adds a note after the cue of a block's first line (why a reopened block is back, 004)."""
@@ -116,9 +127,15 @@ def reopen_notes(pkg: Package, stage: str, blocks: list[Block]) -> dict[int, str
     recorded = (pkg.record(stage, "provenance") or {}).get("blocks") or {}
     out = {}
     for block in blocks:
-        mark = (recorded.get(block.key) or {}).get("reopened") if isinstance(recorded.get(block.key), dict) else None
+        mark = (
+            (recorded.get(block.key) or {}).get("reopened")
+            if isinstance(recorded.get(block.key), dict)
+            else None
+        )
         if isinstance(mark, dict):
-            out[block.first_line] = f"(reopened by {mark.get('by')}: {' '.join(str(mark.get('comment', '')).split())})"
+            out[block.first_line] = (
+                f"(reopened by {mark.get('by')}: {' '.join(str(mark.get('comment', '')).split())})"
+            )
     return out
 
 
@@ -153,12 +170,26 @@ def _row(block: Block, statuses: dict[str, Any]) -> dict[str, Any]:
 
 
 def _unknown(what: str, stage: str) -> Any:
-    return refuse(Refusal("unknown-item", f"{what} is not in {stage} or an earlier stage", "Use an id from `eil blocks list`, or a section heading of the stage"))
+    return refuse(
+        Refusal(
+            "unknown-item",
+            f"{what} is not in {stage} or an earlier stage",
+            "Use an id from `eil blocks list`, or a section heading of the stage",
+        )
+    )
 
 
-def view(pkg: Package, stage: str, items: list[str] | None = None, section: str | None = None) -> dict[str, Any]:
+def view(
+    pkg: Package, stage: str, items: list[str] | None = None, section: str | None = None
+) -> dict[str, Any]:
     if stage not in STAGES or not pkg.exists(stage):
-        raise refuse(Refusal("unknown-stage", f"{stage!r} has no document in this story", f"Use one of: {', '.join(STAGES)}"))
+        raise refuse(
+            Refusal(
+                "unknown-stage",
+                f"{stage!r} has no document in this story",
+                f"Use one of: {', '.join(STAGES)}",
+            )
+        )
     statuses_all = block_statuses(pkg)
     if items:
         return _items(pkg, stage, items, statuses_all)

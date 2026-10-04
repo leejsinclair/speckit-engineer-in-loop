@@ -31,9 +31,20 @@ def entry_of(root: Path, key: str, kind: str = "inferred") -> reviews.ListEntry:
     return next(e for e in listed.entries if e.key == key)
 
 
-def page(root: Path, key: str, disposition: str = "accept", comment: str | None = None, by: str = "Ada Dev", **extra: Any) -> dict[str, Any]:
+def page(
+    root: Path,
+    key: str,
+    disposition: str = "accept",
+    comment: str | None = None,
+    by: str = "Ada Dev",
+    **extra: Any,
+) -> dict[str, Any]:
     entry = entry_of(root, key)
-    kwargs: dict[str, Any] = {"shown": entry.hash, "asked": reviews.entry_question("inferred", entry), **extra}
+    kwargs: dict[str, Any] = {
+        "shown": entry.hash,
+        "asked": reviews.entry_question("inferred", entry),
+        **extra,
+    }
     return reviews.answer(
         Package(root), CONFIG, "functional", "inferred", digest=None, by=by, reply="", entry=key,
         disposition=disposition, comment=comment, via="page", **kwargs,
@@ -62,7 +73,10 @@ def test_a_stale_shown_hash_is_refused_entry_changed(review_page_story: Any) -> 
     root = review_page_story.root
     shown = entry_of(root, "FR-001").hash
     text = review_page_story.story.read("functional")
-    review_page_story.story.write("functional", text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."))
+    review_page_story.story.write(
+        "functional",
+        text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."),
+    )
     before = files_snapshot(root)
     code, payload = eil(
         root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--entry", "FR-001",
@@ -91,7 +105,12 @@ def test_the_current_shown_hash_is_accepted(review_page_story: Any) -> None:
 
 @pytest.mark.parametrize(
     "comment",
-    ["Plain words.", "**Bold** and `code` and [a link](https://example.org)", '<img src=x onerror="alert(1)"> & <b>', "x" * 10_240],
+    [
+        "Plain words.",
+        "**Bold** and `code` and [a link](https://example.org)",
+        '<img src=x onerror="alert(1)"> & <b>',
+        "x" * 10_240,
+    ],
 )
 def test_a_comment_is_stored_verbatim(review_page_story: Any, comment: str) -> None:
     page(review_page_story.root, "FR-002", "except", comment=comment)
@@ -112,9 +131,13 @@ def test_a_cli_comment_is_stored_verbatim_too(review_page_story: Any) -> None:
 
 @pytest.mark.parametrize("disposition", ["except", "question"])
 @pytest.mark.parametrize("comment", [None, "", "   "])
-def test_a_page_send_back_or_question_needs_a_comment(review_page_story: Any, disposition: str, comment: str | None) -> None:
+def test_a_page_send_back_or_question_needs_a_comment(
+    review_page_story: Any, disposition: str, comment: str | None
+) -> None:
     before = files_snapshot(review_page_story.root)
-    assert codes(lambda: page(review_page_story.root, "FR-002", disposition, comment=comment)) == ["comment-required"]
+    assert codes(lambda: page(review_page_story.root, "FR-002", disposition, comment=comment)) == [
+        "comment-required"
+    ]
     assert files_snapshot(review_page_story.root) == before
 
 
@@ -128,7 +151,9 @@ def test_a_page_accept_replies_accept_or_its_comment(review_page_story: Any) -> 
 
 
 def test_the_question_must_be_the_helpers(review_page_story: Any) -> None:
-    assert codes(lambda: page(review_page_story.root, "FR-001", asked="Is FR-001 fine?")) == ["question-mismatch"]
+    assert codes(lambda: page(review_page_story.root, "FR-001", asked="Is FR-001 fine?")) == [
+        "question-mismatch"
+    ]
 
 
 def test_the_cli_has_no_via_flag(review_page_story: Any) -> None:
@@ -148,13 +173,29 @@ def test_a_session_closes_into_one_acceptance_per_surface(review_page_story: Any
     page(root, keys[0])
     page(root, keys[1], "except", comment="Name the pairs.")
     for key in keys[2:]:
-        code, payload = eil(root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--entry", key, "--by", "Ada Dev", "--reply", "ok")
+        code, payload = eil(
+            root,
+            "review",
+            "answer",
+            "--stage",
+            "functional",
+            "--kind",
+            "inferred",
+            "--entry",
+            key,
+            "--by",
+            "Ada Dev",
+            "--reply",
+            "ok",
+        )
         assert code == 0, payload
     assert payload["closed"] is True
     accs = acceptances(root)
     on_page = [a for a in accs if a.get("via") == "page"]
     in_chat = [a for a in accs if "via" not in a]
-    assert len(on_page) == 2 and len(in_chat) == 1, "accept and send-back on the page differ in reply, so two groups"
+    assert len(on_page) == 2 and len(in_chat) == 1, (
+        "accept and send-back on the page differ in reply, so two groups"
+    )
     for acc in on_page:
         assert set(acc["questions"]) <= {keys[0], keys[1]}
     send_back = next(a for a in on_page if a["except"])
@@ -190,10 +231,20 @@ def test_problems_accepts_the_new_fields_and_rejects_unknown_ones(review_page_st
         "questions": {"FR-001": "Accept FR-001 as written?"}, "comments": {"FR-001": "fine"}, "together": {"FR-001": "Functional Requirements"},
     }  # fmt: skip
     assert provenance_problems({"version": 1, "blocks": {}, "acceptances": [acceptance]}) == []
-    assert provenance_problems({"version": 1, "blocks": {}, "acceptances": [{**acceptance, "shown": "x"}]}) != []
+    assert (
+        provenance_problems({"version": 1, "blocks": {}, "acceptances": [{**acceptance, "shown": "x"}]}) != []
+    )
     answer = {"by": "Ada Dev", "at": "t", "disposition": "accept", "reply": "Accept", "hash": "h", "seen": True,
               "via": "page", "question": "q", "comment": "c", "together": "S"}  # fmt: skip
-    data = {"version": 1, "story": {"review_sessions": {"k": {"stage": "functional", "kind": "inferred", "answers": {"FR-001": answer}}}}, "stages": {}}
+    data = {
+        "version": 1,
+        "story": {
+            "review_sessions": {
+                "k": {"stage": "functional", "kind": "inferred", "answers": {"FR-001": answer}}
+            }
+        },
+        "stages": {},
+    }
     assert recordfile.problems(data) == []
     data["story"]["review_sessions"]["k"]["answers"]["FR-001"]["shown"] = "x"
     assert recordfile.problems(data) != []
@@ -227,5 +278,7 @@ def test_a_summary_mode_list_answered_on_the_page_then_whole_in_chat(tmp_path: P
     assert code == 0, payload
     assert payload["closed"] is True
     assert Package(root).story_record().get("review_sessions") in (None, {})
-    assert sorted(k for a in acceptances(root) for k in a["accepted"]) == [f"FR-{n:03d}" for n in range(1, 11)]
+    assert sorted(k for a in acceptances(root) for k in a["accepted"]) == [
+        f"FR-{n:03d}" for n in range(1, 11)
+    ]
     assert json.loads(recordfile.path(root).read_text())  # valid JSON

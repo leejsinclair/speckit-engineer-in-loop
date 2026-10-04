@@ -47,7 +47,9 @@ def test_b25_severity_lifecycle(project: Path, eil: Callable) -> None:
     assert outstanding["low_challenges"] == ["CH-001"]
 
     for cid in ("CH-002", "CH-003"):
-        assert eil(["challenge", "answer", cid, "--response", "accepted", "--by", "Ada Dev", "--json"]).code == 0
+        assert (
+            eil(["challenge", "answer", cid, "--response", "accepted", "--by", "Ada Dev", "--json"]).code == 0
+        )
     judged = write_judgments(project, "functional", FUN_JUDGED)
     assert eil(["check", "--stage", "functional", "--judgments", str(judged), "--json"]).code == 0
     take_the_check(eil, "functional")

@@ -30,7 +30,13 @@ def snapshot(root: Path) -> dict[str, bytes]:
 
 def run(argv: list[str], story: Story) -> tuple[int, str]:
     out = io.StringIO()
-    code = cli.main([*argv, "--json", "--feature-dir", str(story.root)], cwd=story.root, env={}, stdout=out, stderr=io.StringIO())
+    code = cli.main(
+        [*argv, "--json", "--feature-dir", str(story.root)],
+        cwd=story.root,
+        env={},
+        stdout=out,
+        stderr=io.StringIO(),
+    )
     return code, out.getvalue()
 
 
@@ -95,7 +101,9 @@ def test_approved_and_changed_adopts_only_covered_blocks(story_dir: Story) -> No
     record = blockstatus.adopt(Package(story_dir.root), "requirements")
     assert record is not None
     assert "REQ-001" not in record["blocks"]
-    assert any(k.startswith("REQ-") or k.startswith("UC-") for k in record["blocks"]) or record["blocks"] == {}
+    assert (
+        any(k.startswith("REQ-") or k.startswith("UC-") for k in record["blocks"]) or record["blocks"] == {}
+    )
     assert statuses_from(story_dir, "requirements")["REQ-001"] == "needs-review"
 
 
@@ -245,7 +253,12 @@ def test_an_existing_record_is_left_alone(story_dir: Story) -> None:
 
 LEGACY_CONFIG = Config(
     default_developer="Ada Dev",
-    approvers={"requirements": ["Ada Dev"], "functional": ["Ada Dev"], "technical": ["Ada Dev"], "completion": ["Ada Dev"]},
+    approvers={
+        "requirements": ["Ada Dev"],
+        "functional": ["Ada Dev"],
+        "technical": ["Ada Dev"],
+        "completion": ["Ada Dev"],
+    },
 )
 
 
@@ -285,7 +298,9 @@ def test_a_verdict_written_under_the_001_fingerprint_rule_is_kept(reference_stor
 
     from tests.fixtures.legacy_upgrade import _as_001_era, _record_judgments
 
-    text = reference_story.read("functional").replace("A CSV file of customers.", "A CSV file of customers. [ai-draft]")
+    text = reference_story.read("functional").replace(
+        "A CSV file of customers.", "A CSV file of customers. [ai-draft]"
+    )
     reference_story.write("functional", text)
     _record_judgments(reference_story, "functional")
     _as_001_era(reference_story, "functional")
@@ -305,9 +320,15 @@ def test_legacy_adoption_leaves_nothing_needing_review(legacy_upgrade: Story) ->
     record = blockstatus.adopt(Package(legacy_upgrade.root), "functional")
     classes = {e["class"] for e in record["blocks"].values()}
     assert classes == {"adopted", "adopted-pending"}
-    unnumbered = [b for b in blockstatus.blocks_of(Package(legacy_upgrade.root).doc("functional")) if not b.numbered]
+    unnumbered = [
+        b for b in blockstatus.blocks_of(Package(legacy_upgrade.root).doc("functional")) if not b.numbered
+    ]
     assert all(record["blocks"][b.key]["class"] == "adopted-pending" for b in unnumbered)
-    assert {k: i.status for k, i in blockstatus.block_statuses(Package(legacy_upgrade.root))["functional"].items() if i.klass == "adopted-pending"}
+    assert {
+        k: i.status
+        for k, i in blockstatus.block_statuses(Package(legacy_upgrade.root))["functional"].items()
+        if i.klass == "adopted-pending"
+    }
     assert "settled-pending" in statuses(legacy_upgrade, "functional").values()
 
 
@@ -331,13 +352,22 @@ def test_one_reply_re_signs_without_comparison(legacy_upgrade: Story) -> None:
         package, LEGACY_CONFIG, "functional", "changes", digest=listed.digest, by="Ada Dev", reply="ok", all_=True,
         summaries=summaries,
     )  # fmt: skip
-    result = reviews.confirm(Package(legacy_upgrade.root), LEGACY_CONFIG, "functional", by="Ada Dev", confirmation="ok", summaries=summaries)
+    result = reviews.confirm(
+        Package(legacy_upgrade.root),
+        LEGACY_CONFIG,
+        "functional",
+        by="Ada Dev",
+        confirmation="ok",
+        summaries=summaries,
+    )
     assert result["approval"]["reached"] == "re-signed-without-comparison"
     after = Package(legacy_upgrade.root)
     assert after.state("functional").state == "approved"
     blocks = after.record("functional", "provenance")["blocks"]
     assert "adopted-pending" not in {e["class"] for e in blocks.values()}
-    assert any(str(e.get("basis", "")).startswith("re-signed without comparison by Ada Dev") for e in blocks.values())
+    assert any(
+        str(e.get("basis", "")).startswith("re-signed without comparison by Ada Dev") for e in blocks.values()
+    )
     assert "re-signed without comparison" in legacy_upgrade.read("functional")
 
 
@@ -347,7 +377,14 @@ def test_confirm_without_the_legacy_answer_is_refused(legacy_upgrade: Story) -> 
     adopt_all(legacy_upgrade)
     package = Package(legacy_upgrade.root)
     try:
-        reviews.confirm(package, LEGACY_CONFIG, "functional", by="Ada Dev", confirmation="ok", summaries=summaries_for(package, "functional"))
+        reviews.confirm(
+            package,
+            LEGACY_CONFIG,
+            "functional",
+            by="Ada Dev",
+            confirmation="ok",
+            summaries=summaries_for(package, "functional"),
+        )
     except EilExit as exc:
         codes = [r["code"] for r in exc.payload["refusals"]]
     else:
@@ -363,4 +400,6 @@ def test_no_unreviewed_ai_content_at_any_point(legacy_upgrade: Story) -> None:
     for stage in ("functional", "technical"):
         assert blockstatus.unreviewed(package, stage) == []
         ctx = records.build_context(package, stage, package.read(stage))
-        assert "unreviewed-ai-content" not in [r.code for r in records._gate_refusals(package, stage, ctx, package.read(stage))]
+        assert "unreviewed-ai-content" not in [
+            r.code for r in records._gate_refusals(package, stage, ctx, package.read(stage))
+        ]

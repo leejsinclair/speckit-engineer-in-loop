@@ -14,7 +14,9 @@ from tests.helpers.page import start_page
 pytestmark = pytest.mark.scenario
 
 
-def test_b42_accept_the_rest_of_a_section_on_the_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_b42_accept_the_rest_of_a_section_on_the_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import tempfile
 
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
@@ -23,10 +25,25 @@ def test_b42_accept_the_rest_of_a_section_on_the_page(tmp_path: Path, monkeypatc
     page = start_page(root)
     try:
         for key, disposition, comment in (("FR-001", "accept", None), ("FR-002", "except", "Not quite.")):
-            entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == key)
-            page.post("/answer", {"stage": "functional", "kind": "inferred", "entry": key, "disposition": disposition, "shown": entry.hash, "question": entry.question, "comment": comment})
+            entry = next(
+                e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == key
+            )
+            page.post(
+                "/answer",
+                {
+                    "stage": "functional",
+                    "kind": "inferred",
+                    "entry": key,
+                    "disposition": disposition,
+                    "shown": entry.hash,
+                    "question": entry.question,
+                    "comment": comment,
+                },
+            )
         listed = reviews.build_list(Package(root), "functional", "inferred")
-        shown = {entry.key: entry.hash for entry in listed.entries if entry.section == "Functional Requirements"}
+        shown = {
+            entry.key: entry.hash for entry in listed.entries if entry.section == "Functional Requirements"
+        }
         status, payload = page.post(
             "/section",
             {"stage": "functional", "kind": "inferred", "section": "Functional Requirements", "shown": shown},

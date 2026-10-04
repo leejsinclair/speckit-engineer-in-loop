@@ -127,7 +127,11 @@ def _session_problems(sessions: Any) -> list[str]:
         rows += [(f"superseded[{i}]", a) for i, a in enumerate(session.get("superseded") or [])]
         for where, row in rows:
             if isinstance(row, dict):
-                found += [f"story.review_sessions.{name}.{where} has unknown key {k!r}" for k in row if k not in SESSION_ANSWER_KEYS]
+                found += [
+                    f"story.review_sessions.{name}.{where} has unknown key {k!r}"
+                    for k in row
+                    if k not in SESSION_ANSWER_KEYS
+                ]
     return found
 
 
@@ -299,7 +303,9 @@ def record_lock(root: Path, wait: float = WAIT_SECONDS) -> Iterator[Held]:
             _sleep(0.05)
             continue
         with os.fdopen(handle, "w", encoding="utf-8") as out:
-            out.write(json.dumps({"pid": os.getpid(), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+            out.write(
+                json.dumps({"pid": os.getpid(), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+            )
         break
     depth[key] = 1
     try:
@@ -384,7 +390,11 @@ def provenance_line(record: dict[str, Any] | None) -> list[str]:
         classes[str(block.get("class"))] = classes.get(str(block.get("class")), 0) + 1
     listing = ", ".join(f"{n} {k}" for k, n in sorted(classes.items()))
     reviewed = sum(1 for b in blocks if b.get("reviewed"))
-    line = f"Blocks: {len(blocks)}" + (f" ({listing})" if listing else "") + f", {reviewed} reviewed by a person."
+    line = (
+        f"Blocks: {len(blocks)}"
+        + (f" ({listing})" if listing else "")
+        + f", {reviewed} reviewed by a person."
+    )
     changes = len(record.get("changes") or [])
     if changes:
         line += f" {changes} accepted change(s)."
@@ -403,4 +413,17 @@ def render(name: str, record: dict[str, Any] | None) -> list[str]:
     return RENDERERS[name](record)
 
 
-__all__ = ["FILE", "Held", "Loaded", "RECORD_NAMES", "dumps", "empty", "load", "lock_path", "path", "problems", "record_lock", "save"]
+__all__ = [
+    "FILE",
+    "Held",
+    "Loaded",
+    "RECORD_NAMES",
+    "dumps",
+    "empty",
+    "load",
+    "lock_path",
+    "path",
+    "problems",
+    "record_lock",
+    "save",
+]

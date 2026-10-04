@@ -63,11 +63,17 @@ def summaries(story: Story, stage: str, *keys: str) -> tuple[str, str]:
     return "--summaries", str(path)
 
 
-def test_b23_a_correction_from_implementation_needs_three_interactions(reference_story: Story, eil: Eil) -> None:
+def test_b23_a_correction_from_implementation_needs_three_interactions(
+    reference_story: Story, eil: Eil
+) -> None:
     before = {s: reference_story.read(s) for s in package_of(reference_story).existing_stages()}
-    code, proposal = eil("correct", "propose", "--item", "REQ-002", "--found-in", "implementation:T014", "--problem", "no log")
+    code, proposal = eil(
+        "correct", "propose", "--item", "REQ-002", "--found-in", "implementation:T014", "--problem", "no log"
+    )
     assert code == 0 and proposal["candidates"] == ["requirements"] and proposal["ambiguous"] is False
-    assert proposal["impact"] and before == {s: reference_story.read(s) for s in before}, "propose writes nothing"
+    assert proposal["impact"] and before == {s: reference_story.read(s) for s in before}, (
+        "propose writes nothing"
+    )
 
     # interaction 1: the report with the person's wording; interaction 2: agreement to the preview
     code, opened = eil(
@@ -94,7 +100,9 @@ def test_b23_a_correction_from_implementation_needs_three_interactions(reference
     record = package_of(reference_story).record("requirements", "provenance")
     assert [c["status"] for c in record["corrections"]] == ["closed"]
     assert record["changes"][0]["origin"] == "CR-001" and record["changes"][0]["summary_by"] == "ai"
-    assert "implementation" in reference_story.read("requirements") and "CR-001" in reference_story.read("requirements")
+    assert "implementation" in reference_story.read("requirements") and "CR-001" in reference_story.read(
+        "requirements"
+    )
 
     code, traced = eil("trace", "--to", "REQ-002")
     assert code == 0 and "CR-001" in json.dumps(traced)
@@ -112,9 +120,24 @@ def test_b23_step_2_an_ambiguous_owner_is_refused_without_an_owner(reference_sto
     assert code == 1 and refusal["refusals"][0]["code"] == "owner-ambiguous"
 
 
-def test_b23_step_5_and_6_a_rejected_challenge_is_listed_and_an_open_finding_blocks(reference_story: Story, eil: Eil) -> None:
+def test_b23_step_5_and_6_a_rejected_challenge_is_listed_and_an_open_finding_blocks(
+    reference_story: Story, eil: Eil
+) -> None:
     reference_story.append("requirements", "\n" + record_block("challenge", REJECTED).rstrip("\n") + "\n")
-    eil("correct", "open", "--item", "REQ-002", "--found-in", "implementation", "--problem", "x", "--by", "Ada Dev", "--wording", WORDING)
+    eil(
+        "correct",
+        "open",
+        "--item",
+        "REQ-002",
+        "--found-in",
+        "implementation",
+        "--problem",
+        "x",
+        "--by",
+        "Ada Dev",
+        "--wording",
+        WORDING,
+    )
     edit(reference_story, "requirements", REQ2.split("**: ", 1)[1], WORDING)
     edit(reference_story, "requirements", WORDING, WORDING + " (decided: CR-001)")
     code, done = eil(

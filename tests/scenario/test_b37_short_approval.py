@@ -28,7 +28,17 @@ def test_b37_short_approval(project: Path, eil: Callable[..., EilResult], tmp_pa
         return eil([*argv, "--feature-dir", FEATURE, "--json"])
 
     judgments = tmp_path / "j.json"
-    judgments.write_text(json.dumps({"stage": "requirements", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ("REQ-G01", "REQ-G11", "REQ-G12", "REQ-G13")]}))
+    judgments.write_text(
+        json.dumps(
+            {
+                "stage": "requirements",
+                "judgments": [
+                    {"id": i, "status": "met", "reason": "ok"}
+                    for i in ("REQ-G01", "REQ-G11", "REQ-G12", "REQ-G13")
+                ],
+            }
+        )
+    )
     assert run("check", "--stage", "requirements", "--judgments", str(judgments)).code == 0
     assert run("status").json["next_action"]["question"] == QUESTION
 
@@ -36,6 +46,10 @@ def test_b37_short_approval(project: Path, eil: Callable[..., EilResult], tmp_pa
     assert empty.code == 1 and "attestation-required" in empty.refusal_codes
     approved = run("approve", "requirements", "--by", "Test Developer", "--attestation", "ok")
     assert approved.code == 0, approved.stdout
-    record = json.loads((project / FEATURE / "eil-record.json").read_text())["stages"]["requirements"]["approval"]
-    assert record["attestation"] == "ok" and record["question"] == QUESTION and record["by"] == "Test Developer"
+    record = json.loads((project / FEATURE / "eil-record.json").read_text())["stages"]["requirements"][
+        "approval"
+    ]
+    assert (
+        record["attestation"] == "ok" and record["question"] == QUESTION and record["by"] == "Test Developer"
+    )
     assert f'"ok" to "{QUESTION}"' in story.read("requirements")

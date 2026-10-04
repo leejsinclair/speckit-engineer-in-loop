@@ -28,7 +28,9 @@ class Driver:
     def __call__(self, *args: str) -> tuple[int, Any]:
         return self.eil_json([*args, "--feature-dir", str(self.story.root)], self.story.root)
 
-    def answer(self, stage: str, kind: str, reply: str, *flags: str, digest: str | None = None) -> tuple[int, Any]:
+    def answer(
+        self, stage: str, kind: str, reply: str, *flags: str, digest: str | None = None
+    ) -> tuple[int, Any]:
         digest = digest or self("review", "list", "--stage", stage, "--kind", kind)[1]["digest"]
         return self(
             "review", "answer", "--stage", stage, "--kind", kind, "--digest", digest,
@@ -74,7 +76,9 @@ def test_b19_an_upstream_edit_blocks_only_what_it_reaches(eil: Driver) -> None:
     assert "/speckit-eil-accept technical" in data["refusals"][0]["fix"]
     revert_dec3(eil.story)
     assert blocked(eil) == set()
-    edit(eil.story, "technical", "Retry failed analyses three times.", "Retry failed analyses three times.   ")
+    edit(
+        eil.story, "technical", "Retry failed analyses three times.", "Retry failed analyses three times.   "
+    )
     assert blocked(eil) == set()
 
 
@@ -83,9 +87,13 @@ def test_b20_completed_tasks_are_revalidated_in_one_reply(eil: Driver) -> None:
     code, listed = eil("review", "list", "--stage", "tasks", "--kind", "tasks")
     assert code == 0 and sorted(e["key"] for e in listed["entries"]) == ["T004", "T005", "T006"]
     assert all("DEC-003" in e["why"] for e in listed["entries"])
-    code, data = eil.answer("tasks", "tasks", "ok, except T005", "--all-except", "T005", digest=listed["digest"])
+    code, data = eil.answer(
+        "tasks", "tasks", "ok, except T005", "--all-except", "T005", digest=listed["digest"]
+    )
     assert code == 0, data
-    assert [e["key"] for e in eil("review", "list", "--stage", "tasks", "--kind", "tasks")[1]["entries"]] == ["T005"]
+    assert [e["key"] for e in eil("review", "list", "--stage", "tasks", "--kind", "tasks")[1]["entries"]] == [
+        "T005"
+    ]
     edit(eil.story, "technical", "A changed reason for decision 3.", "Another reason for decision 3.")
     code, data = eil.answer("tasks", "tasks", "ok", "--all", digest=listed["digest"])
     assert code == 1 and data["refusals"][0]["code"] == "list-changed"

@@ -21,7 +21,13 @@ from tests.helpers.page import eil, start_page
 
 pytestmark = pytest.mark.scenario
 
-ANSWERS = [("accept", None), ("accept", None), ("except", "Name the pairs this applies to."), ("question", "Why this order?"), ("accept", None)]
+ANSWERS = [
+    ("accept", None),
+    ("accept", None),
+    ("except", "Name the pairs this applies to."),
+    ("question", "Why this order?"),
+    ("accept", None),
+]
 
 
 def body(root: Path, key: str, disposition: str, comment: str | None) -> dict[str, Any]:
@@ -47,13 +53,19 @@ def test_b39_return_to_chat_and_act_on_the_answers(tmp_path: Path, monkeypatch: 
         code, current = eil(root, "review", "list", "--current")
         assert code == 0 and current["current"]["stage"] == "functional"
         last = {a["key"]: a for a in current["last_answers"]}
-        assert last[keys[2]]["disposition"] == "except" and last[keys[2]]["comment"] == "Name the pairs this applies to."
+        assert (
+            last[keys[2]]["disposition"] == "except"
+            and last[keys[2]]["comment"] == "Name the pairs this applies to."
+        )
         assert last[keys[3]]["disposition"] == "question" and last[keys[3]]["comment"] == "Why this order?"
         assert {a["by"] for a in last.values()} == {"Ada Dev"}
 
         prose = next(b for b in blocks_of(Package(root).doc("functional")) if b.key == keys[2])
         text = built.story.read("functional")
-        built.story.write("functional", text.replace(prose.text, prose.text.replace("in the order they were found", "newest first")))
+        built.story.write(
+            "functional",
+            text.replace(prose.text, prose.text.replace("in the order they were found", "newest first")),
+        )
         _, _, html = page.get("/")
         listed = [e["key"] for e in eil(root, "review", "list", "--current")[1]["entries"]]
         reworked = next(k for k in listed if k.startswith("Functional Requirements#"))
@@ -61,7 +73,15 @@ def test_b39_return_to_chat_and_act_on_the_answers(tmp_path: Path, monkeypatch: 
         assert f'data-entry="{reworked}"' in html and f"Needs review: {reworked}" in html
         assert keys[3] in listed and f'data-entry="{keys[3]}"' in html
 
-        status, payload = page.post("/reopen", {"stage": "functional", "key": "FR-003", "shown": _hash(root, "FR-003"), "comment": "Phone layout?"})
+        status, payload = page.post(
+            "/reopen",
+            {
+                "stage": "functional",
+                "key": "FR-003",
+                "shown": _hash(root, "FR-003"),
+                "comment": "Phone layout?",
+            },
+        )
         assert payload["ok"] is True, payload
         _, current = eil(root, "review", "list", "--current")
         assert "FR-003" in [e["key"] for e in current["entries"]]

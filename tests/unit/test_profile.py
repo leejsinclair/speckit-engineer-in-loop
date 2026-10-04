@@ -36,7 +36,9 @@ def codes(call: Any) -> list[str]:
     return [r["code"] for r in caught.value.payload["refusals"]]
 
 
-def set_profile(story: Story, by: str = "Ada Dev", reason: str = "One screen, detailed request") -> dict[str, Any]:
+def set_profile(
+    story: Story, by: str = "Ada Dev", reason: str = "One screen, detailed request"
+) -> dict[str, Any]:
     return profile.set_profile(Package(story.root), CONFIG, "small", by=by, reason=reason)
 
 
@@ -46,17 +48,23 @@ def test_only_an_authoriser_with_a_reason_sets_it_once(story_dir: Story) -> None
     assert codes(lambda: set_profile(story_dir, reason=" ")) == ["reason-required"]
     assert "ai-approval" in codes(lambda: set_profile(story_dir, by="Claude"))
     result = set_profile(story_dir)
-    assert result["profile"]["by"] == "Ada Dev" and result["profile"]["reason"] == "One screen, detailed request"
+    assert (
+        result["profile"]["by"] == "Ada Dev" and result["profile"]["reason"] == "One screen, detailed request"
+    )
     assert codes(lambda: set_profile(story_dir)) == ["profile-active"]
 
 
 def test_withdraw_needs_an_active_profile(story_dir: Story) -> None:
     with_functional(story_dir)
-    assert codes(lambda: profile.withdraw(Package(story_dir.root), CONFIG, by="Ada Dev", reason="bigger")) == ["no-profile"]
+    assert codes(
+        lambda: profile.withdraw(Package(story_dir.root), CONFIG, by="Ada Dev", reason="bigger")
+    ) == ["no-profile"]
     set_profile(story_dir)
     profile.withdraw(Package(story_dir.root), CONFIG, by="Ada Dev", reason="it grew")
     assert profile.active(Package(story_dir.root)) is None
-    assert codes(lambda: profile.withdraw(Package(story_dir.root), CONFIG, by="Ada Dev", reason="again")) == ["no-profile"]
+    assert codes(lambda: profile.withdraw(Package(story_dir.root), CONFIG, by="Ada Dev", reason="again")) == [
+        "no-profile"
+    ]
 
 
 def wireframe(story: Story) -> Any:
@@ -84,9 +92,19 @@ def test_comprehension_asks_explain_and_apply_only(story_dir: Story, tmp_path: P
     for name in ("recognise", "trace", "evaluate"):
         assert rows[name]["status"] == "not-applicable"
         assert rows[name]["reason"].startswith("small-story profile (authorised by Ada Dev")
-    result = comprehension.record(Package(story_dir.root), CONFIG, "technical", "explain", "understood", by="Ada Dev", items=["DEC-001"])
+    result = comprehension.record(
+        Package(story_dir.root), CONFIG, "technical", "explain", "understood", by="Ada Dev", items=["DEC-001"]
+    )
     assert result["counts"]["not_applicable"] == 3 and result["state"] == "incomplete"
-    result = comprehension.record(Package(story_dir.root), CONFIG, "technical", "apply", "understood", by="Ada Dev", items=[rows["apply"]["target"]])
+    result = comprehension.record(
+        Package(story_dir.root),
+        CONFIG,
+        "technical",
+        "apply",
+        "understood",
+        by="Ada Dev",
+        items=[rows["apply"]["target"]],
+    )
     assert result["state"] == "complete", "two answers complete the check under the profile"
 
 
@@ -110,7 +128,9 @@ def test_the_derived_list_needs_the_profile_and_is_the_union(drafted: Story) -> 
     union = [
         e.key
         for stage in ("ai-spec", "plan", "tasks")
-        for e in reviews.build_list(Package(reference_story.root), stage, "inferred", session_view=False).entries
+        for e in reviews.build_list(
+            Package(reference_story.root), stage, "inferred", session_view=False
+        ).entries
     ]
     assert union and sorted(e.key for e in combined.entries) == sorted(union)
     assert {e.extra["stage"] for e in combined.entries} <= {"ai-spec", "plan", "tasks"}
@@ -118,14 +138,23 @@ def test_the_derived_list_needs_the_profile_and_is_the_union(drafted: Story) -> 
 
 def enter(story: Story, command: str) -> tuple[int, Any]:
     out = io.StringIO()
-    code = cli.main(["enter", command, "--json", "--feature-dir", str(story.root)], cwd=story.root, env={}, stdout=out, stderr=io.StringIO())
+    code = cli.main(
+        ["enter", command, "--json", "--feature-dir", str(story.root)],
+        cwd=story.root,
+        env={},
+        stdout=out,
+        stderr=io.StringIO(),
+    )
     return code, json.loads(out.getvalue())
 
 
 def test_plan_and_task_entry_proceed_under_the_recorded_override(reference_story: Story) -> None:
     result = set_profile(reference_story)
     override = result["override"]
-    assert override["criterion"] == "unreviewed-ai-content" and override["scope"] == ["enter plan", "enter tasks"]
+    assert override["criterion"] == "unreviewed-ai-content" and override["scope"] == [
+        "enter plan",
+        "enter tasks",
+    ]
     assert override["by"] == "Ada Dev" and override["basis"] == "small-story profile"
     for command in ("plan", "tasks"):
         result = handoff.enter(Package(reference_story.root), command)
@@ -138,7 +167,16 @@ def test_implementation_waits_for_the_derived_list(drafted: Story) -> None:
     assert "unreviewed-ai-content" in codes(lambda: handoff.enter(Package(reference_story.root), "implement"))
     listed = reviews.build_list(Package(reference_story.root), "derived", "inferred")
     assert listed.entries
-    reviews.answer(Package(reference_story.root), CONFIG, "derived", "inferred", digest=listed.digest, by="Ada Dev", reply="ok", all_=True)
+    reviews.answer(
+        Package(reference_story.root),
+        CONFIG,
+        "derived",
+        "inferred",
+        digest=listed.digest,
+        by="Ada Dev",
+        reply="ok",
+        all_=True,
+    )
     assert reviews.build_list(Package(reference_story.root), "derived", "inferred").entries == []
     try:
         handoff.enter(Package(reference_story.root), "implement")
@@ -151,7 +189,9 @@ def test_status_shows_the_override_and_withdrawal_shows_it_withdrawn(reference_s
     override = set_profile(reference_story)["override"]
     report = overview.status(Package(reference_story.root), template)
     assert override["id"] in report["outstanding"]["overrides"]
-    assert report["profile"]["by"] == "Ada Dev" and report["profile"]["reason"] == "One screen, detailed request"
+    assert (
+        report["profile"]["by"] == "Ada Dev" and report["profile"]["reason"] == "One screen, detailed request"
+    )
     rendered = overview.render(Package(reference_story.root), template, "T", "Ada Dev")
     assert "Small-story profile" in rendered and "unreviewed-ai-content" in rendered
     profile.withdraw(Package(reference_story.root), CONFIG, by="Ada Dev", reason="it grew")
@@ -159,7 +199,9 @@ def test_status_shows_the_override_and_withdrawal_shows_it_withdrawn(reference_s
     assert override["id"] not in report["outstanding"]["overrides"]
     assert report["profile"]["withdrawn"]["reason"] == "it grew"
     assert "withdrawn" in overview.render(Package(reference_story.root), template, "T", "Ada Dev")
-    assert codes(lambda: reviews.build_list(Package(reference_story.root), "derived", "inferred")) == ["no-profile"]
+    assert codes(lambda: reviews.build_list(Package(reference_story.root), "derived", "inferred")) == [
+        "no-profile"
+    ]
 
 
 def test_an_approval_under_the_profile_keeps_it_after_withdrawal(story_dir: Story, tmp_path: Path) -> None:
@@ -170,10 +212,29 @@ def test_an_approval_under_the_profile_keeps_it_after_withdrawal(story_dir: Stor
     story_dir.write("requirements", with_record_sections(requirements_doc()))
     set_profile(story_dir)
     judged = tmp_path / "j.json"
-    judged.write_text(json.dumps({"stage": "requirements", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ("REQ-G01", "REQ-G11", "REQ-G12", "REQ-G13")]}))
+    judged.write_text(
+        json.dumps(
+            {
+                "stage": "requirements",
+                "judgments": [
+                    {"id": i, "status": "met", "reason": "ok"}
+                    for i in ("REQ-G01", "REQ-G11", "REQ-G12", "REQ-G13")
+                ],
+            }
+        )
+    )
     check_stage(Package(story_dir.root), "requirements", judgments_path=judged)
     listed = reviews.build_list(Package(story_dir.root), "requirements", "inferred")
-    reviews.answer(Package(story_dir.root), CONFIG, "requirements", "inferred", digest=listed.digest, by="Ada Dev", reply="ok", all_=True)
+    reviews.answer(
+        Package(story_dir.root),
+        CONFIG,
+        "requirements",
+        "inferred",
+        digest=listed.digest,
+        by="Ada Dev",
+        reply="ok",
+        all_=True,
+    )
     assert not blockstatus.unreviewed(Package(story_dir.root), "requirements")
     approval = records.approve(Package(story_dir.root), CONFIG, "requirements", "Ada Dev", "ok")["approval"]
     assert approval["profile"] == "small"

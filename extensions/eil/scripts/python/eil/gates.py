@@ -979,7 +979,10 @@ def _approved_ids(ctx: GateContext) -> set[str]:
     from .blockstatus import approved_ids
 
     defined = {
-        item.id for stage in APPROVED_SOURCE_STAGES if (parsed := ctx.upstream.get(stage)) for item in parsed.items
+        item.id
+        for stage in APPROVED_SOURCE_STAGES
+        if (parsed := ctx.upstream.get(stage))
+        for item in parsed.items
     }
     return approved_ids(ctx.pkg) & defined
 
@@ -1105,9 +1108,7 @@ def _check_no_ai_diagrams(ctx: GateContext) -> list[str]:
 
 # The plan's headings that derive from nothing: every administrative heading the helper writes or reads
 # (``trace.ADMINISTRATIVE_SECTIONS``, so the two cannot drift apart) and the plan's own non-derived ones.
-_PLAN_EXEMPT = frozenset(
-    normalise_name(n) for n in (*ADMINISTRATIVE_SECTIONS, "Not applicable")
-)
+_PLAN_EXEMPT = frozenset(normalise_name(n) for n in (*ADMINISTRATIVE_SECTIONS, "Not applicable"))
 _TRACES_IN_TITLE = re.compile(r"\(traces:\s*(?P<ids>[^)]*)\)")
 
 
@@ -1387,6 +1388,7 @@ CHECKS.update(
     }
 )
 
+
 def _unanswered(ctx: GateContext, stage: str, kind: str, noun: str) -> list[str]:
     from . import reviews
 
@@ -1507,7 +1509,9 @@ class GateResult:
 
     def ordered_criteria(self) -> list[CriterionResult]:
         """Unmet first, then judgment criteria, then the rest, each group in the gate's own order (FR-028)."""
-        return sorted(self.criteria, key=lambda c: 0 if c.status == "not-met" else 1 if c.kind == "judgment" else 2)
+        return sorted(
+            self.criteria, key=lambda c: 0 if c.status == "not-met" else 1 if c.kind == "judgment" else 2
+        )
 
     def summary(self) -> dict[str, int]:
         return {
@@ -1590,7 +1594,9 @@ def load_judgments(path: Path, stage: str) -> Judgments:
     return Judgments(verdicts, assessment)
 
 
-def _prior_judgments(region: dict[str, Any] | None, fingerprint: str, same_text: tuple[str, ...] = ()) -> Judgments:
+def _prior_judgments(
+    region: dict[str, Any] | None, fingerprint: str, same_text: tuple[str, ...] = ()
+) -> Judgments:
     """The AI's earlier verdicts. Each judgment verdict is kept on its own criterion-scoped basis
     (D-29), independent of what else in the document changed; the five free-text assessment lists
     are carried forward only while the whole document is unchanged, since they can reference
@@ -1766,7 +1772,11 @@ def check_stage(
     else:
         fingerprint = pkg.fingerprint(stage) or fingerprint_text(text)
     prior = pkg.record(stage, "assessment")
-    judgments = supplied if supplied is not None else _prior_judgments(prior, fingerprint, (fingerprint_text_001(text),))
+    judgments = (
+        supplied
+        if supplied is not None
+        else _prior_judgments(prior, fingerprint, (fingerprint_text_001(text),))
+    )
 
     ctx = build_context(pkg, stage, text, doc)
     criteria = evaluate(ctx, judgments)

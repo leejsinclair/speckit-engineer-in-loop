@@ -332,7 +332,9 @@ def test_b16_the_record_holds_no_question_answer_or_score(project: Path, eil: Ca
                 "--json",
             ]
         )
-    saved = json.loads((feature(project) / "eil-record.json").read_text(encoding="utf-8"))  # 003: the record file
+    saved = json.loads(
+        (feature(project) / "eil-record.json").read_text(encoding="utf-8")
+    )  # 003: the record file
     record = saved["stages"]["functional"]["comprehension"]
     assert set(record) == {"stage", "fingerprint", "taken_by", "started_at", "updated_at", "levels"}
     assert all(

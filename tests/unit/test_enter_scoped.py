@@ -131,10 +131,17 @@ def test_a_pending_clarification_blocks_only_the_tasks_tracing_to_it(story: Stor
 
 
 def test_an_ai_spec_item_without_a_source_is_a_per_item_entry(story: Story) -> None:
-    edit(story, "ai-spec", "**AIS-008**: Implement behaviour 8. (traces: FR-008)", "**AIS-008**: Implement behaviour 8.")
+    edit(
+        story,
+        "ai-spec",
+        "**AIS-008**: Implement behaviour 8. (traces: FR-008)",
+        "**AIS-008**: Implement behaviour 8.",
+    )
     result = entered(story, "plan")
     assert "AIS-008" in blocked_ids(result)
-    assert "no approved source" in " ".join(next(b for b in result["blocked"] if b["id"] == "AIS-008")["because"])
+    assert "no approved source" in " ".join(
+        next(b for b in result["blocked"] if b["id"] == "AIS-008")["because"]
+    )
 
 
 def test_enter_never_writes_a_stage_document(story: Story) -> None:

@@ -135,7 +135,10 @@ def scoped_work(package: Package) -> tuple[dict[str, list[Cause]], dict[str, lis
                         add(soft, key, Cause(f"{source} changed and was accepted"))
                     else:
                         add(hard, key, Cause(f"{source} changed", accept(source)))
-                elif statuses[known[source][0]][source].status == SETTLED and not statuses[known[source][0]][source].stale:
+                elif (
+                    statuses[known[source][0]][source].status == SETTLED
+                    and not statuses[known[source][0]][source].stale
+                ):
                     found = True
                     add(soft, key, Cause(f"{source} changed"))
             for source in block.traces:
@@ -168,12 +171,22 @@ def scoped_work(package: Package) -> tuple[dict[str, list[Cause]], dict[str, lis
             add(hard, message.split(" ", 1)[0], Cause(message, "Correct the id or remove the trace"))
     for stage in package.existing_stages():
         for key in conflicted_keys(package, stage):
-            add(hard, key, Cause("its recorded answers conflict", "A configured confirmer resolves the conflict"))
+            add(
+                hard,
+                key,
+                Cause("its recorded answers conflict", "A configured confirmer resolves the conflict"),
+            )
     from .corrections import blocked_keys
 
     for key, cr_id in blocked_keys(package).items():
         if key in known and known[key][0] in DERIVED:
-            add(hard, key, Cause(f"{cr_id} is open and corrects or reaches {key}", f"Confirm {cr_id} (/speckit-eil-accept)"))
+            add(
+                hard,
+                key,
+                Cause(
+                    f"{cr_id} is open and corrects or reaches {key}", f"Confirm {cr_id} (/speckit-eil-accept)"
+                ),
+            )
     changed = True
     while changed:
         changed = False
@@ -184,7 +197,10 @@ def scoped_work(package: Package) -> tuple[dict[str, list[Cause]], dict[str, lis
                 if source not in known or known[source][0] not in DERIVED:
                     continue
                 if source in hard:
-                    cause = Cause(f"{source} is blocked ({hard[source][0]})", f"Clear {source} first: {hard[source][0].fix}")
+                    cause = Cause(
+                        f"{source} is blocked ({hard[source][0]})",
+                        f"Clear {source} first: {hard[source][0].fix}",
+                    )
                 elif source in soft:
                     cause = Cause(f"{source} must be re-derived first", f"Re-derive {source} first")
                 else:

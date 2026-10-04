@@ -41,7 +41,9 @@ def test_a_covered_change_needs_a_summary_and_is_recorded_as_ai_drafted(referenc
 
 
 @pytest.mark.parametrize("covered", [True, False])
-def test_a_change_without_a_summary_is_refused_and_nothing_is_written(reference_story: Story, covered: bool) -> None:
+def test_a_change_without_a_summary_is_refused_and_nothing_is_written(
+    reference_story: Story, covered: bool
+) -> None:
     prepared(reference_story)
     if covered:
         decide_req1(reference_story)
@@ -101,10 +103,20 @@ def test_a_closed_correction_in_a_never_approved_stage_writes_one_entry_and_a_re
 ) -> None:
     classify(reference_story, "ai-spec", ("AIS-001", None))
     corrections.open_correction(
-        package_of(reference_story), "AIS-001", "plan", "slow", "Ada Dev", owner="ai-spec",
+        package_of(reference_story),
+        "AIS-001",
+        "plan",
+        "slow",
+        "Ada Dev",
+        owner="ai-spec",
         wording="Implement behaviour 1, quickly.",
     )
-    edit(reference_story, "ai-spec", "Implement behaviour 1.", "Implement behaviour 1, quickly. (decided: CR-001)")
+    edit(
+        reference_story,
+        "ai-spec",
+        "Implement behaviour 1.",
+        "Implement behaviour 1, quickly. (decided: CR-001)",
+    )
     classify(reference_story, "ai-spec", ("AIS-001", None))
     confirm_with(reference_story, {"AIS-001": "Made it quick."}, "ai-spec")
     assert [c["item"] for c in record(reference_story, "ai-spec")["changes"]] == ["AIS-001"]
@@ -117,7 +129,8 @@ def test_the_overview_shows_the_latest_five_changes_story_wide_newest_first(refe
     prepared(reference_story)
     pkg = package_of(reference_story)
     rows = [
-        changelog.entry(f"2026-09-2{n}T10:00:00Z", f"REQ-00{n}", f"Change {n}.", "edit", "Ada Dev") for n in range(1, 8)
+        changelog.entry(f"2026-09-2{n}T10:00:00Z", f"REQ-00{n}", f"Change {n}.", "edit", "Ada Dev")
+        for n in range(1, 8)
     ]
     from eil.provenance import _load_record, _save_record
 

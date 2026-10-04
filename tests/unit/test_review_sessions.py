@@ -28,7 +28,17 @@ def pkg(story: Story) -> Package:
 
 def entry(story: Story, key: str, reply: str = "ok", by: str = "Ada Dev", **kwargs: Any) -> dict[str, Any]:
     found = reviews.build_list(pkg(story), "requirements", "inferred")
-    return reviews.answer(pkg(story), CONFIG, "requirements", "inferred", digest=found.digest, by=by, reply=reply, entry=key, **kwargs)
+    return reviews.answer(
+        pkg(story),
+        CONFIG,
+        "requirements",
+        "inferred",
+        digest=found.digest,
+        by=by,
+        reply=reply,
+        entry=key,
+        **kwargs,
+    )
 
 
 def refused(call: Any) -> list[str]:
@@ -38,7 +48,11 @@ def refused(call: Any) -> list[str]:
 
 
 def statuses(story: Story) -> dict[str, str]:
-    return {k: i.status for k, i in blockstatus.block_statuses(pkg(story))["requirements"].items() if k.startswith("REQ-")}
+    return {
+        k: i.status
+        for k, i in blockstatus.block_statuses(pkg(story))["requirements"].items()
+        if k.startswith("REQ-")
+    }
 
 
 def acceptances(story: Story) -> list[dict[str, Any]]:
@@ -66,7 +80,9 @@ def test_a_partial_session_settles_nothing(story_dir: Story, five: list[str]) ->
     assert acceptances(story_dir) == []
 
 
-def test_the_last_answer_closes_the_session_through_the_answer_path(story_dir: Story, five: list[str]) -> None:
+def test_the_last_answer_closes_the_session_through_the_answer_path(
+    story_dir: Story, five: list[str]
+) -> None:
     for key in five:
         result = entry(story_dir, key)
     assert result["closed"] is True
@@ -80,7 +96,10 @@ def test_the_last_answer_closes_the_session_through_the_answer_path(story_dir: S
 def test_an_answer_lapses_when_its_entry_changes(story_dir: Story, five: list[str]) -> None:
     for key in five[:3]:
         entry(story_dir, key)
-    story_dir.write("requirements", story_dir.read("requirements").replace("Requirement number 2.", "Requirement number two."))
+    story_dir.write(
+        "requirements",
+        story_dir.read("requirements").replace("Requirement number 2.", "Requirement number two."),
+    )
     resumed = reviews.build_list(pkg(story_dir), "requirements", "inferred")
     assert [e.key for e in resumed.entries] == ["REQ-002", "REQ-004", "REQ-005"]
 
@@ -89,7 +108,16 @@ def test_ok_to_the_rest_accepts_what_remains_unseen(story_dir: Story, five: list
     entry(story_dir, five[0])
     entry(story_dir, five[1], reply="change this", disposition="except")
     found = reviews.build_list(pkg(story_dir), "requirements", "inferred")
-    result = reviews.answer(pkg(story_dir), CONFIG, "requirements", "inferred", digest=found.digest, by="Ada Dev", reply="ok to the rest", rest=True)
+    result = reviews.answer(
+        pkg(story_dir),
+        CONFIG,
+        "requirements",
+        "inferred",
+        digest=found.digest,
+        by="Ada Dev",
+        reply="ok to the rest",
+        rest=True,
+    )
     assert result["closed"] is True
     accs = acceptances(story_dir)
     rest = next(a for a in accs if a["reply"] == "ok to the rest")
@@ -119,13 +147,31 @@ def test_two_people_answering_one_entry_differently_is_a_conflict(story_dir: Sto
 def test_a_whole_list_answer_records_its_mode(story_dir: Story) -> None:
     with_inferred(story_dir, 9)
     found = reviews.build_list(pkg(story_dir), "requirements", "inferred")
-    reviews.answer(pkg(story_dir), CONFIG, "requirements", "inferred", digest=found.digest, by="Ada Dev", reply="ok", all_=True)
+    reviews.answer(
+        pkg(story_dir),
+        CONFIG,
+        "requirements",
+        "inferred",
+        digest=found.digest,
+        by="Ada Dev",
+        reply="ok",
+        all_=True,
+    )
     assert acceptances(story_dir)[-1]["mode"] == "summary"
 
 
 def test_a_short_whole_list_answer_records_one_at_a_time(story_dir: Story, five: list[str]) -> None:
     found = reviews.build_list(pkg(story_dir), "requirements", "inferred")
-    reviews.answer(pkg(story_dir), CONFIG, "requirements", "inferred", digest=found.digest, by="Ada Dev", reply="ok", all_=True)
+    reviews.answer(
+        pkg(story_dir),
+        CONFIG,
+        "requirements",
+        "inferred",
+        digest=found.digest,
+        by="Ada Dev",
+        reply="ok",
+        all_=True,
+    )
     assert acceptances(story_dir)[-1]["mode"] == "one-at-a-time"
 
 
@@ -133,7 +179,11 @@ def test_the_session_is_held_in_the_record_file_by_ids_and_hashes(story_dir: Sto
     entry(story_dir, five[0])
     sessions = pkg(story_dir).story_record()["review_sessions"]
     (session,) = sessions.values()
-    assert session["stage"] == "requirements" and session["kind"] == "inferred" and session["mode"] == "one-at-a-time"
+    assert (
+        session["stage"] == "requirements"
+        and session["kind"] == "inferred"
+        and session["mode"] == "one-at-a-time"
+    )
     assert set(session["entries"]) == set(five)
     answer = session["answers"]["REQ-001"]
     assert set(answer) == {"by", "at", "disposition", "reply", "hash", "seen"}

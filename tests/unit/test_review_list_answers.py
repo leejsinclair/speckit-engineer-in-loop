@@ -19,7 +19,9 @@ from tests.helpers.page import eil
 CONFIG = Config(default_developer="Ada Dev", approvers={"functional": ["Ada Dev", "Priya QA"]})
 
 
-def page_answer(root: Path, key: str, disposition: str = "accept", comment: str | None = None, by: str = "Ada Dev") -> dict[str, Any]:
+def page_answer(
+    root: Path, key: str, disposition: str = "accept", comment: str | None = None, by: str = "Ada Dev"
+) -> dict[str, Any]:
     package = Package(root)
     listed = reviews.build_list(package, "functional", "inferred", session_view=False)
     entry = next(e for e in listed.entries if e.key == key)
@@ -42,7 +44,21 @@ def test_answers_from_the_page_and_from_chat_are_returned(review_page_story: Any
     root = review_page_story.root
     page_answer(root, "FR-001")
     page_answer(root, "FR-002", "except", comment="Say *which* pairs.")
-    code, payload = eil(root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--entry", "§Actors", "--by", "Ada Dev", "--reply", "fine")
+    code, payload = eil(
+        root,
+        "review",
+        "answer",
+        "--stage",
+        "functional",
+        "--kind",
+        "inferred",
+        "--entry",
+        "§Actors",
+        "--by",
+        "Ada Dev",
+        "--reply",
+        "fine",
+    )
     assert code == 0, payload
     found = listing(root)
     answers = {a["key"]: a for a in found["answers"]}
@@ -53,7 +69,9 @@ def test_answers_from_the_page_and_from_chat_are_returned(review_page_story: Any
     }  # fmt: skip
     assert answers["FR-001"]["via"] == "page" and answers["FR-001"]["comment"] is None
     assert answers["§Actors"]["via"] is None and answers["§Actors"]["question"] is None
-    assert sorted(e["key"] for e in found["entries"]) == sorted([review_page_story.keys["PROSE"], review_page_story.keys["TABLE"]])
+    assert sorted(e["key"] for e in found["entries"]) == sorted(
+        [review_page_story.keys["PROSE"], review_page_story.keys["TABLE"]]
+    )
 
 
 def test_no_answers_field_without_a_session(review_page_story: Any) -> None:
@@ -73,7 +91,9 @@ def close_with_a_send_back_and_a_question(built: Any) -> None:
     assert result["closed"] is True
 
 
-def test_after_the_session_closes_last_answers_hold_the_send_backs_and_questions(review_page_story: Any) -> None:
+def test_after_the_session_closes_last_answers_hold_the_send_backs_and_questions(
+    review_page_story: Any,
+) -> None:
     close_with_a_send_back_and_a_question(review_page_story)
     found = listing(review_page_story.root)
     assert "answers" not in found

@@ -252,7 +252,12 @@ def _diagram_script(value: Any) -> str | None:
     from urllib.parse import urlsplit
 
     parts = urlsplit(str(value))
-    if not isinstance(value, str) or parts.scheme != "https" or not parts.netloc or any(c in value for c in " \"'<>"):
+    if (
+        not isinstance(value, str)
+        or parts.scheme != "https"
+        or not parts.netloc
+        or any(c in value for c in " \"'<>")
+    ):
         raise ConfigError("review.diagram_script must be an https: URL, or null")
     return value
 

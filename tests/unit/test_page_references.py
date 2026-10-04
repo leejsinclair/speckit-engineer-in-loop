@@ -22,25 +22,36 @@ NONCE = "n0nce"
 
 
 def render(root: Any) -> str:
-    return pagerender.review_page(Package(root), SimpleNamespace(name="Ada Dev", token="tok", config=Config()), NONCE)
+    return pagerender.review_page(
+        Package(root), SimpleNamespace(name="Ada Dev", token="tok", config=Config()), NONCE
+    )
 
 
 def test_a_code_defined_once_links_to_its_definition_with_a_preview(review_page_story: Any) -> None:
     page = render(review_page_story.root)
-    link = re.search(r'<a class="ref" href="/doc/requirements\?t=tok#REQ-004"[^>]*>REQ-004</a><span class="preview" role="tooltip" hidden>(.*?)</span>', page, re.S)
+    link = re.search(
+        r'<a class="ref" href="/doc/requirements\?t=tok#REQ-004"[^>]*>REQ-004</a><span class="preview" role="tooltip" hidden>(.*?)</span>',
+        page,
+        re.S,
+    )
     assert link, "REQ-004 links to its definition in the Requirements"
     assert "A flagged pair shows both customers side by side." in link.group(1)
 
 
 def test_an_undefined_or_duplicated_code_carries_the_error_mark(review_page_story: Any) -> None:
     page = render(review_page_story.root)
-    assert re.search(r'<span class="ref-error" title="REQ-099 is not defined in this story">REQ-099</span>', page)
+    assert re.search(
+        r'<span class="ref-error" title="REQ-099 is not defined in this story">REQ-099</span>', page
+    )
     assert re.search(r'<span class="ref-error" title="DEC-002 is defined 2 times[^"]*">DEC-002</span>', page)
 
 
 def test_a_code_defined_in_the_same_document_links_within_the_page(review_page_story: Any) -> None:
     text = review_page_story.story.read("functional")
-    review_page_story.story.write("functional", text.replace("Two customers", "Per FR-002, two customers") if "Two customers" in text else text)
+    review_page_story.story.write(
+        "functional",
+        text.replace("Two customers", "Per FR-002, two customers") if "Two customers" in text else text,
+    )
     page = render(review_page_story.root)
     assert '<a class="ref" href="#FR-001"' in page or "FR-001" in page
 

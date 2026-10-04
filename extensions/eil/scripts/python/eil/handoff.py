@@ -68,7 +68,11 @@ def ai_spec_refusals(pkg: Package) -> list[Refusal]:
 def _never_approved(pkg: Package) -> list[Refusal]:
     """``stage-not-approved`` only for a stage that has never been approved; one that needs re-review is
     handled item by item."""
-    return [r for r in prior_stage_refusals(pkg, "plan") if pkg.state(_stage_named(r.message)).state != "needs-re-review"]
+    return [
+        r
+        for r in prior_stage_refusals(pkg, "plan")
+        if pkg.state(_stage_named(r.message)).state != "needs-re-review"
+    ]
 
 
 def _stage_named(message: str) -> str:
@@ -82,7 +86,9 @@ def _sourceless(pkg: Package) -> dict[str, list[Cause]]:
     out: dict[str, list[Cause]] = {}
     for finding in check_stage(pkg, "ai-spec", write=False).findings:
         if finding.code == "ai-spec-not-traceable":
-            out.setdefault(finding.where, []).append(Cause(finding.message, "Give it an approved source, or remove it"))
+            out.setdefault(finding.where, []).append(
+                Cause(finding.message, "Give it an approved source, or remove it")
+            )
     return out
 
 
@@ -99,7 +105,10 @@ def _dependants(pkg: Package, roots: dict[str, list[Cause]]) -> dict[str, list[C
         for key, traces in edges.items():
             for source in traces:
                 if source in out:
-                    cause = Cause(f"{source} is blocked ({out[source][0]})", f"Clear {source} first: {out[source][0].fix}")
+                    cause = Cause(
+                        f"{source} is blocked ({out[source][0]})",
+                        f"Clear {source} first: {out[source][0].fix}",
+                    )
                     if str(cause) not in out.setdefault(key, []):
                         out[key].append(cause)
                         changed = True
@@ -119,24 +128,35 @@ def _task_blocks(pkg: Package) -> list[Any]:
     return [b for b in blocks_of(pkg.doc("tasks")) if b.kind == "task"] if pkg.exists("tasks") else []
 
 
-def _work_refusals(pkg: Package, task: str | None, blocked: dict[str, list[Cause]], rederive: dict[str, list[Cause]]) -> list[Refusal]:
+def _work_refusals(
+    pkg: Package, task: str | None, blocked: dict[str, list[Cause]], rederive: dict[str, list[Cause]]
+) -> list[Refusal]:
     tasks = _task_blocks(pkg)
     if task is not None:
         if task not in {t.key for t in tasks}:
-            return [Refusal("unknown-item", f"{task} is not a task in tasks.md", "Name a task id from tasks.md")]
+            return [
+                Refusal("unknown-item", f"{task} is not a task in tasks.md", "Name a task id from tasks.md")
+            ]
         if task in blocked:
             causes = blocked[task]
             fixes = "; ".join(dict.fromkeys(c.fix for c in causes if c.fix))
             return [Refusal("work-blocked", f"{task} is blocked: " + "; ".join(causes), fixes)]
         if task in rederive:
-            return [Refusal("work-blocked", f"{task} must be re-derived first: " + "; ".join(rederive[task]), f"Re-derive {task}")]
+            return [
+                Refusal(
+                    "work-blocked",
+                    f"{task} must be re-derived first: " + "; ".join(rederive[task]),
+                    f"Re-derive {task}",
+                )
+            ]
         return []
     open_tasks = [t.key for t in tasks if not staleness.is_ticked(t)]
     if open_tasks and all(t in blocked or t in rederive for t in open_tasks):
         return [
             Refusal(
                 "work-blocked",
-                "every open task is blocked: " + ", ".join(f"{t} ({(blocked.get(t) or rederive[t])[0]})" for t in open_tasks[:6]),
+                "every open task is blocked: "
+                + ", ".join(f"{t} ({(blocked.get(t) or rederive[t])[0]})" for t in open_tasks[:6]),
                 "; ".join(dict.fromkeys(c.fix for t in open_tasks for c in blocked.get(t, []) if c.fix)),
             )
         ]
@@ -226,7 +246,11 @@ def enter(
     if refusals:
         raise refuse(*refusals)
     text = f"May proceed with {command}"
-    held = [t.key for t in _task_blocks(pkg) if t.key in blocked and not staleness.is_ticked(t)] if command == "implement" and task is None else []
+    held = (
+        [t.key for t in _task_blocks(pkg) if t.key in blocked and not staleness.is_ticked(t)]
+        if command == "implement" and task is None
+        else []
+    )
     if held:
         text += " except " + ", ".join(held)
     text += "."

@@ -61,7 +61,9 @@ def draft_ai_spec() -> str:
             target = "DEC-002" if n in DEC2_RESTATERS else TARGETS[(n - 1) % 12]
             lines.append(f"**AIS-{n:03d}**: Implement behaviour {n}. (traces: {target})")
     lines += [f"**{key}**: A thing the AI decided on its own." for key in UNCITED]
-    return ai_spec_doc({**{name: None for name in AIS_SECTIONS}, "Functional Requirements": "\n\n".join(lines)})
+    return ai_spec_doc(
+        {**{name: None for name in AIS_SECTIONS}, "Functional Requirements": "\n\n".join(lines)}
+    )
 
 
 @pytest.fixture
@@ -102,19 +104,44 @@ def test_b21_review_effort_follows_provenance(eil: Driver) -> None:
     assert next(e for e in listed["entries"] if e["key"] == "AIS-007")["why"] == "adds a retry policy"
 
     # 3: a tag added by hand changes no status, and sync removes it
-    story.write("ai-spec", story.read("ai-spec").replace("Retry each failed analysis three times. (traces: DEC-002)", "Retry each failed analysis three times. (traces: DEC-002) [ai-draft]"))
+    story.write(
+        "ai-spec",
+        story.read("ai-spec").replace(
+            "Retry each failed analysis three times. (traces: DEC-002)",
+            "Retry each failed analysis three times. (traces: DEC-002) [ai-draft]",
+        ),
+    )
     assert eil.statuses("ai-spec") == statuses
     assert eil("sync")[0] == 0
     assert "[ai-draft]" not in story.read("ai-spec")
     assert tagged(eil) == INFERRED and eil.statuses("ai-spec") == statuses
 
     # 4: a task tracing to AIS-007 is blocked; others proceed
-    edit(story, "tasks", "T011 Build part 11 in src/part11.py (traces: AIS-011)", "T011 Build part 11 in src/part11.py (traces: AIS-007)")
+    edit(
+        story,
+        "tasks",
+        "T011 Build part 11 in src/part11.py (traces: AIS-011)",
+        "T011 Build part 11 in src/part11.py (traces: AIS-007)",
+    )
     cli._persist_adoption(package_of(story))
     for stage in ("plan", "tasks", "verification"):
         listed = eil("review", "list", "--stage", stage, "--kind", "unknown-currency")[1]
         if listed["entries"]:
-            eil("review", "answer", "--stage", stage, "--kind", "unknown-currency", "--digest", listed["digest"], "--reply", "ok", "--by", "Ada Dev", "--all")
+            eil(
+                "review",
+                "answer",
+                "--stage",
+                stage,
+                "--kind",
+                "unknown-currency",
+                "--digest",
+                listed["digest"],
+                "--reply",
+                "ok",
+                "--by",
+                "Ada Dev",
+                "--all",
+            )
     code, data = eil("enter", "implement", "--task", "T011")
     assert code == 1 and data["refusals"][0]["code"] == "work-blocked"
     assert "AIS-007" in data["refusals"][0]["message"]
@@ -132,11 +159,28 @@ def test_b21_review_effort_follows_provenance(eil: Driver) -> None:
     # 6: edit DEC-002; the restated blocks citing it become source-changed, the others stay settled
     edit(story, "technical", "Reason for decision 2.", "A changed reason for decision 2.")
     statuses = eil.statuses("ai-spec")
-    assert {k for k, s in statuses.items() if s == "source-changed"} == {"AIS-007", "AIS-013", "AIS-014", "AIS-015", "AIS-016"}
+    assert {k for k, s in statuses.items() if s == "source-changed"} == {
+        "AIS-007",
+        "AIS-013",
+        "AIS-014",
+        "AIS-015",
+        "AIS-016",
+    }
     assert statuses["AIS-001"] == "settled"
 
     # 7: anyone may reclassify a restated block as inferred, recorded with the name
-    code, data = eil("blocks", "reclassify", "--stage", "ai-spec", "--block", "AIS-001", "--to", "inferred", "--by", "Sam QA")
+    code, data = eil(
+        "blocks",
+        "reclassify",
+        "--stage",
+        "ai-spec",
+        "--block",
+        "AIS-001",
+        "--to",
+        "inferred",
+        "--by",
+        "Sam QA",
+    )
     assert code == 0, data
     assert eil.statuses("ai-spec")["AIS-001"] == "needs-review"
     assert "Sam QA" in json.dumps(package_of(story).record("ai-spec", "provenance"))

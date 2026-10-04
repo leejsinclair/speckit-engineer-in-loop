@@ -121,6 +121,8 @@ def command_key(args: argparse.Namespace) -> str:
     if action == "serve" and (getattr(args, "status", False) or getattr(args, "stop", False)):
         return f"review serve --{'status' if args.status else 'stop'}"
     return f"{args.command} {action}" if action else args.command
+
+
 ENTER_COMMANDS = handoff.ENTER_COMMANDS
 # Stages whose document has a compatibility alias, created only after the document (FR-049).
 ALIAS_STAGES = ("ai-spec", "plan", "tasks")
@@ -208,7 +210,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     p.add_argument("--chain", action="store_true")
     p.add_argument("--judgments", metavar="PATH")
     p.add_argument("--strict", action="store_true")
-    p.add_argument("--full", action="store_true", help="list every criterion, including the met structural ones")
+    p.add_argument(
+        "--full", action="store_true", help="list every criterion, including the met structural ones"
+    )
 
     p = add("stage-init", "create a stage's document from its template")
     p.add_argument("stage")
@@ -281,7 +285,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage")
     a.add_argument("--kind", choices=REVIEW_KINDS)
-    a.add_argument("--current", action="store_true", help="the review the page shows now (replaces --stage and --kind)")
+    a.add_argument(
+        "--current", action="store_true", help="the review the page shows now (replaces --stage and --kind)"
+    )
     a.add_argument("--views", metavar="FILE")
     a = actions.add_parser("show", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
@@ -310,15 +316,23 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--disposition", choices=("accept", "except", "question"), default="accept")
     a.add_argument("--defer-reason")
     a.add_argument("--summaries", metavar="FILE")
-    a.add_argument("--shown", metavar="HASH", help="the version of the entry the person saw (refused if it changed)")
+    a.add_argument(
+        "--shown", metavar="HASH", help="the version of the entry the person saw (refused if it changed)"
+    )
     a.add_argument("--comment", metavar="TEXT", help="the person's comment, stored verbatim")
-    a.add_argument("--section", metavar="NAME", help="with --rest: accept the unanswered entries of this section only")
+    a.add_argument(
+        "--section", metavar="NAME", help="with --rest: accept the unanswered entries of this section only"
+    )
     a = actions.add_parser("serve", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--by", help="the person answering on the page (never the AI)")
-    a.add_argument("--host", default="127.0.0.1", help="the address to listen on; loopback unless the person asks")
+    a.add_argument(
+        "--host", default="127.0.0.1", help="the address to listen on; loopback unless the person asks"
+    )
     a.add_argument("--port", type=int, help="the port (default: the first free one from 8100)")
-    a.add_argument("--public-name", metavar="NAME", help="another host name the page answers to, when not on loopback")
+    a.add_argument(
+        "--public-name", metavar="NAME", help="another host name the page answers to, when not on loopback"
+    )
     a.add_argument("--idle-minutes", type=int, metavar="M", help="stop after this many minutes unused")
     which = a.add_mutually_exclusive_group()
     which.add_argument("--status", action="store_true", help="is a page running for this story, and where")
@@ -344,7 +358,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a = actions.add_parser("list", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
-    a.add_argument("--status", choices=("settled", "needs-review", "source-changed", "stale", "unknown-currency"))
+    a.add_argument(
+        "--status", choices=("settled", "needs-review", "source-changed", "stale", "unknown-currency")
+    )
     a = actions.add_parser("classify", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
@@ -556,7 +572,9 @@ def _branch_guard(
     branch = targeting.current_branch(project)
     start: dict[str, Any] = {"at": utc_now(), "branch": branch}
     if branch is None:
-        start["note"] = "no git branch is checked out (no repository, or a detached HEAD), so none was compared"
+        start["note"] = (
+            "no git branch is checked out (no repository, or a detached HEAD), so none was compared"
+        )
         return start
     if targeting.branch_expected(branch, directory.name, config.main_branches):
         return start
@@ -576,11 +594,21 @@ def _branch_guard(
     refusals = []
     if not by or is_ai_actor(by):
         refusals.append(
-            Refusal("ai-approval", "a person confirms the branch, never the AI", "Ask the developer", question=question)
+            Refusal(
+                "ai-approval",
+                "a person confirms the branch, never the AI",
+                "Ask the developer",
+                question=question,
+            )
         )
     if not reply:
         refusals.append(
-            Refusal("reply-required", "the confirmation needs the person's reply", "Pass their words with --reply", question=question)
+            Refusal(
+                "reply-required",
+                "the confirmation needs the person's reply",
+                "Pass their words with --reply",
+                question=question,
+            )
         )
     if refusals:
         raise refuse(*refusals)
@@ -729,7 +757,9 @@ REVIEW_KINDS = (
 )  # fmt: skip
 
 
-def _read_keyed(path: str, stage: str, what: str, rows: str, value: str, kind: str | None = None) -> dict[str, str]:
+def _read_keyed(
+    path: str, stage: str, what: str, rows: str, value: str, kind: str | None = None
+) -> dict[str, str]:
     """A ``--views`` or ``--summaries`` file: ``{"stage", rows: [{"key", value}]}`` as ``{key: value}``."""
     import json
 
@@ -740,7 +770,9 @@ def _read_keyed(path: str, stage: str, what: str, rows: str, value: str, kind: s
     if not isinstance(data, dict) or data.get("stage") != stage or (kind and data.get("kind", kind) != kind):
         raise usage_error(f"{what} file {path} is not for stage {stage}" + (f" kind {kind}" if kind else ""))
     found = data.get(rows)
-    if not isinstance(found, list) or not all(isinstance(r, dict) and "key" in r and value in r for r in found):
+    if not isinstance(found, list) or not all(
+        isinstance(r, dict) and "key" in r and value in r for r in found
+    ):
         raise usage_error(f'{what} file {path} needs "{rows}": [{{"key", "{value}"}}]')
     return {str(r["key"]): str(r[value]) for r in found}
 
@@ -771,7 +803,9 @@ def _review_list(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _list_payload(listed: reviews.ReviewList) -> dict[str, Any]:
-    lines = [f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose}, {listed.mode})"]
+    lines = [
+        f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose}, {listed.mode})"
+    ]
     if listed.session:
         lines.append(f"  {listed.session['answered']} answered already; these remain:")
     for group in listed.groups():
@@ -788,12 +822,24 @@ def _review_answer(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     _persist_adoption(package)
     package = ctx.package()
     summaries = (
-        _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary") if args.summaries else None
+        _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary")
+        if args.summaries
+        else None
     )
     per_entry = args.entry is not None or args.rest
-    if not (per_entry or args.all_ or args.all_except is not None or args.reopen is not None or args.question is not None):
+    if not (
+        per_entry
+        or args.all_
+        or args.all_except is not None
+        or args.reopen is not None
+        or args.question is not None
+    ):
         raise usage_error("give one of --all, --all-except, --question, --reopen, --entry, --rest")
-    if args.question is not None and not per_entry and (args.all_ or args.all_except is not None or args.reopen is not None):
+    if (
+        args.question is not None
+        and not per_entry
+        and (args.all_ or args.all_except is not None or args.reopen is not None)
+    ):
         raise usage_error("--question names entries alone, or is the question text with --entry or --rest")
     if args.section is not None and not args.rest:
         raise usage_error("--section is given with --rest")
@@ -877,7 +923,8 @@ def _blocks(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     rows = []
     for info in blockstatus.block_statuses(package).get(args.stage, {}).values():
         if args.status and not (
-            info.status == args.status or (args.status == "stale" and (info.stale or info.status == "source-changed"))
+            info.status == args.status
+            or (args.status == "stale" and (info.stale or info.status == "source-changed"))
         ):
             continue
         row = {"key": info.key, "class": info.klass, "status": info.status}
@@ -908,10 +955,17 @@ def _review(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         _persist_adoption(package)
         package = ctx.package()
         summaries = (
-            _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary") if args.summaries else None
+            _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary")
+            if args.summaries
+            else None
         )
         result = reviews.confirm(
-            package, _config(ctx, package), args.stage, by=args.by, confirmation=args.confirmation, summaries=summaries
+            package,
+            _config(ctx, package),
+            args.stage,
+            by=args.by,
+            confirmation=args.confirmation,
+            summaries=summaries,
         )
         _regenerate_overview(ctx, package)
         return result
@@ -1266,7 +1320,13 @@ def _locked(ctx: Context, args: argparse.Namespace, handler: Handler) -> dict[st
     refuses ``record-busy`` before anything is read for modification."""
     key = command_key(args)
     directory = ctx.target.directory if ctx.target is not None else None
-    if COMMAND_KINDS.get(key, WRITES) != WRITES or key in UNLOCKED or ctx.quiet or directory is None or not directory.is_dir():
+    if (
+        COMMAND_KINDS.get(key, WRITES) != WRITES
+        or key in UNLOCKED
+        or ctx.quiet
+        or directory is None
+        or not directory.is_dir()
+    ):
         return handler(ctx, args)
     from .recordfile import record_lock
 

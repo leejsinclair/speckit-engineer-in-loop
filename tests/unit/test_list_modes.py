@@ -17,12 +17,16 @@ from eil.package import Package
 from tests.conftest import files_snapshot
 from tests.helpers.package import Story, functional_doc, requirements_doc, with_record_sections
 
-CONFIG = Config(default_developer="Ada Dev", approvers={"requirements": ["Ada Dev"], "functional": ["Ada Dev"]})
+CONFIG = Config(
+    default_developer="Ada Dev", approvers={"requirements": ["Ada Dev"], "functional": ["Ada Dev"]}
+)
 
 
 def with_inferred(story: Story, count: int) -> list[str]:
     """Requirements whose only unreviewed blocks are ``count`` REQ items; returns their ids."""
-    items = "\n\n".join(f"**REQ-{n:03d}**: Requirement number {n}. It has a second sentence." for n in range(1, count + 1))
+    items = "\n\n".join(
+        f"**REQ-{n:03d}**: Requirement number {n}. It has a second sentence." for n in range(1, count + 1)
+    )
     story.write("requirements", requirements_doc({"Desired Outcome": items}))
     package = Package(story.root)
     record = blockstatus.adopt(package, "requirements")
@@ -70,7 +74,10 @@ def test_entries_carry_a_short_deterministic_summary(story_dir: Story) -> None:
     long = "word " * 60
     assert len(reviews.summarise(f"**REQ-009**: {long}")) <= 120
     assert reviews.summarise("A first sentence. A second.") == "A first sentence."
-    assert reviews.summarise("**FR-001**: The system shall flag duplicates. (traces: REQ-001)") == "The system shall flag duplicates."
+    assert (
+        reviews.summarise("**FR-001**: The system shall flag duplicates. (traces: REQ-001)")
+        == "The system shall flag duplicates."
+    )
 
 
 def test_entries_are_grouped_by_section(story_dir: Story) -> None:
@@ -129,7 +136,11 @@ def test_no_list_holds_a_settled_restated_or_adopted_block(legacy_upgrade: Story
             for entry in reviews.build_list(package, stage, kind).entries:
                 for key in entry.members or [entry.key]:
                     info = statuses[stage].get(key)
-                    assert info is not None and info.status not in ("settled", "settled-pending"), (stage, kind, key)
+                    assert info is not None and info.status not in ("settled", "settled-pending"), (
+                        stage,
+                        kind,
+                        key,
+                    )
         changed = {r.id for r in provenance.change_rows(package, stage)}
         for entry in reviews.build_list(package, stage, "changes").entries:
             assert entry.key.startswith("legacy:") or entry.key in changed, (stage, entry.key)

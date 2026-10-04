@@ -30,7 +30,9 @@ class Page:
         parts = urlsplit(self.address)
         return f"{parts.scheme}://{parts.netloc}"
 
-    def call(self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None) -> tuple[int, dict[str, str], str]:
+    def call(
+        self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None
+    ) -> tuple[int, dict[str, str], str]:
         return call(method, self.origin + path, body, headers)
 
     def post(self, path: str, body: Any, **extra: str) -> tuple[int, Any]:

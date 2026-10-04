@@ -24,7 +24,10 @@ class BlockTest(unittest.TestCase):
 
     def test_paragraphs_and_emphasis(self):
         out = render("Some **bold** and *italic* and _under_ text.\nSame paragraph.\n\nNext.")
-        self.assertIn("<p>Some <strong>bold</strong> and <em>italic</em> and <em>under</em> text.\nSame paragraph.</p>", out)
+        self.assertIn(
+            "<p>Some <strong>bold</strong> and <em>italic</em> and <em>under</em> text.\nSame paragraph.</p>",
+            out,
+        )
         self.assertIn("<p>Next.</p>", out)
 
     def test_links_and_inline_code(self):
@@ -64,7 +67,9 @@ class BlockTest(unittest.TestCase):
         self.assertIn('<pre class="mermaid-src">flowchart LR\n  A --&gt; B</pre>', out)
 
     def test_mermaid_in_a_tooltip_becomes_a_note(self):
-        out = specview.render_markdown("```mermaid\nflowchart LR\n```\n", specview.RenderContext(tooltip=True))
+        out = specview.render_markdown(
+            "```mermaid\nflowchart LR\n```\n", specview.RenderContext(tooltip=True)
+        )
         self.assertIn("diagram-note", out)
         self.assertNotIn("mermaid-src", out)
 
@@ -104,21 +109,37 @@ class HiddenContentTest(unittest.TestCase):
 
 class PageCasesTest(unittest.TestCase):
     def test_raw_html_in_markdown_is_rendered_as_text(self):
-        out = render('A <img src=x onerror="alert(1)"> and <b>bold</b> and <a href="javascript:x">link</a>.\n')
+        out = render(
+            'A <img src=x onerror="alert(1)"> and <b>bold</b> and <a href="javascript:x">link</a>.\n'
+        )
         self.assertNotIn("<img", out)
         self.assertNotIn("<b>", out)
-        self.assertNotIn("<a href=\"javascript", out)
+        self.assertNotIn('<a href="javascript', out)
         self.assertIn("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;", out)
 
     def test_eil_regions_are_dropped_whatever_their_name(self):
-        out = render("Keep.\n<!-- eil:begin provenance -->\n```json\n{\"secret\": 1}\n```\n<!-- eil:end provenance -->\nAfter.\n")
+        out = render(
+            'Keep.\n<!-- eil:begin provenance -->\n```json\n{"secret": 1}\n```\n<!-- eil:end provenance -->\nAfter.\n'
+        )
         self.assertNotIn("secret", out)
         self.assertIn("After.", out)
 
     def test_safe_href_refuses_javascript_and_data(self):
-        for href in ("javascript:alert(1)", "JavaScript:alert(1)", " javascript:alert(1)", "data:text/html,<b>x</b>", "vbscript:x"):
+        for href in (
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            " javascript:alert(1)",
+            "data:text/html,<b>x</b>",
+            "vbscript:x",
+        ):
             self.assertEqual(specview.safe_href(href), "#", href)
-        for href in ("plan.md", "#REQ-004", "https://example.org/x", "mailto:a@example.org", "/doc/requirements"):
+        for href in (
+            "plan.md",
+            "#REQ-004",
+            "https://example.org/x",
+            "mailto:a@example.org",
+            "/doc/requirements",
+        ):
             self.assertEqual(specview.safe_href(href), href)
 
     def test_an_item_anchor_is_its_id(self):

@@ -112,7 +112,17 @@ TASKS = [
     for n in range(1, 13)
 ]
 
-EVIDENCE_TARGETS = ["REQ-001", "REQ-002", "FR-001", "FR-002", "FR-003", "NFR-001", "ART-001", "ART-004", "ART-007"]
+EVIDENCE_TARGETS = [
+    "REQ-001",
+    "REQ-002",
+    "FR-001",
+    "FR-002",
+    "FR-003",
+    "NFR-001",
+    "ART-001",
+    "ART-004",
+    "ART-007",
+]
 
 
 def build(root: Path) -> Story:
@@ -136,4 +146,3 @@ def build(root: Path) -> Story:
     rows = [evidence_row(n, t) for n, t in enumerate(EVIDENCE_TARGETS, 1)]
     story.write("verification", verification_doc(rows, open_tasks=[f"T{n:03d}" for n in range(7, 13)]))
     return story
-

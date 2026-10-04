@@ -62,7 +62,9 @@ def approve_completion(story: Story, by: str = "Ada Dev") -> None:
         "fingerprint": fingerprint_text(text),
         "reached": "first",
         "attestation": "Yes.",
-        "upstream": {s: fp for s in ("requirements", "functional", "technical") if (fp := package.fingerprint(s))},
+        "upstream": {
+            s: fp for s in ("requirements", "functional", "technical") if (fp := package.fingerprint(s))
+        },
         "items": {},
         "overrides_used": [],
         "review_findings": verification.finding_hashes(package),

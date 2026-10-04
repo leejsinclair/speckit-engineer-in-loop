@@ -62,7 +62,10 @@ class ReviewPageStory:
 
 
 def _items(prefix: str, numbers: range) -> str:
-    return "\n\n".join(f"**{prefix}-{n:03d}**: The system handles case {n}. It is stated in full. (traces: REQ-001)" for n in numbers)
+    return "\n\n".join(
+        f"**{prefix}-{n:03d}**: The system handles case {n}. It is stated in full. (traces: REQ-001)"
+        for n in numbers
+    )
 
 
 def _functional_sections(entries: int | None) -> dict[str, str | None]:
@@ -89,7 +92,9 @@ def _functional_sections(entries: int | None) -> dict[str, str | None]:
     return {"Functional Requirements": _items("FR", range(1, entries + 1))}
 
 
-def _mark(story: Story, stage: str, inferred: list[str], restated: dict[str, list[str]] | None = None) -> None:
+def _mark(
+    story: Story, stage: str, inferred: list[str], restated: dict[str, list[str]] | None = None
+) -> None:
     """Adopt every block of ``stage``, then mark ``inferred`` keys as inferred and ``restated`` keys
     as restating their cited items (as a classification would)."""
     from eil import blockstatus
@@ -102,7 +107,11 @@ def _mark(story: Story, stage: str, inferred: list[str], restated: dict[str, lis
     for key in inferred:
         record["blocks"][key] = {"hash": record["blocks"][key]["hash"], "class": "inferred"}
     for key, cites in (restated or {}).items():
-        record["blocks"][key] = {"hash": record["blocks"][key]["hash"], "class": "restated", "cites": {i: current[i] for i in cites}}
+        record["blocks"][key] = {
+            "hash": record["blocks"][key]["hash"],
+            "class": "restated",
+            "cites": {i: current[i] for i in cites},
+        }
     package.write_record(stage, "provenance", record)
 
 
@@ -134,7 +143,9 @@ def _approve_requirements(story: Story) -> None:
     _mark(story, "requirements", [])
 
 
-def build(root: Path, *, entries: int | None = None, changes: bool = False, templates: bool = True) -> ReviewPageStory:
+def build(
+    root: Path, *, entries: int | None = None, changes: bool = False, templates: bool = True
+) -> ReviewPageStory:
     """``root`` is the story directory; with ``templates`` its project (two levels up) gets the preset's
     templates, so a command-line write can regenerate the overview as in a real project."""
     if templates:
@@ -151,7 +162,12 @@ def build(root: Path, *, entries: int | None = None, changes: bool = False, temp
         return ReviewPageStory(story, {k: k for k in keys})
     keys = _keys(story, "functional")
     members = keys.pop("ACTORS_MEMBERS").split(",")
-    _mark(story, "functional", ["FR-001", "FR-002", keys["PROSE"], keys["TABLE"], *members], {"FR-003": ["REQ-004"]})
+    _mark(
+        story,
+        "functional",
+        ["FR-001", "FR-002", keys["PROSE"], keys["TABLE"], *members],
+        {"FR-003": ["REQ-004"]},
+    )
     return ReviewPageStory(story, keys)
 
 
@@ -176,4 +192,3 @@ def _with_changes(story: Story) -> ReviewPageStory:
     approval.pop("section_fingerprints", None)
     path.write_text(recordfile.dumps(data), encoding="utf-8")
     return ReviewPageStory(story, {"FR-001": "FR-001", "FR-002": "FR-002", "legacy": "legacy:functional"})
-

@@ -61,7 +61,9 @@ def snapshot(eil: Driver) -> dict[str, Any]:
 
 
 def test_b27_steps_1_and_2_sync_changes_nothing_that_was_settled(eil: Driver, reference_story: Story) -> None:
-    edit(reference_story, "functional", "behaviour 1 of duplicate analysis", "behaviour 1 of duplicate review")
+    edit(
+        reference_story, "functional", "behaviour 1 of duplicate analysis", "behaviour 1 of duplicate review"
+    )
     assert not any(has_region(reference_story, s) for s in (*UNCHANGED, "functional", *DERIVED))
     before = snapshot(eil)
     before_docs = {s: reference_story.read(s) for s in (*UNCHANGED, "functional", *DERIVED)}

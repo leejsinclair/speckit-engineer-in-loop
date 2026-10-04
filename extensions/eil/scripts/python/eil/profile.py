@@ -51,13 +51,23 @@ def _authority(pkg: Package, config: Config, by: str, reason: str) -> list[Refus
 
     refusals: list[Refusal] = []
     if is_ai_actor(by):
-        refusals.append(Refusal("ai-approval", f"{by!r} is the AI; only a person authorises the profile", "Ask the developer"))
+        refusals.append(
+            Refusal(
+                "ai-approval", f"{by!r} is the AI; only a person authorises the profile", "Ask the developer"
+            )
+        )
     else:
         problem = confirmer_refusal(by, authorisers_for(pkg, config), "the story", authorising=True)
         if problem:
             refusals.append(problem)
     if not (reason or "").strip():
-        refusals.append(Refusal("reason-required", "the profile needs the person's reason", "Ask why, and pass their words with --reason"))
+        refusals.append(
+            Refusal(
+                "reason-required",
+                "the profile needs the person's reason",
+                "Ask why, and pass their words with --reason",
+            )
+        )
     return refusals
 
 
@@ -69,7 +79,13 @@ def set_profile(pkg: Package, config: Config, name: str, by: str, reason: str) -
         raise refuse(Refusal("unknown-item", f"{name!r} is not a profile", f"Use one of: {', '.join(NAMES)}"))
     refusals = _authority(pkg, config, by, reason)
     if active(pkg) is not None:
-        refusals.append(Refusal("profile-active", "the small-story profile is already authorised for this story", "Withdraw it first to change it"))
+        refusals.append(
+            Refusal(
+                "profile-active",
+                "the small-story profile is already authorised for this story",
+                "Withdraw it first to change it",
+            )
+        )
     if refusals:
         raise refuse(*refusals)
     at = utc_now()
@@ -82,7 +98,14 @@ def set_profile(pkg: Package, config: Config, name: str, by: str, reason: str) -
         "reason": reason.strip(),
         "basis": "small-story profile",
     }
-    record = {"name": name, "by": by.strip(), "reason": reason.strip(), "at": at, "withdrawn": None, "override": override}
+    record = {
+        "name": name,
+        "by": by.strip(),
+        "reason": reason.strip(),
+        "at": at,
+        "withdrawn": None,
+        "override": override,
+    }
     pkg.write_story_record("profile", record)
     return {
         "ok": True,
@@ -100,7 +123,11 @@ def withdraw(pkg: Package, config: Config, by: str, reason: str) -> dict[str, An
     refusals = _authority(pkg, config, by, reason)
     found = active(pkg)
     if found is None:
-        refusals.append(Refusal("no-profile", "the small-story profile is not in force for this story", "Nothing to withdraw"))
+        refusals.append(
+            Refusal(
+                "no-profile", "the small-story profile is not in force for this story", "Nothing to withdraw"
+            )
+        )
     if refusals:
         raise refuse(*refusals)
     assert found is not None
@@ -120,4 +147,14 @@ def override(pkg: Package) -> dict[str, Any] | None:
     return found.get("override") if found is not None else None
 
 
-__all__ = ["CRITERION", "LEVELS", "SCOPE", "active", "label", "override", "recorded", "set_profile", "withdraw"]
+__all__ = [
+    "CRITERION",
+    "LEVELS",
+    "SCOPE",
+    "active",
+    "label",
+    "override",
+    "recorded",
+    "set_profile",
+    "withdraw",
+]

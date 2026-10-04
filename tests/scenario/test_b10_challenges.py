@@ -18,7 +18,20 @@ YES = "Yes, this is the behaviour we require."
 
 
 def raise_gap(eil: Callable, text: str = GAP, target: str = "FR-001"):
-    return eil(["challenge", "add", "functional", "--target", target, "--text", text, "--severity", "medium", "--json"])
+    return eil(
+        [
+            "challenge",
+            "add",
+            "functional",
+            "--target",
+            target,
+            "--text",
+            text,
+            "--severity",
+            "medium",
+            "--json",
+        ]
+    )
 
 
 def answer(eil: Callable, cid: str, response: str, by: str = "Ada Dev", *extra: str):

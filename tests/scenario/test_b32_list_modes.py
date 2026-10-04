@@ -22,7 +22,9 @@ FEATURE = "specs/001-lists"
 
 
 def listing(eil: Callable[..., EilResult], stage: str) -> dict:
-    result = eil(["review", "list", "--stage", stage, "--kind", "inferred", "--feature-dir", FEATURE, "--json"])
+    result = eil(
+        ["review", "list", "--stage", stage, "--kind", "inferred", "--feature-dir", FEATURE, "--json"]
+    )
     assert result.code == 0, result.stderr
     return result.json
 
@@ -45,7 +47,9 @@ def test_b32_list_modes(project: Path, eil: Callable[..., EilResult]) -> None:
     assert listing(eil, "requirements")["entries"] == []
 
     people = "\n\n".join(f"- **Actor {n}**: does thing {n}" for n in range(1, 13))
-    story.write("functional", with_record_sections(functional_doc({"Actors": people}), {"version": 1, "blocks": {}}))
+    story.write(
+        "functional", with_record_sections(functional_doc({"Actors": people}), {"version": 1, "blocks": {}})
+    )
     story.write("requirements", requirements_doc())
     big = listing(eil, "functional")
     keys = [e["key"] for e in big["entries"]]

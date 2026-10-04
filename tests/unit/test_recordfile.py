@@ -23,7 +23,13 @@ from tests.helpers.package import Story
 
 def run(story: Story, *argv: str) -> tuple[int, Any]:
     out = io.StringIO()
-    code = cli.main([*argv, "--json", "--feature-dir", str(story.root)], cwd=story.root, env={}, stdout=out, stderr=io.StringIO())
+    code = cli.main(
+        [*argv, "--json", "--feature-dir", str(story.root)],
+        cwd=story.root,
+        env={},
+        stdout=out,
+        stderr=io.StringIO(),
+    )
     return code, json.loads(out.getvalue()) if out.getvalue().strip() else None
 
 
@@ -52,10 +58,18 @@ def inline_story(root: Path) -> Story:
 
 
 def test_the_layout_is_sorted_two_space_json_with_a_final_newline() -> None:
-    data = {"version": 1, "story": {"start": {"branch": "main", "at": "t"}}, "stages": {"plan": {}, "functional": {"assessment": {"b": 1, "a": 2}}}}
+    data = {
+        "version": 1,
+        "story": {"start": {"branch": "main", "at": "t"}},
+        "stages": {"plan": {}, "functional": {"assessment": {"b": 1, "a": 2}}},
+    }
     text = recordfile.dumps(data)
     assert text.endswith("}\n")
-    assert json.loads(text) == {"stages": {"functional": {"assessment": {"a": 2, "b": 1}}}, "story": {"start": {"at": "t", "branch": "main"}}, "version": 1}
+    assert json.loads(text) == {
+        "stages": {"functional": {"assessment": {"a": 2, "b": 1}}},
+        "story": {"start": {"at": "t", "branch": "main"}},
+        "version": 1,
+    }
     assert text == json.dumps(json.loads(text), indent=2, sort_keys=True) + "\n"
     assert '"plan"' not in text, "a stage with no records has no key"
 

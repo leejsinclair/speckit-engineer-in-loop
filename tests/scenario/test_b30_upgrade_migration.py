@@ -30,7 +30,9 @@ def test_b30_upgrade_migration(project: Path, eil: Callable[..., EilResult], tmp
         return eil([*argv, "--feature-dir", FEATURE, "--json"])
 
     def judged(stage: str) -> dict[str, str]:
-        record = json.loads((project / FEATURE / "eil-record.json").read_text())["stages"][stage]["assessment"]
+        record = json.loads((project / FEATURE / "eil-record.json").read_text())["stages"][stage][
+            "assessment"
+        ]
         return {c["id"]: c["status"] for c in record["criteria"] if c["kind"] == "judgment"}
 
     before = {s: judged(s) for s in ("functional", "technical")}

@@ -8,7 +8,7 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["playwright", "pytest", "ruff"]
+dev = ["playwright", "pytest", "ruff==0.16.9"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

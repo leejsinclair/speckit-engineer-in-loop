@@ -284,7 +284,11 @@ def _write(
             if found["stage"] is None or stage != found["stage"] or (not any_kind and kind != found["kind"]):
                 showing = f"{found['stage']}/{found['kind']}" if found["stage"] else "no review"
                 raise refuse(
-                    Refusal("not-current", f"this page answered {stage}/{kind}, but the current review is {showing}; nothing was stored", "Reload the page")
+                    Refusal(
+                        "not-current",
+                        f"this page answered {stage}/{kind}, but the current review is {showing}; nothing was stored",
+                        "Reload the page",
+                    )
                 )
             persist_adoption(package)
             package = Package(server.story_dir)
@@ -328,7 +332,13 @@ def _name(handler: Handler, body: dict[str, Any]) -> dict[str, Any]:
     if not name:
         return {"ok": False, "error": "a name is needed"}
     if is_ai_actor(name):
-        raise refuse(Refusal("ai-approval", f"{name!r} is the AI; the page answers as a person", "Give the person's own name"))
+        raise refuse(
+            Refusal(
+                "ai-approval",
+                f"{name!r} is the AI; the page answers as a person",
+                "Give the person's own name",
+            )
+        )
     handler.server.name = name
     return {"ok": True, "name": name}
 
@@ -402,7 +412,13 @@ def _first_free(host: str) -> int:
             except OSError:
                 continue
             return port
-    raise refuse(Refusal("port-unavailable", f"no free port from {FIRST_PORT} to {LAST_PORT} on {host}", "Pass a free port with --port, or stop another page"))
+    raise refuse(
+        Refusal(
+            "port-unavailable",
+            f"no free port from {FIRST_PORT} to {LAST_PORT} on {host}",
+            "Pass a free port with --port, or stop another page",
+        )
+    )
 
 
 def make_server(
@@ -418,7 +434,13 @@ def make_server(
     """Bind the page for ``story_dir``, answering as ``by``. ``port=None`` takes the first free port
     from 8100; ``0`` lets the system choose. Refuses ``ai-approval`` and ``port-unavailable``."""
     if not by.strip() or is_ai_actor(by):
-        raise refuse(Refusal("ai-approval", f"{by!r} is the AI; the page answers as a person", "Pass the person's name with --by"))
+        raise refuse(
+            Refusal(
+                "ai-approval",
+                f"{by!r} is the AI; the page answers as a person",
+                "Pass the person's name with --by",
+            )
+        )
     if config is None:
         from .identity import load_config
 
@@ -427,9 +449,22 @@ def make_server(
     chosen = _first_free(host) if port is None else port
     server_class = _server_class(host)
     try:
-        server = server_class((host, chosen), Path(story_dir), by.strip(), public_name=public_name, idle_minutes=idle, config=config)
+        server = server_class(
+            (host, chosen),
+            Path(story_dir),
+            by.strip(),
+            public_name=public_name,
+            idle_minutes=idle,
+            config=config,
+        )
     except OSError as exc:
-        raise refuse(Refusal("port-unavailable", f"cannot listen on {host}:{chosen}: {exc.strerror or exc}", "Pass a free port with --port")) from exc
+        raise refuse(
+            Refusal(
+                "port-unavailable",
+                f"cannot listen on {host}:{chosen}: {exc.strerror or exc}",
+                "Pass a free port with --port",
+            )
+        ) from exc
     return server
 
 
@@ -441,7 +476,6 @@ def _server_class(host: str) -> type[PageServer]:
 
         return V6
     return PageServer
-
 
 
 # ---- the runtime file, and serve, status and stop (D-66)
@@ -497,11 +531,25 @@ def status(package: Package) -> dict[str, Any]:
     data = _read_runtime(path)
     if data is None:
         path.unlink(missing_ok=True)
-        return {"ok": True, "running": False, "address": None, "pid": None, "started_at": None, "text": "No review page is running for this story."}
+        return {
+            "ok": True,
+            "running": False,
+            "address": None,
+            "pid": None,
+            "started_at": None,
+            "text": "No review page is running for this story.",
+        }
     pid = int(data.get("pid") or 0)
     if _runtime_request(data, "/state") is None:
         path.unlink(missing_ok=True)
-        return {"ok": True, "running": False, "address": None, "pid": None, "started_at": None, "text": "No review page is running for this story."}
+        return {
+            "ok": True,
+            "running": False,
+            "address": None,
+            "pid": None,
+            "started_at": None,
+            "text": "No review page is running for this story.",
+        }
     return {
         "ok": True, "running": True, "address": data.get("address"), "pid": pid, "started_at": data.get("started_at"),
         "text": f"The review page is running at {data.get('address')}",
@@ -523,7 +571,12 @@ def stop(package: Package, wait: float = 5.0) -> dict[str, Any]:
     while path.exists() and time.monotonic() < deadline:
         time.sleep(0.05)
     path.unlink(missing_ok=True)
-    return {"ok": True, "stopped": True, "pid": pid, "text": "Stopped the review page. Every answer given on it is stored."}
+    return {
+        "ok": True,
+        "stopped": True,
+        "pid": pid,
+        "text": "Stopped the review page. Every answer given on it is stored.",
+    }
 
 
 def serve(
@@ -551,9 +604,16 @@ def serve(
                 f"Ask the person to reload {running['address']}, or stop it with review serve --stop",
             )
         )  # fmt: skip
-    server = make_server(story_dir, by, host=host, port=port, public_name=public_name, idle_minutes=idle_minutes, config=config)
+    server = make_server(
+        story_dir, by, host=host, port=port, public_name=public_name, idle_minutes=idle_minutes, config=config
+    )
     path = runtime_path(package)
-    record = {"story": package.root.name, "address": server.address, "pid": os.getpid(), "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    record = {
+        "story": package.root.name,
+        "address": server.address,
+        "pid": os.getpid(),
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
     handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(handle, "w", encoding="utf-8") as out:
         out.write(json.dumps(record))
@@ -574,4 +634,8 @@ def serve(
         if held is not None and held.get("pid") == os.getpid():
             path.unlink(missing_ok=True)
     reason = "idle" if server.stopped.is_set() else "stopped"
-    return {"ok": True, "stopped": reason, "text": f"The review page {'stopped after being idle' if reason == 'idle' else 'stopped'}."}
+    return {
+        "ok": True,
+        "stopped": reason,
+        "text": f"The review page {'stopped after being idle' if reason == 'idle' else 'stopped'}.",
+    }

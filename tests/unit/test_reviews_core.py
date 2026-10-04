@@ -86,7 +86,9 @@ def test_the_digest_changes_when_any_entry_hash_changes(story: Story) -> None:
 
 
 def test_ai_views_are_shown_with_the_assessment_label(story: Story) -> None:
-    listed = reviews.build_list(package_of(story), STAGE, "inferred", views={"REQ-001": "adds a retry policy"})
+    listed = reviews.build_list(
+        package_of(story), STAGE, "inferred", views={"REQ-001": "adds a retry policy"}
+    )
     view = next(e for e in listed.entries if e.key == "REQ-001").ai_view
     assert view == "AI assessment: adds a retry policy"
 
@@ -189,7 +191,13 @@ def test_question_and_reopen_from_anyone_record_the_name(story: Story) -> None:
 
 def test_rvw_numbering_continues_past_legacy_review_records(story: Story) -> None:
     text = story.read("functional")
-    legacy = {"id": "RVW-007", "stage": "functional", "by": "Ada Dev", "at": "2026-09-01T00:00:00Z", "items": []}
+    legacy = {
+        "id": "RVW-007",
+        "stage": "functional",
+        "by": "Ada Dev",
+        "at": "2026-09-01T00:00:00Z",
+        "items": [],
+    }
     story.write("functional", append_record(text, "Reviews", "review", legacy))
     assert answer(story, all_=True)["id"] == "RVW-008"
     assert answer(story, by="Priya Analyst", reply="q", question=["REQ-001"], digest=None)["id"] == "RVW-009"
@@ -273,10 +281,16 @@ def cli_run(story: Story, *argv: str) -> tuple[int, dict[str, Any]]:
     config.write_text("default_developer: Ada Dev\napprovers:\n  requirements: [Ada Dev]\n", encoding="utf-8")
     template = story.root / ".specify" / "templates" / "s00-readme-template.md"
     template.parent.mkdir(parents=True, exist_ok=True)
-    template.write_text((REPO_ROOT / "templates" / "s00-readme-template.md").read_text(encoding="utf-8"), encoding="utf-8")
+    template.write_text(
+        (REPO_ROOT / "templates" / "s00-readme-template.md").read_text(encoding="utf-8"), encoding="utf-8"
+    )
     out = io.StringIO()
     code = cli.main(
-        [*argv, "--json", "--feature-dir", str(story.root)], cwd=story.root, env={}, stdout=out, stderr=io.StringIO()
+        [*argv, "--json", "--feature-dir", str(story.root)],
+        cwd=story.root,
+        env={},
+        stdout=out,
+        stderr=io.StringIO(),
     )
     return code, json.loads(out.getvalue())
 
@@ -293,14 +307,27 @@ def test_review_list_shows_the_ai_views_with_their_label(story: Story, tmp_path:
     import json
 
     views = tmp_path / "views.json"
-    views.write_text(json.dumps({"stage": STAGE, "kind": "inferred", "views": [{"key": "UC-001", "view": "fine"}]}))
+    views.write_text(
+        json.dumps({"stage": STAGE, "kind": "inferred", "views": [{"key": "UC-001", "view": "fine"}]})
+    )
     _, out = cli_run(story, "review", "list", "--stage", STAGE, "--kind", "inferred", "--views", str(views))
     assert next(e for e in out["entries"] if e["key"] == "UC-001")["ai_view"] == "AI assessment: fine"
 
 
 def test_review_answer_records_and_refuses_through_the_cli(story: Story) -> None:
     digest = the_list(story).digest
-    args = ("review", "answer", "--stage", STAGE, "--kind", "inferred", "--by", "Ada Dev", "--reply", "ok to all.")
+    args = (
+        "review",
+        "answer",
+        "--stage",
+        STAGE,
+        "--kind",
+        "inferred",
+        "--by",
+        "Ada Dev",
+        "--reply",
+        "ok to all.",
+    )
     code, out = cli_run(story, *args, "--digest", "sha256:0", "--all")
     assert code == 1 and out["refusals"][0]["code"] == "list-changed"
     code, out = cli_run(story, *args, "--digest", digest, "--all")

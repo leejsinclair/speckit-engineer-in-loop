@@ -186,7 +186,12 @@ def collect(pkg: Package) -> Model:
     held = profiles.override(pkg)
     if held is not None:
         model.overrides.append(
-            {"id": str(held["id"]), "stage": "story", "criterion": f"{held['criterion']} ({', '.join(held['scope'])})", "by": str(held["by"])}
+            {
+                "id": str(held["id"]),
+                "stage": "story",
+                "criterion": f"{held['criterion']} ({', '.join(held['scope'])})",
+                "by": str(held["by"]),
+            }
         )
     loaded = pkg.record_file()
     if loaded.error is not None:
@@ -276,7 +281,11 @@ def _story_notes(pkg: Package) -> str:
     if start.get("branch_confirmed_by"):
         lines.append(
             f"- Started on branch {start.get('branch')}, confirmed by {start['branch_confirmed_by']}"
-            + (f' ("{start["reply"]}" to "{start["question"]}")' if start.get("reply") and start.get("question") else "")
+            + (
+                f' ("{start["reply"]}" to "{start["question"]}")'
+                if start.get("reply") and start.get("question")
+                else ""
+            )
         )
     elif start.get("branch"):
         lines.append(f"- Started on branch {start['branch']}")
@@ -328,7 +337,11 @@ def _approval_rows(model: Model) -> str:
     if not rows:
         return "none"
     return "\n".join(
-        ["| Stage | Approved by | At | Fingerprint | Comprehension | Reached |", "|---|---|---|---|---|---|", *rows]
+        [
+            "| Stage | Approved by | At | Fingerprint | Comprehension | Reached |",
+            "|---|---|---|---|---|---|",
+            *rows,
+        ]
     )
 
 
@@ -348,7 +361,9 @@ def _outstanding(model: Model) -> str:
             f"- Open questions: {_join(model.open_questions)}",
             f"- Open challenges: {_join(model.open_challenges)}",
             *(
-                [f"- Low challenges (outstanding, not blocking): {_join(sorted(c for v in model.low_challenges.values() for c in v))}"]
+                [
+                    f"- Low challenges (outstanding, not blocking): {_join(sorted(c for v in model.low_challenges.values() for c in v))}"
+                ]
                 if model.low_challenges
                 else []
             ),
@@ -437,7 +452,11 @@ def _open_tasks(pkg: Package) -> int:
 
 
 def _action(
-    kind: str, stage: str | None, command: str | None, message: str, purpose: str = "awareness",
+    kind: str,
+    stage: str | None,
+    command: str | None,
+    message: str,
+    purpose: str = "awareness",
     question: str | None = None,
 ) -> dict[str, Any]:
     out = {"kind": kind, "stage": stage, "command": command, "message": message, "purpose": purpose}
@@ -454,7 +473,12 @@ def next_action(pkg: Package, model: Model) -> dict[str, Any]:
         completion = model.states["completion"]
         if completion.state == "approved" and completion.approval:
             a = completion.approval
-            return _action("done", None, None, f"Story complete; approved by {a.get('by')} on {str(a.get('at', ''))[:10]}.")
+            return _action(
+                "done",
+                None,
+                None,
+                f"Story complete; approved by {a.get('by')} on {str(a.get('at', ''))[:10]}.",
+            )
         return _action("done", None, None, "All stages are complete.")
     state = model.states[stage]
     command = START_COMMANDS[stage]
@@ -498,7 +522,11 @@ def next_action(pkg: Package, model: Model) -> dict[str, Any]:
         from .records import APPROVAL_QUESTIONS
 
         return _action(
-            "human", stage, APPROVE_COMMAND, f"Approve {stage} with {APPROVE_COMMAND}.", "approval",
+            "human",
+            stage,
+            APPROVE_COMMAND,
+            f"Approve {stage} with {APPROVE_COMMAND}.",
+            "approval",
             question=APPROVAL_QUESTIONS.get(stage),
         )
     if stage in CRITERIA_BY_STAGE:

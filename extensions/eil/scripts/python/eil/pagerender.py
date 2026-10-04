@@ -408,12 +408,14 @@ def csp(nonce: str, diagram_origin: str | None = None) -> str:
     )
 
 
-
-
 # ---- the review page (D-62; contracts/page.md)
 
 POLL_MS = 4000  # how often the page asks for ``/state`` (D-68: at most 5 seconds)
-STAGE_LABELS = {"requirements": "Requirements", "functional": "Functional Specification", "technical": "Technical Specification"}
+STAGE_LABELS = {
+    "requirements": "Requirements",
+    "functional": "Functional Specification",
+    "technical": "Technical Specification",
+}
 LIST_LABELS = {"inferred": "blocks that need review", "changes": "changes since approval"}
 DONE = {"accept": "Accepted", "except": "Sent back", "question": "Questioned"}
 COMPLETE = "List complete. Return to the chat and say done."
@@ -421,7 +423,9 @@ NOTHING = "Nothing to answer now."
 STOPPED = "The review page has stopped; ask the agent to start it again"
 CHANGED = "This block changed; read it again before answering"
 _SECTION_HEADING = re.compile(r"^\s{0,3}(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*#*\s*$")
-_SECTION_CLAUSE = re.compile(r"\((?:traces|code|status|material|store|accepted-by|decided):[^)]*\)|\s*\[(?:ai-draft|pending-clarification)\]")
+_SECTION_CLAUSE = re.compile(
+    r"\((?:traces|code|status|material|store|accepted-by|decided):[^)]*\)|\s*\[(?:ai-draft|pending-clarification)\]"
+)
 
 
 def stage_label(stage: str | None) -> str:
@@ -457,7 +461,12 @@ def stored_text(answer: dict[str, Any]) -> str:
 
 
 def _control(
-    key: str, entry: Any, answer: dict[str, Any] | None, last: dict[str, Any] | None, disabled: bool, kind: str | None = None
+    key: str,
+    entry: Any,
+    answer: dict[str, Any] | None,
+    last: dict[str, Any] | None,
+    disabled: bool,
+    kind: str | None = None,
 ) -> str:
     """One entry's answer control (contracts/page.md "Answer control"); ``answer`` is its stored answer."""
     from .reviews import entry_question
@@ -509,7 +518,9 @@ class _Review:
     notice: str
 
 
-def _review_of(package: Any, config: Any, listed: Any = None, current: tuple[str, str] | None = None) -> _Review:
+def _review_of(
+    package: Any, config: Any, listed: Any = None, current: tuple[str, str] | None = None
+) -> _Review:
     from .reviews import current_review
 
     error = package.record_file().error
@@ -523,7 +534,11 @@ def _review_of(package: Any, config: Any, listed: Any = None, current: tuple[str
     if listed is not None:
         answers = {row["key"]: row for row in listed.answers or []}
         last = {row["key"]: row for row in listed.last_answers or []}
-    notice = f"malformed-record-file: answers are refused until the record file is repaired: {error}" if error else ""
+    notice = (
+        f"malformed-record-file: answers are refused until the record file is repaired: {error}"
+        if error
+        else ""
+    )
     return _Review(stage, kind, document, listed, answers, last, bool(error), notice)
 
 
@@ -554,13 +569,16 @@ def _head(title: str, nonce: str, metas: dict[str, str]) -> str:
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{esc(title)}</title>{tags}<style nonce=\"{esc(nonce)}\">{CSS}</style></head>"
+        f'<title>{esc(title)}</title>{tags}<style nonce="{esc(nonce)}">{CSS}</style></head>'
     )
 
 
 def message_page(text: str, nonce: str) -> str:
     """A short page with one message: never the token, never document text."""
-    return _head("Review page", nonce, {}) + f'<body><main class="message"><p>{esc(text)}</p></main></body></html>\n'
+    return (
+        _head("Review page", nonce, {})
+        + f'<body><main class="message"><p>{esc(text)}</p></main></body></html>\n'
+    )
 
 
 def _segments(package: Any, stage: str) -> list[tuple[Any, list[str]]]:
@@ -587,13 +605,19 @@ def _segments(package: Any, stage: str) -> list[tuple[Any, list[str]]]:
     return [(block, lines) for block, lines, _ in out]
 
 
-def _document(package: Any, stage: str, review: _Review | None, ctx: RenderContext, comment: bool) -> tuple[str, set[str]]:
+def _document(
+    package: Any, stage: str, review: _Review | None, ctx: RenderContext, comment: bool
+) -> tuple[str, set[str]]:
     """The document's HTML, block by block, with controls on ``review``'s entries. Returns the HTML and
     the keys it placed, so the entries left over go to the panels."""
     from .blockstatus import SETTLED, block_statuses
 
     statuses = block_statuses(package).get(stage, {})
-    on_list = {e.key: e for e in (review.listed.full if review and review.listed is not None else [])} if review and review.stage == stage else {}
+    on_list = (
+        {e.key: e for e in (review.listed.full if review and review.listed is not None else [])}
+        if review and review.stage == stage
+        else {}
+    )
     groups = {e.key[1:].casefold(): e for e in on_list.values() if e.key.startswith("§") and e.members}
     member_of = {m: e.key for e in groups.values() for m in e.members}
     disabled = review.disabled if review else False
@@ -608,7 +632,11 @@ def _document(package: Any, stage: str, review: _Review | None, ctx: RenderConte
             title = _section_title(lines[0]) if len(lines) == 1 else None
             group = groups.get(title.casefold()) if title else None
             if title and review is not None and review.listed is not None and review.stage == stage:
-                waiting = [e for e in review.listed.entries if e.section.casefold() == title.casefold() and not e.key.startswith("§")]
+                waiting = [
+                    e
+                    for e in review.listed.entries
+                    if e.section.casefold() == title.casefold() and not e.key.startswith("§")
+                ]
                 if waiting:
                     out.append(_section_rest(title, len(waiting), disabled))
             if group is not None and review is not None:
@@ -616,7 +644,14 @@ def _document(package: Any, stage: str, review: _Review | None, ctx: RenderConte
                 out.append(
                     f'<div class="section-entry listed"><p class="needs">Needs review: {esc(group.key)}</p>'
                     f'<p class="why">{esc(group.why)}</p>'
-                    + _control(group.key, group, review.answers.get(group.key), review.last.get(group.key), disabled, review.kind)
+                    + _control(
+                        group.key,
+                        group,
+                        review.answers.get(group.key),
+                        review.last.get(group.key),
+                        disabled,
+                        review.kind,
+                    )
                     + "</div>"
                 )
             continue
@@ -638,7 +673,16 @@ def _document(package: Any, stage: str, review: _Review | None, ctx: RenderConte
         parts.append(body)
         if entry is not None and review is not None:
             placed.add(block.key)
-            parts.append(_control(block.key, entry, review.answers.get(block.key), review.last.get(block.key), disabled, review.kind))
+            parts.append(
+                _control(
+                    block.key,
+                    entry,
+                    review.answers.get(block.key),
+                    review.last.get(block.key),
+                    disabled,
+                    review.kind,
+                )
+            )
         elif comment and "settled" in classes and (review is None or review.stage == stage):
             parts.append(_reopen_control(block.key, disabled))
         parts.append("</div>")
@@ -668,8 +712,10 @@ def reference_marker(package: Any, token: str, here: str) -> Any:
     def mark(code: str) -> str:
         found = index.get(code, [])
         if len(found) != 1:
-            why = f"{code} is not defined in this story" if not found else (
-                f"{code} is defined {len(found)} times: " + ", ".join(stage for stage, _ in found)
+            why = (
+                f"{code} is not defined in this story"
+                if not found
+                else (f"{code} is defined {len(found)} times: " + ", ".join(stage for stage, _ in found))
             )
             return f'<span class="ref-error" title="{esc(why)}">{esc(code)}</span>'
         stage, block = found[0]
@@ -694,7 +740,7 @@ def _diagram_credit(document: str, url: str | None) -> str:
 
 
 def _section_rest(section: str, count: int, disabled: bool) -> str:
-    """"Accept the rest of this section" on a heading with unanswered entries; the script asks to
+    """ "Accept the rest of this section" on a heading with unanswered entries; the script asks to
     confirm on the first click and sends on the second (contracts/page.md, D-70)."""
     off = " disabled" if disabled else ""
     return (
@@ -737,7 +783,14 @@ def _panels(review: _Review, placed: set[str]) -> str:
             rows.append(
                 f'<div class="blk listed panel-entry" data-key="{esc(entry.key)}" data-hash="{esc(entry.hash)}">'
                 f'<p class="needs">Needs review: {esc(entry.key)}</p><div class="entry-text">{render_markdown(entry.what)}</div>'
-                + _control(entry.key, entry, review.answers.get(entry.key), review.last.get(entry.key), review.disabled, review.kind)
+                + _control(
+                    entry.key,
+                    entry,
+                    review.answers.get(entry.key),
+                    review.last.get(entry.key),
+                    review.disabled,
+                    review.kind,
+                )
                 + "</div>"
             )
         rows.append("</section>")
@@ -745,7 +798,9 @@ def _panels(review: _Review, placed: set[str]) -> str:
     return "\n".join(out)
 
 
-def review_page(package: Any, ctx: Any, nonce: str, listed: Any = None, current: tuple[str, str] | None = None) -> str:
+def review_page(
+    package: Any, ctx: Any, nonce: str, listed: Any = None, current: tuple[str, str] | None = None
+) -> str:
     """``GET /``: the current review's document as a person reads it, with an answer control on exactly
     the entries ``review list`` returns (D-61, D-62). ``ctx`` gives ``name``, ``token`` and ``config``."""
     review = _review_of(package, ctx.config, listed, current)
@@ -755,12 +810,18 @@ def review_page(package: Any, ctx: Any, nonce: str, listed: Any = None, current:
     if review.stage is not None:
         heading = f"{stage_label(review.stage)}: {LIST_LABELS.get(review.kind or '', review.kind or '')}"
     else:
-        heading = f"{stage_label(review.document)}: no review is current" if review.document else "No review is current"
+        heading = (
+            f"{stage_label(review.document)}: no review is current"
+            if review.document
+            else "No review is current"
+        )
     total = len(review.listed.full) if review.listed is not None else 0
     answered = len(review.answers)
     document, placed = ("", set())
     if review.document:
-        document, placed = _document(package, review.document, review, render_ctx, comment=review.stage is not None)
+        document, placed = _document(
+            package, review.document, review, render_ctx, comment=review.stage is not None
+        )
     document = _diagram_credit(document, ctx.config.diagram_script)
     metas = {"eil-token": ctx.token, "eil-state": json.dumps(state, sort_keys=True)}
     if ctx.config.diagram_script:
@@ -844,7 +905,8 @@ footer{margin-top:2rem;font-weight:600}
 # The page's one script. It renders, polls and sends; every decision is the helper's (constitution
 # 1.3.0). It reads values only as text (``textContent``), never as HTML, except a diagram the project's
 # own diagram script drew.
-SCRIPT = r"""
+SCRIPT = (
+    r"""
 (() => {
   "use strict";
   const NONCE = document.currentScript ? document.currentScript.nonce : "";
@@ -1105,6 +1167,8 @@ SCRIPT = r"""
     });
   }
 })();
-""".replace("__POLL_MS__", str(POLL_MS)).replace("__STOPPED__", json.dumps(STOPPED)).replace(
-    "__COMPLETE__", json.dumps(COMPLETE)
-).replace("__CHANGED__", json.dumps(CHANGED))
+""".replace("__POLL_MS__", str(POLL_MS))
+    .replace("__STOPPED__", json.dumps(STOPPED))
+    .replace("__COMPLETE__", json.dumps(COMPLETE))
+    .replace("__CHANGED__", json.dumps(CHANGED))
+)

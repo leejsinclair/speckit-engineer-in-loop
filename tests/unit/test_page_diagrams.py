@@ -24,7 +24,9 @@ URL = "https://cdn.example/m.mjs"
 
 def render(root: Any, script: str | None = None) -> str:
     config = Config(diagram_script=script)
-    return pagerender.review_page(Package(root), SimpleNamespace(name="Ada Dev", token="tok", config=config), NONCE)
+    return pagerender.review_page(
+        Package(root), SimpleNamespace(name="Ada Dev", token="tok", config=config), NONCE
+    )
 
 
 def text_of(html: str) -> str:
@@ -41,10 +43,15 @@ def test_determinism_64_without_a_script_nothing_from_elsewhere(review_page_stor
     page = render(review_page_story.root)
     assert not re.search(r"\b[a-z][a-z0-9+.-]*://", page), "no URL with a scheme"
     assert '<meta name="eil-diagram-script"' not in page and "Diagrams drawn by" not in text_of(page)
-    assert pagerender.csp("N", pagerender.script_origin(None)).split("script-src ")[1].split(";")[0] == "'self' 'nonce-N'"
+    assert (
+        pagerender.csp("N", pagerender.script_origin(None)).split("script-src ")[1].split(";")[0]
+        == "'self' 'nonce-N'"
+    )
 
 
-def test_determinism_64_with_a_script_the_url_is_named_once_and_the_csp_widens_exactly(review_page_story: Any) -> None:
+def test_determinism_64_with_a_script_the_url_is_named_once_and_the_csp_widens_exactly(
+    review_page_story: Any,
+) -> None:
     page = render(review_page_story.root, URL)
     assert text_of(page).count(URL) == 1 and f"Diagrams drawn by {URL}" in text_of(page)
     assert page.index("Diagrams drawn by") > page.index('<pre class="mermaid-src">')
@@ -66,7 +73,10 @@ def test_the_page_sends_the_widened_policy(tmp_path: Path, review_page_story: An
         page.stop()
 
 
-@pytest.mark.parametrize("value", ["http://cdn.example/m.mjs", "javascript:alert(1)", "cdn.example/m.mjs", "https://", '"https://x/a b"'])
+@pytest.mark.parametrize(
+    "value",
+    ["http://cdn.example/m.mjs", "javascript:alert(1)", "cdn.example/m.mjs", "https://", '"https://x/a b"'],
+)
 def test_a_script_that_is_not_an_https_url_is_refused(tmp_path: Path, value: str) -> None:
     from eil.identity import load_config
 

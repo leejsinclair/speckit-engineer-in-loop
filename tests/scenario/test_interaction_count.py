@@ -239,12 +239,18 @@ def first_pass(tmp_path: Path, generation: str, monkeypatch: pytest.MonkeyPatch)
     from tests.helpers.package import with_record_sections
 
     monkeypatch.setattr(comprehension, "_require_prerequisites", lambda pkg, stage: None)
-    config = Config(default_developer="Ada Dev", approvers={s: ["Ada Dev"] for s in ("requirements", "functional", "technical")}, abbreviation_authorisers=["Ada Dev"])
+    config = Config(
+        default_developer="Ada Dev",
+        approvers={s: ["Ada Dev"] for s in ("requirements", "functional", "technical")},
+        abbreviation_authorisers=["Ada Dev"],
+    )
     story = reference.build(tmp_path / generation / "specs" / "001-story")
     if generation == "003":
         text = story.read("technical")
         for n in (3, 4):  # queue per import file; retry three times: nothing a user observes changes
-            text = text.replace(f"Trade-off: Trade-off {n}.\nOwner: Ada Dev", f"Trade-off: Trade-off {n}.\nOwner: ai-decided")
+            text = text.replace(
+                f"Trade-off: Trade-off {n}.\nOwner: Ada Dev", f"Trade-off: Trade-off {n}.\nOwner: ai-decided"
+            )
         story.write("technical", text)
     for stage in ("functional", "technical"):
         clear_approval(story, stage)
@@ -254,31 +260,54 @@ def first_pass(tmp_path: Path, generation: str, monkeypatch: pytest.MonkeyPatch)
     root = story.root
     counts: dict[str, int] = {}
     if generation == "003":
-        profile.set_profile(Package(root), config, "small", by="Ada Dev", reason="A detailed request for a small change")
+        profile.set_profile(
+            Package(root), config, "small", by="Ada Dev", reason="A detailed request for a small change"
+        )
         counts["profile"] = 1
     counts["approvals"] = 3
     decisions = [i for i in parse_document(Package(root).doc("technical")).items if i.kind == "DEC"]
     counts["decisions"] = len(decisions) - len(ai_decided_ids(decisions))
-    criterion = next(c for c in check_stage(Package(root), "functional", write=False).criteria if c.id == "FUN-G15")
+    criterion = next(
+        c for c in check_stage(Package(root), "functional", write=False).criteria if c.id == "FUN-G15"
+    )
     counts["wireframes"] = 0 if generation == "003" and criterion.status == "met" else 1
     counts["lists"] = 0
     for stage in ("functional", "technical"):
         keys = [b.key for b in blockstatus.blocks_of(Package(root).doc(stage))]
-        provenance.classify(Package(root), stage, {"stage": stage, "blocks": [{"block": k, "adds": None} for k in keys]})
+        provenance.classify(
+            Package(root), stage, {"stage": stage, "blocks": [{"block": k, "adds": None} for k in keys]}
+        )
         listed = reviews.build_list(Package(root), stage, "inferred")
         if listed.entries:
-            reviews.answer(Package(root), config, stage, "inferred", digest=listed.digest, by="Ada Dev", reply="ok", all_=True)
-        rows = comprehension.plan(Package(root), stage, by="Ada Dev" if generation == "003" else None)["levels"]
+            reviews.answer(
+                Package(root),
+                config,
+                stage,
+                "inferred",
+                digest=listed.digest,
+                by="Ada Dev",
+                reply="ok",
+                all_=True,
+            )
+        rows = comprehension.plan(Package(root), stage, by="Ada Dev" if generation == "003" else None)[
+            "levels"
+        ]
         counts[f"comprehension {stage}"] = sum(1 for r in rows if r["status"] == "ok")
     counts["lists"] = 3
     if generation == "003":
         counts["lists"] += 1 if reviews.build_list(Package(root), "derived", "inferred").entries else 0
     else:
-        counts["lists"] += sum(1 for s in ("ai-spec", "plan", "tasks") if reviews.build_list(Package(root), s, "inferred").entries)
+        counts["lists"] += sum(
+            1
+            for s in ("ai-spec", "plan", "tasks")
+            if reviews.build_list(Package(root), s, "inferred").entries
+        )
     return counts
 
 
-def test_sc005_approvals_and_observable_decisions_are_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sc005_approvals_and_observable_decisions_are_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     before, after = first_pass(tmp_path, "002", monkeypatch), first_pass(tmp_path, "003", monkeypatch)
     assert after["approvals"] == before["approvals"] == 3
     assert after["decisions"] == 3, "the three decisions with an observable effect are still asked"

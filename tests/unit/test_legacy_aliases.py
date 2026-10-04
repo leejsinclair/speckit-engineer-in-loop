@@ -16,7 +16,9 @@ from tests.unit.test_accept_changes import decide_req1, prepared, reword_req2
 def test_amend_still_writes_amended_and_now_reached_and_rests_on(reference_story: Story) -> None:
     prepared(reference_story)
     decide_req1(reference_story)
-    result = provenance.amend(Package(reference_story.root), CONFIG, "requirements", ["CH-004"], "Ada Dev", "Yes.")
+    result = provenance.amend(
+        Package(reference_story.root), CONFIG, "requirements", ["CH-004"], "Ada Dev", "Yes."
+    )
     approval = result["approval"]
     assert approval["amended"] is True and approval["amends"] == ["CH-004"]
     assert reached_of(approval) == "carried-forward"
@@ -48,7 +50,9 @@ def test_review_accept_then_finish_records_reviewed_and_the_reviews(reference_st
 def test_amend_from_a_subset_of_the_covering_decisions_succeeds(reference_story: Story) -> None:
     prepared(reference_story)
     decide_req1(reference_story)
-    result = provenance.amend(Package(reference_story.root), CONFIG, "requirements", ["CH-004"], "Ada Dev", "Yes.")
+    result = provenance.amend(
+        Package(reference_story.root), CONFIG, "requirements", ["CH-004"], "Ada Dev", "Yes."
+    )
     assert result["approval"]["amends"] == ["CH-004"]
 
 
@@ -57,7 +61,9 @@ def test_amend_from_an_id_outside_the_covering_set_is_refused(reference_story: S
     decide_req1(reference_story)
     before = reference_story.read("requirements")
     with pytest.raises(EilExit) as info:
-        provenance.amend(Package(reference_story.root), CONFIG, "requirements", ["CH-004", "OQ-001"], "Ada Dev", "Yes.")
+        provenance.amend(
+            Package(reference_story.root), CONFIG, "requirements", ["CH-004", "OQ-001"], "Ada Dev", "Yes."
+        )
     assert "amend-not-covering" in [r["code"] for r in info.value.payload["refusals"]]
     assert reference_story.read("requirements") == before
 
@@ -67,6 +73,8 @@ def test_review_aliases_record_legacy_reviews_not_acceptances(reference_story: S
     ``(decided: RVW-###)``; ``review answer`` writes acceptances in the provenance region."""
     prepared(reference_story)
     reword_req2(reference_story)
-    provenance.accept(Package(reference_story.root), CONFIG, "requirements", items=["REQ-002"], sections=[], by="Ada Dev")
+    provenance.accept(
+        Package(reference_story.root), CONFIG, "requirements", items=["REQ-002"], sections=[], by="Ada Dev"
+    )
     assert "(decided: RVW-" in reference_story.read("requirements")
     assert "eil:review" in reference_story.read("requirements")

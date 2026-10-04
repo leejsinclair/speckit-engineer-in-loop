@@ -24,8 +24,13 @@ FEATURE = "specs/001-decided"
 
 def test_b34_ai_decided(project: Path, eil: Callable[..., EilResult], tmp_path: Path) -> None:
     story = Story(project / FEATURE)
-    no_reason = AI_DECIDED.replace("Reason: Rendering is the slowest step; this choice changes nothing a user sees.\n", "")
-    with_technical(story, sections={"Technical Decisions": DECISION.replace("Ada Dev", "Test Developer") + "\n\n" + no_reason})
+    no_reason = AI_DECIDED.replace(
+        "Reason: Rendering is the slowest step; this choice changes nothing a user sees.\n", ""
+    )
+    with_technical(
+        story,
+        sections={"Technical Decisions": DECISION.replace("Ada Dev", "Test Developer") + "\n\n" + no_reason},
+    )
     story.write("technical", with_record_sections(story.read("technical")))
     approve_stages(story, "requirements", "functional", by="Test Developer")
 
@@ -35,10 +40,20 @@ def test_b34_ai_decided(project: Path, eil: Callable[..., EilResult], tmp_path: 
     checked = run("check", "--stage", "technical")
     assert "ai-decided-without-reason" in [f["code"] for f in checked.json["findings"]]
 
-    story.write("technical", story.read("technical").replace("Owner: ai-decided", "Reason: Rendering is the slowest step; nothing a user sees changes.\nOwner: ai-decided"))
+    story.write(
+        "technical",
+        story.read("technical").replace(
+            "Owner: ai-decided",
+            "Reason: Rendering is the slowest step; nothing a user sees changes.\nOwner: ai-decided",
+        ),
+    )
     judgments = tmp_path / "j.json"
     ids = [c.id for c in criteria_for("technical") if c.kind == JUDGMENT]
-    judgments.write_text(json.dumps({"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}))
+    judgments.write_text(
+        json.dumps(
+            {"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}
+        )
+    )
     checked = run("check", "--stage", "technical", "--judgments", str(judgments))
     assert "ai-decided-without-reason" not in [f["code"] for f in checked.json["findings"]]
 
@@ -50,7 +65,22 @@ def test_b34_ai_decided(project: Path, eil: Callable[..., EilResult], tmp_path: 
     plan = run("comprehension", "plan", "--stage", "technical").json
     for row in plan["levels"]:
         extra = ["--items", row["target"]] if row.get("target") else []
-        assert run("comprehension", "record", "--stage", "technical", "--level", row["level"], "--outcome", "skipped", "--by", "Test Developer", *extra).code == 0
+        assert (
+            run(
+                "comprehension",
+                "record",
+                "--stage",
+                "technical",
+                "--level",
+                row["level"],
+                "--outcome",
+                "skipped",
+                "--by",
+                "Test Developer",
+                *extra,
+            ).code
+            == 0
+        )
     run("check", "--stage", "technical", "--judgments", str(judgments))
     approved = run("approve", "technical", "--by", "Test Developer", "--attestation", "ok")
     assert approved.code == 0, approved.stdout

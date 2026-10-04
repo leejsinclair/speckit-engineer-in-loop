@@ -390,7 +390,9 @@ def _reviewed_story(reference_story: Story) -> Package:
     return Package(reference_story.root)
 
 
-def test_a_derived_stage_with_every_block_reviewed_and_its_code_criteria_met_is_reviewed(reference_story: Story) -> None:
+def test_a_derived_stage_with_every_block_reviewed_and_its_code_criteria_met_is_reviewed(
+    reference_story: Story,
+) -> None:
     package = _reviewed_story(reference_story)
     assert package.state("plan").state == "reviewed"
     # The reference AI Specification misses sections its gate requires: not reviewed, whatever its blocks say.
@@ -400,7 +402,12 @@ def test_a_derived_stage_with_every_block_reviewed_and_its_code_criteria_met_is_
 def test_reviewed_falls_back_to_draft_when_a_block_needs_review_again(reference_story: Story) -> None:
     package = _reviewed_story(reference_story)
     assert package.state("plan").state == "reviewed"
-    reference_story.write("plan", reference_story.read("plan").replace("Queue Design follows decision 4.", "Queue design follows decision four."))
+    reference_story.write(
+        "plan",
+        reference_story.read("plan").replace(
+            "Queue Design follows decision 4.", "Queue design follows decision four."
+        ),
+    )
     assert Package(reference_story.root).state("plan").state in ("draft", "in-review")
 
 

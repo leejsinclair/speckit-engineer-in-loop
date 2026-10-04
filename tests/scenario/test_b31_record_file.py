@@ -37,16 +37,26 @@ def test_b31_record_file(project: Path, eil: Callable[..., EilResult]) -> None:
         assert eil(["check", "--stage", stage, "--feature-dir", FEATURE, "--json"]).code == 0
 
     before = eil(["status", "--feature-dir", FEATURE, "--json"]).json
-    fingerprints = {s: eil(["fingerprint", f"{FEATURE}/{story.path(s).name}", "--json"]).json["fingerprint"] for s in STAGES}
+    fingerprints = {
+        s: eil(["fingerprint", f"{FEATURE}/{story.path(s).name}", "--json"]).json["fingerprint"]
+        for s in STAGES
+    }
 
     synced = eil(["sync", "--feature-dir", FEATURE, "--json"])
     assert synced.code == 0, synced.stderr
     after = eil(["status", "--feature-dir", FEATURE, "--json"]).json
-    assert {s: e["state"] for s, e in after["stages"].items()} == {s: e["state"] for s, e in before["stages"].items()}
-    assert {s: e.get("approval") for s, e in after["stages"].items()} == {s: e.get("approval") for s, e in before["stages"].items()}
+    assert {s: e["state"] for s, e in after["stages"].items()} == {
+        s: e["state"] for s, e in before["stages"].items()
+    }
+    assert {s: e.get("approval") for s, e in after["stages"].items()} == {
+        s: e.get("approval") for s, e in before["stages"].items()
+    }
     for stage in STAGES:
         text = story.read(stage)
-        assert eil(["fingerprint", f"{FEATURE}/{story.path(stage).name}", "--json"]).json["fingerprint"] == fingerprints[stage]
+        assert (
+            eil(["fingerprint", f"{FEATURE}/{story.path(stage).name}", "--json"]).json["fingerprint"]
+            == fingerprints[stage]
+        )
         assert "```json" not in text and '"hash": "sha256:' not in text, stage
         assert region_bytes(text) < 0.10 * len(text.encode()), stage
     record = json.loads((project / FEATURE / "eil-record.json").read_text())

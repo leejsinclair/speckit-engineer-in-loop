@@ -37,7 +37,9 @@ def test_b36_defects(project: Path, eil: Callable[..., EilResult], tmp_path: Pat
     derived.settle_derived(stories.a)
     plan = run("check", "--stage", "plan")
     assert "## Record" in stories.a.read("plan")
-    assert not [f for f in plan.json["findings"] if f["code"] == "plan-not-derivable" and "Record" in f["message"]]
+    assert not [
+        f for f in plan.json["findings"] if f["code"] == "plan-not-derivable" and "Record" in f["message"]
+    ]
 
     # Classification is additive and skips an unknown key.
     b = "specs/002-b"
@@ -45,7 +47,15 @@ def test_b36_defects(project: Path, eil: Callable[..., EilResult], tmp_path: Pat
     first, second = blocks[0]["key"], blocks[1]["key"]
     for chosen in ([first, second], [second]):
         path = tmp_path / "classes.json"
-        path.write_text(json.dumps({"stage": "functional", "blocks": [{"block": k, "adds": "x"} for k in chosen] + [{"block": "FR-999", "adds": None}]}))
+        path.write_text(
+            json.dumps(
+                {
+                    "stage": "functional",
+                    "blocks": [{"block": k, "adds": "x"} for k in chosen]
+                    + [{"block": "FR-999", "adds": None}],
+                }
+            )
+        )
         result = run("blocks", "classify", "--stage", "functional", "--file", str(path), feature=b)
         assert result.code == 0, result.stdout + result.stderr
         assert [s["key"] for s in result.json["skipped"]] == ["FR-999"]

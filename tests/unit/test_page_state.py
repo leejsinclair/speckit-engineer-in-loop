@@ -43,17 +43,38 @@ def test_determinism_66_the_page_embeds_the_state_it_was_rendered_from(page_serv
     assert embedded(text) == page_server.state()
 
 
-def test_determinism_66_a_block_edit_and_a_cli_answer_show_on_the_next_call(page_server: Page, review_page_story: Any) -> None:
+def test_determinism_66_a_block_edit_and_a_cli_answer_show_on_the_next_call(
+    page_server: Page, review_page_story: Any
+) -> None:
     first = page_server.state()
     text = review_page_story.story.read("functional")
-    review_page_story.story.write("functional", text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."))
+    review_page_story.story.write(
+        "functional",
+        text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."),
+    )
     second = page_server.state()
     assert second["entries"]["FR-001"] != first["entries"]["FR-001"]
     assert second["doc"] != first["doc"]
-    code, payload = eil(review_page_story.root, "review", "answer", "--stage", "functional", "--kind", "inferred", "--entry", "FR-002", "--by", "Ada Dev", "--reply", "ok")
+    code, payload = eil(
+        review_page_story.root,
+        "review",
+        "answer",
+        "--stage",
+        "functional",
+        "--kind",
+        "inferred",
+        "--entry",
+        "FR-002",
+        "--by",
+        "Ada Dev",
+        "--reply",
+        "ok",
+    )
     assert code == 0, payload
     third = page_server.state()
-    assert third["answers"]["FR-002"][0:2] == ["accept", "Ada Dev"], "no cached package: a CLI write between two calls shows"
+    assert third["answers"]["FR-002"][0:2] == ["accept", "Ada Dev"], (
+        "no cached package: a CLI write between two calls shows"
+    )
 
 
 def test_determinism_66_the_poll_interval_is_at_most_5_seconds() -> None:
@@ -62,9 +83,16 @@ def test_determinism_66_the_poll_interval_is_at_most_5_seconds() -> None:
 
 
 def test_the_script_never_changes_rendered_content_on_a_notice() -> None:
-    poll = pagerender.SCRIPT[pagerender.SCRIPT.index("function differences") : pagerender.SCRIPT.index("const diagrams")]
+    poll = pagerender.SCRIPT[
+        pagerender.SCRIPT.index("function differences") : pagerender.SCRIPT.index("const diagrams")
+    ]
     assert "innerHTML" not in poll and "#doc" not in poll and "showNotice" in poll
-    for message in ("changed", "was answered elsewhere", "A new review is current: ", "The document changed outside the review blocks"):
+    for message in (
+        "changed",
+        "was answered elsewhere",
+        "A new review is current: ",
+        "The document changed outside the review blocks",
+    ):
         assert message in poll
     assert json.dumps(pagerender.STOPPED) in pagerender.SCRIPT
     assert json.dumps(pagerender.CHANGED) in pagerender.SCRIPT
@@ -81,7 +109,9 @@ def test_successful_writes_do_not_hide_unrelated_changes() -> None:
 
 def test_state_after_an_answer_on_the_page(page_server: Page, review_page_story: Any) -> None:
     root = review_page_story.root
-    entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001")
+    entry = next(
+        e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001"
+    )
     status, result = page_server.post(
         "/answer", {"stage": "functional", "kind": "inferred", "entry": "FR-001", "disposition": "accept", "shown": entry.hash, "question": entry.question},
     )  # fmt: skip
@@ -129,8 +159,22 @@ def test_determinism_65_stopping_loses_no_answer(review_page_story: Any) -> None
     root = review_page_story.root
     page = start_page(root, idle_minutes=0.01)
     try:
-        entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001")
-        page.post("/answer", {"stage": "functional", "kind": "inferred", "entry": "FR-001", "disposition": "accept", "shown": entry.hash, "question": entry.question})
+        entry = next(
+            e
+            for e in reviews.build_list(Package(root), "functional", "inferred").entries
+            if e.key == "FR-001"
+        )
+        page.post(
+            "/answer",
+            {
+                "stage": "functional",
+                "kind": "inferred",
+                "entry": "FR-001",
+                "disposition": "accept",
+                "shown": entry.hash,
+                "question": entry.question,
+            },
+        )
         assert wait_until(page.server.stopped.is_set, 5)
     finally:
         page.stop()
@@ -139,7 +183,9 @@ def test_determinism_65_stopping_loses_no_answer(review_page_story: Any) -> None
     assert "FR-001" not in [e["key"] for e in listed["entries"]]
 
 
-def test_state_answers_in_under_200ms_on_a_large_stage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_state_answers_in_under_200ms_on_a_large_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import tempfile
 
     from tests.fixtures import review_page
@@ -148,7 +194,12 @@ def test_state_answers_in_under_200ms_on_a_large_stage(tmp_path: Path, monkeypat
     built = review_page.build(tmp_path / "specs" / "001-story")
     story: Story = built.story
     padding = "Background narrative line with several ordinary words, but no item.\n" * 1500  # about 100 KB
-    story.write("functional", story.read("functional").replace("## Not applicable", f"## Background notes\n\n{padding}\n## Not applicable", 1))
+    story.write(
+        "functional",
+        story.read("functional").replace(
+            "## Not applicable", f"## Background notes\n\n{padding}\n## Not applicable", 1
+        ),
+    )
     page = start_page(built.root)
     try:
         page.state()

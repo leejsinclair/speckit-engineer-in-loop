@@ -37,14 +37,28 @@ def test_b33_profile(project: Path, eil: Callable[..., EilResult]) -> None:
 
     refused = run(SMALL, "profile", "set", "small", "--by", "Mallory", "--reason", "small")
     assert refused.code == 1 and refused.refusal_codes == ["not-an-authoriser"]
-    assert run(SMALL, "profile", "set", "small", "--by", "Test Developer", "--reason", "").refusal_codes == ["reason-required"]
+    assert run(SMALL, "profile", "set", "small", "--by", "Test Developer", "--reason", "").refusal_codes == [
+        "reason-required"
+    ]
 
     def wireframe() -> dict:
         checked = run(SMALL, "check", "--stage", "functional", "--full").json
         return next(c for c in checked["criteria"] if c["id"] == "FUN-G15")
 
     assert wireframe()["status"] == "not-met"
-    assert run(SMALL, "profile", "set", "small", "--by", "Test Developer", "--reason", "One screen, detailed request").code == 0
+    assert (
+        run(
+            SMALL,
+            "profile",
+            "set",
+            "small",
+            "--by",
+            "Test Developer",
+            "--reason",
+            "One screen, detailed request",
+        ).code
+        == 0
+    )
     assert wireframe()["status"] == "met" and "small-story profile" in wireframe()["reason"]
     approve = run(SMALL, "approve", "functional", "--by", "Test Developer", "--attestation", "ok")
     assert approve.code == 1, "every approval is still required, with its gate"
@@ -71,4 +85,6 @@ def test_b33_profile(project: Path, eil: Callable[..., EilResult]) -> None:
     assert wireframe()["status"] == "not-met"
     record = json.loads((project / SMALL / "eil-record.json").read_text())
     assert record["story"]["profile"]["withdrawn"]["reason"] == "it grew"
-    assert run(SMALL, "review", "list", "--stage", "derived", "--kind", "inferred").refusal_codes == ["no-profile"]
+    assert run(SMALL, "review", "list", "--stage", "derived", "--kind", "inferred").refusal_codes == [
+        "no-profile"
+    ]
