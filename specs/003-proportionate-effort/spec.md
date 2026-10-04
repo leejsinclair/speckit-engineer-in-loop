@@ -8,6 +8,8 @@
 
 **Input**: User description: "Start a new governed story, `003-proportionate-effort`, that fixes the friction found in a real run of this extension on 2026-10-01." The run took story 002 of the rich specification viewer (a small viewer feature) through the full workflow: 138 minutes of process against 5 minutes of implementation, 128 lines of code and about 420 lines of tests against about 5,800 lines of stage documents. The maintainer's direction: preserve every human-only gate, approval, attestation and recorded override, and reduce only asks that are duplicated, of low value or aimed at the wrong level; size reviews to the list; never ask the developer implementation-level questions; do everything in chat, never requiring a file to be opened.
 
+> **Amendment (004, `specs/004-browser-review-page`, research D-65)**: the review session gains a second surface, a local browser page whose answers are stored through the same `reviews.answer` call as chat answers and share one session with them; and `review answer --reopen` reaches every settled block of a stage on the `inferred` list, not only blocks a review settled, writing a `reopened` mark with the person's comment.
+
 ## Context
 
 This feature refines the workflow delivered by `specs/001-staged-definition-workflow` and `specs/002-proportionate-revalidation`. 002 made revalidation proportionate (what must be looked at again after a change). This feature makes the **first pass** proportionate (how much is asked of a person for a story of a given size), fixes the defects that made the 2026-10-01 run slower than it needed to be, and removes the record bulk that drove the agent's context to 166k tokens and forced five compactions in two and a half hours.

@@ -416,30 +416,30 @@ description: "Task list for the Browser Review Page"
 
 ## Phase 9: Polish and cross-cutting concerns
 
-- [ ] T068 [P] Extend `tests/unit/test_performance.py`:
+- [X] T068 [P] Extend `tests/unit/test_performance.py`:
   - `GET /` renders the 002 performance fixture's largest stage (about 100 KB) in under 1 s;
   - `GET /` renders the 38-entry Functional list from the T002 fixture, with every entry's full text, in under 1 s (SC-003);
   - `status`, `check`, `enter` and `show` stay under 1 s with the record lock in place.
-- [ ] T069 [P] In `commands/speckit.eil.status.md` and `speckit.eil.next.md`, mention the address in one line when `review serve --status` reports a running page (contracts/commands.md). Add an assertion for it to `tests/contract/test_prompt_guidance.py`.
-- [ ] T070 [P] Extend `tests/contract/test_install.py`:
+- [X] T069 [P] In `commands/speckit.eil.status.md` and `speckit.eil.next.md`, mention the address in one line when `review serve --status` reports a running page (contracts/commands.md). Add an assertion for it to `tests/contract/test_prompt_guidance.py`.
+- [X] T070 [P] Extend `tests/contract/test_install.py`:
   - `review.page_idle_minutes` and `review.diagram_script` are in the installed `config-template.yml`;
   - extension removal leaves `eil-record.json`, and no runtime or lock file, in the project (`tests/contract/test_removal_and_coexistence.py`).
-- [ ] T071 [P] Add probes P-32 to P-35 (P-33 extended: the agent makes no request to the page address) and an SC-004 timing row (Requirements, Functional and Technical reviewed on the page, against 003's chat review) to `docs/trials.md`, with the same pass rule as 003.
-- [ ] T072 [P] Update `README.md`:
+- [X] T071 [P] Add probes P-32 to P-35 (P-33 extended: the agent makes no request to the page address) and an SC-004 timing row (Requirements, Functional and Technical reviewed on the page, against 003's chat review) to `docs/trials.md`, with the same pass rule as 003.
+- [X] T072 [P] Update `README.md`:
   - how to review on the page: the surface question, `review serve`, `--status` and `--stop`, `--host` and `--public-name` for containers, and `review.diagram_script`;
   - the attestation limit (FR-025, R-29): the page cannot tell who used the browser, or whether an AI agent drove it, and a page answer is no stronger evidence than a chat reply.
-- [ ] T073 Add a CHANGELOG entry to `CHANGELOG.md` (FR-027). It names the browser review page, the record lock (`record-busy`) and the wider `--reopen`, and copies the spec's Principle IV table of interactions added, moved and removed, with their purpose.
-- [ ] T074 Add the amendments:
+- [X] T073 Add a CHANGELOG entry to `CHANGELOG.md` (FR-027). It names the browser review page, the record lock (`record-busy`) and the wider `--reopen`, and copies the spec's Principle IV table of interactions added, moved and removed, with their purpose.
+- [X] T074 Add the amendments:
   - a D-21 amendment paragraph in `specs/001-staged-definition-workflow/research.md` (FR-024): the helper may serve local pages, never renders a diagram or fetches anything, and a browser draws diagrams only when the project names a script;
   - an amendment note in `specs/003-proportionate-effort/spec.md`: the review session gains a second surface, and `--reopen` reaches every settled block (D-65).
-- [ ] T075 Fold `contracts/cli.md` and `contracts/commands.md` into `specs/001-staged-definition-workflow/contracts/cli.md` and `commands.md`, in the same change as the tests that pin them (Constitution workflow). `contracts/page.md` stays with this feature. If the release is split into several pull requests, do this once per pull request, for that pull request's part.
-- [ ] T076 Run `ruff check .` and the full `pytest` suite, including the contract tests against a scratch Spec Kit project. Confirm that every 001 to 003 gate refusal still refuses the same input (SC-005), and fix any failure.
+- [X] T075 Fold `contracts/cli.md` and `contracts/commands.md` into `specs/001-staged-definition-workflow/contracts/cli.md` and `commands.md`, in the same change as the tests that pin them (Constitution workflow). `contracts/page.md` stays with this feature. If the release is split into several pull requests, do this once per pull request, for that pull request's part.
+- [X] T076 Run `ruff check .` and the full `pytest` suite, including the contract tests against a scratch Spec Kit project. Confirm that every 001 to 003 gate refusal still refuses the same input (SC-005), and fix any failure.
 - [ ] T077 Run the quickstart's manual check (steps 1 to 6) on a scratch project in a desktop browser. Record what was seen in `specs/004-browser-review-page/research.md` under Evidence.
-- [ ] T078 Run `/speckit-analyze` before implementation begins. Fix any CRITICAL finding in the spec, plan or tasks. Confirm by grep that:
+- [X] T078 Run `/speckit-analyze` before implementation begins. Fix any CRITICAL finding in the spec, plan or tasks. Confirm by grep that:
   - no page route reaches `approve`, `review confirm`, an override or a waiver (FR-020);
   - the page's script decides nothing that the helper does not also refuse;
   - every determinism requirement from 54 to 69 has a unit test (FR-026).
-- [ ] T079 Draft the pull request description. It must:
+- [X] T079 Draft the pull request description. It must:
   - name the principles touched (I to IV);
   - confirm that no gate, refusal or record exists only in the page script or a prompt;
   - name the contract test and probe for each of the six Tier 2 rules;

@@ -660,3 +660,11 @@ def test_page_answers_acted_on(path: Path) -> None:
     assert re.search(r"never record a page-surface entry'?s answer in chat", text, re.I)
     assert re.search(r"a comment on a settled block", text, re.I) and re.search(r"as (on|you would) a send-back", text, re.I)
     assert re.search(r"comprehension check, then approval in chat", text, re.I)
+
+
+@pytest.mark.parametrize("path", [EXT / "speckit.eil.status.md", EXT / "speckit.eil.next.md"], ids=lambda p: p.stem)
+def test_status_mentions_a_running_page(path: Path) -> None:
+    """004 contracts/commands.md: when a review page is running, its address is mentioned in one line."""
+    text = read(path)
+    assert "review serve --status --json" in text and re.search(r"address, in one line|address in one line", text, re.I)
+    assert re.search(r"never open, fetch or post to it", text, re.I)

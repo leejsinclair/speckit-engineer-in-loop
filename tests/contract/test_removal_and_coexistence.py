@@ -85,6 +85,8 @@ def test_removal_leaves_the_story_readable_and_standard_spec_kit_restored(projec
 
     assert {p.name: p.read_bytes() for p in feature.iterdir() if p.is_file()} == before
     assert "eil-record.json" in before, "the record file is left in place, like every document"
+    leftover = [n for n in before if n.endswith((".lock", ".tmp")) or n.startswith("eil-review-")]
+    assert leftover == [], f"004 T070: no record lock, temporary or page runtime file in the story: {leftover}"
     for name in ("spec.md", "plan.md", "tasks.md"):
         assert (feature / name).read_text(encoding="utf-8") == (
             feature

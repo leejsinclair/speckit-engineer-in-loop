@@ -5,6 +5,59 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added: Browser Review Page (feature 004)
+
+Each entry names the human interactions it adds or removes, and their purpose (constitution Principle IV).
+
+- **The review page** (US1, FR-001 to FR-013). `eil review serve --by NAME` serves one local page per story
+  for the session, on `127.0.0.1` and the first free port from 8100, with a per-session token in its address
+  (`--status` finds it again, `--stop` ends it; a runtime file outside the project holds the address). The page
+  shows whichever review is current (`review list --current`): the Requirements, Functional or Technical
+  document rendered in full, with exactly the listed entries highlighted, each with the helper's fixed question
+  and Accept, Send back and Question. Every answer is stored at once by `reviews.answer`, the call a chat answer
+  uses, with `via: page`, the question, the person's name, the time and the comment verbatim; a page session and
+  a chat session are one session, so either surface continues where the other stopped. `review answer` gains
+  `--shown` (`entry-changed` when the block changed after it was shown), `--question` text with `--entry`
+  (`question-mismatch` unless it is the helper's wording) and `--comment`; `review list` returns each entry's
+  `question`, the open session's `answers`, and the `last_answers` (send-backs and questions) once it closed.
+  The browser decides nothing and writes nothing; approval, overrides, waivers and the comprehension check stay
+  in chat, and no page route reaches them.
+- **Back to the chat, and reopening** (US2, FR-014 to FR-016). After "done" the agent reads the stored answers
+  from the helper, reworks each send-back, answers each question in chat and asks for a reload. A comment on any
+  settled block reopens it: `--reopen` now reaches every settled block on the `inferred` list (restated and
+  decided ones included), writing a `reopened` mark with the comment; the block keeps its class and fingerprint,
+  needs review again, and `show` says "(reopened by NAME: COMMENT)".
+- **Safe to leave open** (US3). Requests are checked for the host, the token and, on every change, the page's
+  own origin and a JSON body; nothing but the story's stage documents and record is read. The page polls
+  `GET /state` every 4 seconds and names what changed with a Reload button, never changing what it shows. It
+  stops after `review.page_idle_minutes` (default 60) without use, losing nothing.
+- **References and diagrams** (US4, FR-017, FR-018). Reference codes resolve from the helper's own block ids,
+  with a preview, and an error mark when undefined or duplicated. Diagrams show as source; with
+  `review.diagram_script` (an `https:` URL) the browser loads that one script to draw them, the page says so, and
+  the Content-Security-Policy allows that origin and no other. The helper never fetches anything.
+- **Accept the rest of a section** (US5, FR-011). `review answer --rest --section NAME`, and a button on the page
+  with a confirming second click: the section's unanswered entries are stored together (`together`, `seen: true`).
+- **Re-approving on the page** (US6). A changed stage's `changes` list is reviewed the same way, with panels for
+  removed entries and for the legacy statement.
+- **Record writes are atomic and locked** (D-67). `eil-record.json` is replaced in one step, and every write
+  holds `eil-record.json.lock`; a second writer waits up to 5 seconds, then is refused `record-busy`, writing
+  nothing. A lock left by a process that died is removed after 60 seconds.
+- Deviations from 003, noted: `--reopen` widens from blocks a review settled to every settled block, and every
+  writing subcommand can now refuse `record-busy` (only with a concurrent writer).
+- Attestation limit (FR-025, R-29): the page cannot tell who used the browser, or whether an AI agent drove it.
+  A page answer is no stronger evidence than a chat reply; the prompts never open, fetch or post to the page.
+
+| Interaction | Added or removed | Purpose |
+|---|---|---|
+| Choosing page or chat for reviews | Added (one reply per session) | Decision |
+| Opening the review page from the address the agent gives | Added (once per session, when the page is chosen; each later review is a reload) | Awareness |
+| Answering each block needing review on the page instead of in chat | Moved, not added: the same answers on another surface | Validation |
+| Reading the whole document around the blocks being reviewed | Added (optional; the page shows it, nothing requires reading it) | Understanding |
+| Saying "done" in chat after answering on the page | Added (one reply per review) | Awareness |
+| Asking the agent to print a block's full text in a summary-mode list | Removed when reviewing on the page (every entry is shown in full) | (was understanding) |
+| Accepting the rest of a section in one action | Added as an option on the page, equivalent to "ok to the rest" | Validation |
+| Commenting on a settled block | Added as an option; reopens the block with the comment | Validation |
+
 ### Changed: Proportionate Effort (feature 003)
 
 Each entry names the human interactions it adds or removes, and their purpose (constitution Principle IV).

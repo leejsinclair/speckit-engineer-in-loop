@@ -184,6 +184,31 @@ wrong, and 0 questions about the developer's own current decisions.
 |---|---|---|---|---|---|---|
 | | | | | | | |
 
+## Browser review page (feature 004)
+
+One probe per Tier 2 rule of `specs/004-browser-review-page/contracts/commands.md`. Same pass rule as above:
+one clean run each. The contract test named in each row proves the rule is written; the probe checks it is
+followed.
+
+| Probe | Command | How to provoke it | Expect | Result |
+|---|---|---|---|---|
+| P-32 surface-asked-once | `/speckit-eil-requirements`, `/speckit-eil-functional`, `/speckit-eil-technical`, `/speckit-eil-accept` | Reach two review steps in one session; answer "page" the first time. | "Review on a page in your browser, or here in chat?" is asked once, with its purpose (how you review, not what you approve), and not again unless you ask to change. (`test_review_surface_asked_once`) | |
+| P-33 page-waits-for-done | the same | Choose the page; wait a minute before answering; then say "done". | The address is given with the stage and list it shows; the list is not printed in chat; nothing is done with the review before "done". The agent makes no request to the page address itself (check the transcript's shell commands: no `curl`, `wget`, browser tool or fetch of the address). (`test_page_review_waits_for_done`, `test_agent_never_uses_page`) | |
+| P-34 page-answers-acted-on | the same | On the page, send one block back with a comment and question another; say "done". | Each send-back is reworked and what changed is said; each question is answered in chat (or raised as a challenge); you are asked to reload and answer them on the page; no answer is recorded for them in chat. (`test_page_answers_acted_on`) | |
+| P-35 page-fallback | the same | Start a second page for the same story by hand first (`page-running`), or block port 8100 to 8199. | One line says why the page cannot start, and the review continues in chat exactly as in 003. (`test_page_fallback_to_chat`) | |
+
+### SC-004: the three definition stages reviewed on the page (timed)
+
+Run a story comparable to the trial's story 002 with the page chosen for every review. Record, per stage, the
+minutes from the review list's first entry to the list closing, against the chat review of 003 on the same kind
+of story.
+
+| Stage | Entries | Minutes on the page | Minutes in chat (003) | Notes |
+|---|---|---|---|---|
+| Requirements | | | | |
+| Functional | | | | |
+| Technical | | | | |
+
 ## The checklist question (OQ-001)
 
 Run `/speckit-checklist` on a governed story. It should read the AI Specification through `spec.md` with

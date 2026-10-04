@@ -32,6 +32,7 @@ Every call below is `python3 .specify/extensions/eil/scripts/python/eil <subcomm
    - `done`: say the story is complete, in the helper's words (for example "Story complete; approved by ... on ..."), and stop. Name no next step.
    - `human`: **stop.** Give the `message`, say its `purpose` (awareness, understanding, decision, validation or approval), name the `command` the person should run, and if it is a challenge, show it. Run nothing.
    - `draft` or `check`: say in one line which command you are about to run and why, then run that `command` with no extra input, following it completely.
+   If `eil review serve --status --json` reports a running review page, mention its address in one line, and never open, fetch or post to it yourself.
 3. If the user's input says "show", "what", "dry run" or similar, report the `message` and `command` and run nothing.
 4. **After one step, stop.** Run `eil status --json` again and report the new `next`. Never start a second step in the same call: the person decides whether to go on.
 
