@@ -366,21 +366,21 @@ description: "Task list for the Browser Review Page"
 
 ### Tests for User Story 5 (write first, see them fail)
 
-- [ ] T058 [P] [US5] Write `tests/unit/test_review_answer_section.py`:
+- [X] T058 [P] [US5] Write `tests/unit/test_review_answer_section.py`:
   - **determinism 59**: on a 12-entry list in three sections, answering two of section A individually and then `review answer --rest --section A` stores `accept` with `together: A` and `seen: true` for A's other entries only. B and C have no answers, and A's two earlier answers are unchanged;
   - `--rest` without `--section` keeps `seen: false`, as in 003;
   - the closing acceptance carries `together: {entry: section}`.
-- [ ] T059 [P] [US5] Extend `tests/unit/test_page_server.py`:
+- [X] T059 [P] [US5] Extend `tests/unit/test_page_server.py`:
   - `POST /section {stage, kind, section}` calls the same path with `via: page`;
   - the page shows "Accept the rest of this section" only on headings with unanswered entries;
   - the button's first click asks "Accept the N unanswered blocks under SECTION?" and the second sends.
-- [ ] T060 [P] [US5] Write `tests/scenario/test_b42_section_accept.py` (quickstart B-42).
+- [X] T060 [P] [US5] Write `tests/scenario/test_b42_section_accept.py` (quickstart B-42).
 
 ### Implementation for User Story 5
 
-- [ ] T061 [US5] In `eil/reviews.py`, add `section` to `answer(rest=True, …)` with `together` and `seen: true`, and write `together` on the acceptance. In `eil/recordfile.py`, `problems()` accepts `together`.
-- [ ] T062 [US5] Add `--section NAME` (valid only with `--rest`) to `review answer` in `eil/cli.py`. Run T058.
-- [ ] T063 [US5] In `eil/reviewpage.py`, add `POST /section`. In `eil/pagerender.py`, add the section button with its two-click confirmation. Run T059 and T060.
+- [X] T061 [US5] In `eil/reviews.py`, add `section` to `answer(rest=True, …)` with `together` and `seen: true`, and write `together` on the acceptance. In `eil/recordfile.py`, `problems()` accepts `together`.
+- [X] T062 [US5] Add `--section NAME` (valid only with `--rest`) to `review answer` in `eil/cli.py`. Run T058.
+- [X] T063 [US5] In `eil/reviewpage.py`, add `POST /section`. In `eil/pagerender.py`, add the section button with its two-click confirmation. Run T059 and T060.
 
 **Checkpoint**: B-42 passes, along with determinism 59.
 
@@ -397,18 +397,18 @@ description: "Task list for the Browser Review Page"
 
 ### Tests for User Story 6 (write first, see them fail)
 
-- [ ] T064 [P] [US6] Extend `tests/unit/test_page_render.py` for the `changes` kind:
+- [X] T064 [P] [US6] Extend `tests/unit/test_page_render.py` for the `changes` kind:
   - the header reads "…: changes since approval";
   - each changed entry is highlighted with what changed;
   - a "Removed since approval" panel has one control per removed entry, showing the removed block's full text (constitution Principle II), not a summary;
   - the `legacy:<stage>` entry has its own panel with the helper's legacy statement;
   - panel controls post the same `{stage, kind, entry, …}` body.
-- [ ] T065 [P] [US6] Write `tests/scenario/test_b43_changes_on_page.py` (quickstart B-43).
+- [X] T065 [P] [US6] Write `tests/scenario/test_b43_changes_on_page.py` (quickstart B-43).
 
 ### Implementation for User Story 6
 
-- [ ] T066 [US6] In `eil/pagerender.py`, add the "Removed since approval" and legacy panels, and the `changes` header wording. Run T064 and T065.
-- [ ] T067 [US6] In `commands/speckit.eil.accept.md`, when the stage is Requirements, Functional or Technical and the page is the chosen surface, hand the `changes` review to the page. Other stages are unchanged. Re-run `tests/contract/test_prompt_guidance.py`.
+- [X] T066 [US6] In `eil/pagerender.py`, add the "Removed since approval" and legacy panels, and the `changes` header wording. Run T064 and T065.
+- [X] T067 [US6] In `commands/speckit.eil.accept.md`, when the stage is Requirements, Functional or Technical and the page is the chosen surface, hand the `changes` review to the page. Other stages are unchanged. Re-run `tests/contract/test_prompt_guidance.py`.
 
 **Checkpoint**: B-43 passes. Every story works on its own and together.
 
