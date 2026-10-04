@@ -222,4 +222,6 @@ def test_the_installed_configuration_template_carries_the_003_keys(installed: Pa
     text = (installed / ".specify" / "extensions" / "eil" / "config-template.yml").read_text(encoding="utf-8")
     parsed = parse_simple_yaml(text)
     assert parsed["main_branches"] == ["main", "master"]
-    assert parsed["review"] == {"one_at_a_time_max": 8}
+    assert parsed["review"] == {"one_at_a_time_max": 8, "page_idle_minutes": 60, "diagram_script": None}, (
+        "004 T070: review.page_idle_minutes and review.diagram_script ship with their defaults"
+    )

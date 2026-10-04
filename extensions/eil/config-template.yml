@@ -31,3 +31,11 @@ review:
   # Review lists of at most this many entries are walked one entry at a time; longer ones are shown as
   # a grouped summary answered in one reply.
   one_at_a_time_max: 8
+
+  # The browser review page (`eil review serve`) stops after this many minutes without use. Answers
+  # given on it are stored as they are given, so stopping loses nothing.
+  page_idle_minutes: 60
+
+  # Diagrams on the review page are shown as source. Name one https: script here (a Mermaid ES module,
+  # for example) and the browser loads it to draw them; the helper itself never fetches anything.
+  diagram_script: null

@@ -57,8 +57,12 @@ def record_line(kind: str, obj: dict[str, Any] | None) -> str:
     return f"(eil:{kind} record {get('id', '')})".replace(" )", ")")
 
 
-def view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: set[int]) -> list[tuple[int, str]]:
-    """``[(document line number, text)]`` of the clean view (region bodies rendered, comments gone)."""
+def view_lines(
+    pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: set[int], notes: dict[int, str] | None = None
+) -> list[tuple[int, str]]:
+    """``[(document line number, text)]`` of the clean view (region bodies rendered, comments gone).
+    ``notes`` adds a note after the cue of a block's first line (why a reopened block is back, 004)."""
+    notes = notes or {}
     region_at = {r.begin_no: r for r in doc.regions.values()}
     record_at = {r.open_no: r for r in doc.records()}
     decided = {
@@ -75,7 +79,7 @@ def view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: s
         if record is not None:
             skip_to = record.close_no or line.no
             if line.no in fence_cues:
-                out.append((line.no, CUE))
+                out.append((line.no, f"{CUE} {notes[line.no]}" if line.no in notes else CUE))
             out.append((line.no, record_line(record.kind, record.obj)))
             continue
         region = region_at.get(line.no)
@@ -91,7 +95,7 @@ def view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: s
             continue
         if line.kind in ("fence-open", "fence-body", "fence-close"):
             if line.no in fence_cues:
-                out.append((line.no, CUE))
+                out.append((line.no, f"{CUE} {notes[line.no]}" if line.no in notes else CUE))
             out.append((line.no, line.raw))
             continue
         text = _OLD_TAG.sub("", line.live).rstrip()  # the cue comes from status, never from a tag in the text
@@ -101,7 +105,20 @@ def view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: s
             text = f"{text} [ai-decided]"
         if line.no in cues:
             text = f"{text} {CUE}"
+            if line.no in notes:
+                text = f"{text} {notes[line.no]}"
         out.append((line.no, text))
+    return out
+
+
+def reopen_notes(pkg: Package, stage: str, blocks: list[Block]) -> dict[int, str]:
+    """``{first line: "(reopened by NAME: COMMENT)"}`` for each block a comment reopened (004 D-65)."""
+    recorded = (pkg.record(stage, "provenance") or {}).get("blocks") or {}
+    out = {}
+    for block in blocks:
+        mark = (recorded.get(block.key) or {}).get("reopened") if isinstance(recorded.get(block.key), dict) else None
+        if isinstance(mark, dict):
+            out[block.first_line] = f"(reopened by {mark.get('by')}: {' '.join(str(mark.get('comment', '')).split())})"
     return out
 
 
@@ -149,7 +166,7 @@ def view(pkg: Package, stage: str, items: list[str] | None = None, section: str 
     blocks = blocks_of(doc)
     statuses = statuses_all.get(stage, {})
     cues, fence_cues = _cues(blocks, statuses)
-    lines = view_lines(pkg, stage, doc, cues, fence_cues)
+    lines = view_lines(pkg, stage, doc, cues, fence_cues, reopen_notes(pkg, stage, blocks))
     rows = [_row(b, statuses) for b in blocks]
     if section is not None:
         lines, rows = _section(doc, lines, rows, section, stage)
@@ -195,7 +212,7 @@ def _items(pkg: Package, stage: str, items: list[str], statuses_all: dict[str, A
         statuses = statuses_all.get(owner, {})
         doc = pkg.doc(owner)
         cues, fence_cues = _cues([block], statuses)
-        shown = view_lines(pkg, owner, doc, cues, fence_cues)
+        shown = view_lines(pkg, owner, doc, cues, fence_cues, reopen_notes(pkg, owner, [block]))
         heading = (owner, block.section)
         if heading != last_heading:
             if out:

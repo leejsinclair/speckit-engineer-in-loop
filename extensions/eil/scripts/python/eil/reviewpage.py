@@ -267,7 +267,9 @@ def _text(body: dict[str, Any], name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _write(handler: Handler, stage: Any, kind: Any, call: Callable[[Package], dict[str, Any]]) -> dict[str, Any]:
+def _write(
+    handler: Handler, stage: Any, kind: Any, call: Callable[[Package], dict[str, Any]], any_kind: bool = False
+) -> dict[str, Any]:
     """One page write: under the record lock, on the story as it is on disk now, for the current
     review only (``not-current``), with the overview regenerated as a command-line write does."""
     from .blockstatus import persist_adoption
@@ -279,7 +281,7 @@ def _write(handler: Handler, stage: Any, kind: Any, call: Callable[[Package], di
         package = Package(server.story_dir)
         if package.record_file().error is None:
             found = current_review(package, server.config.one_at_a_time_max)
-            if (stage, kind) != (found["stage"], found["kind"]) or found["stage"] is None:
+            if found["stage"] is None or stage != found["stage"] or (not any_kind and kind != found["kind"]):
                 showing = f"{found['stage']}/{found['kind']}" if found["stage"] else "no review"
                 raise refuse(
                     Refusal("not-current", f"this page answered {stage}/{kind}, but the current review is {showing}; nothing was stored", "Reload the page")
@@ -331,7 +333,26 @@ def _name(handler: Handler, body: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "name": name}
 
 
-POST_ROUTES: dict[str, Route] = {"/answer": _answer, "/name": _name}
+def _reopen(handler: Handler, body: dict[str, Any]) -> dict[str, Any]:
+    """``POST /reopen``: a comment on a settled block of the current review's stage reopens it (D-65)."""
+    from .reviews import answer
+
+    key = _text(body, "key")
+    if not key:
+        return {"ok": False, "error": "a comment names the block it is on"}
+    server = handler.server
+    stage = body.get("stage")
+    return _write(
+        handler, stage, None,
+        lambda package: answer(
+            package, server.config, str(stage), "inferred", digest=None, by=server.name, reply="", reopen=[key],
+            threshold=server.config.one_at_a_time_max, shown=_text(body, "shown"), via="page", comment=_text(body, "comment"),
+        ),
+        any_kind=True,
+    )  # fmt: skip
+
+
+POST_ROUTES: dict[str, Route] = {"/answer": _answer, "/name": _name, "/reopen": _reopen}
 
 
 # ---- starting the server

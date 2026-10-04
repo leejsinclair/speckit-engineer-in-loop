@@ -647,3 +647,16 @@ def test_approval_stays_in_chat(path: Path) -> None:
     assert re.search(r"approval, overrides, waivers and the comprehension check stay in chat", text, re.I)
     assert re.search(r"never send the person to the page (for|to) (approve|approval)", text, re.I)
 
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_answers_acted_on(path: Path) -> None:
+    """FR-014, FR-016 (probe P-34): after "done", the stored answers come from the helper; each send-back
+    is reworked with what changed, each question answered in chat; the person reloads and answers on
+    the page; no answer to a page-surface entry is recorded in chat; a reopened block is a send-back."""
+    text = read(path)
+    assert "review list --current --json" in text and "last_answers" in text
+    assert re.search(r"rework the block,? and say what changed", text, re.I)
+    assert re.search(r"answer (it|each question) in chat, or raise a challenge", text, re.I)
+    assert re.search(r"never record a page-surface entry'?s answer in chat", text, re.I)
+    assert re.search(r"a comment on a settled block", text, re.I) and re.search(r"as (on|you would) a send-back", text, re.I)
+    assert re.search(r"comprehension check, then approval in chat", text, re.I)

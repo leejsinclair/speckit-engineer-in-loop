@@ -248,29 +248,29 @@ description: "Task list for the Browser Review Page"
 - [X] T033 [P] [US2] Extend `tests/unit/test_review_list_answers.py`, the closed-session half (D-72, FR-014):
   - after a session closes, `last_answers` holds the `except` and `questioned` entries of the latest acceptance, with their comments;
   - a questioned key stays on the list after the session closes.
-- [ ] T034 [P] [US2] Write `tests/unit/test_reopen_settled.py` (D-65), covering **determinism 61**:
+- [X] T034 [P] [US2] Write `tests/unit/test_reopen_settled.py` (D-65), covering **determinism 61**:
   - a comment on a restated, settled block writes `reopened: {by, at, list, comment, via}` with the comment verbatim;
   - the block is then `needs-review`, is on `review list --kind inferred`, and keeps its fingerprint and class;
   - accepting it removes `reopened`;
   - editing a reopened block keeps the mark until it is settled;
   - `show` adds "(reopened by NAME: COMMENT)" after the block's cue;
   - `--reopen` on a block that is not settled is refused as in 003.
-- [ ] T035 [P] [US2] Extend `tests/unit/test_page_server.py`:
+- [X] T035 [P] [US2] Extend `tests/unit/test_page_server.py`:
   - `POST /reopen {stage, key, shown, comment}` requires a comment (`comment-required`), is refused with `entry-changed` when `shown` is outdated, and is allowed only on the current review's stage;
   - the page renders a Comment button on settled blocks only, and after a stored reopen shows "Reopened by NAME".
-- [ ] T036 [P] [US2] Write `tests/scenario/test_b39_return_to_chat.py` (quickstart B-39).
-- [ ] T037 [P] [US2] Write `tests/scenario/test_b44_shared_session.py` (quickstart B-44, FR-013). On a 6-entry list, three entries are answered on the page, then the CLI's `review list` and `review answer --entry` answer the rest. No entry is asked twice, and the session closes once, with page and chat groups as separate acceptances.
-- [ ] T038 [US2] Add `test_page_answers_acted_on` (P-34) to `tests/contract/test_prompt_guidance.py`, for the four prompt files.
+- [X] T036 [P] [US2] Write `tests/scenario/test_b39_return_to_chat.py` (quickstart B-39).
+- [X] T037 [P] [US2] Write `tests/scenario/test_b44_shared_session.py` (quickstart B-44, FR-013). On a 6-entry list, three entries are answered on the page, then the CLI's `review list` and `review answer --entry` answer the rest. No entry is asked twice, and the session closes once, with page and chat groups as separate acceptances.
+- [X] T038 [US2] Add `test_page_answers_acted_on` (P-34) to `tests/contract/test_prompt_guidance.py`, for the four prompt files.
 
 ### Implementation for User Story 2
 
 - [X] T039 [US2] In `eil/reviews.py`, return `last_answers` after a session closes, in the list result (D-72). Run T033.
-- [ ] T040 [US2] In `eil/reviews.py`, add `_reopenable_inferred` (every block of the stage whose status is `settled`, of any class) and use it for `reopen`. `_reopen_inferred` writes the `reopened` mark with the comment and `via`, and `_settle_inferred` removes it.
-- [ ] T041 [P] [US2] In `eil/blockstatus.py`, report a block with a `reopened` mark as `needs-review`, whatever its class.
-- [ ] T042 [P] [US2] In `eil/show.py`, add "(reopened by NAME: COMMENT)" after the block's review cue.
-- [ ] T043 [US2] In `eil/recordfile.py`, make `problems()` accept `reopened` on provenance entries. In `eil/cli.py`, pass `--comment` through `review answer --reopen`, and output `answers` and `last_answers`. Run T034.
-- [ ] T044 [US2] In `eil/reviewpage.py`, add `POST /reopen`, which calls `reviews.answer(reopen=[key], via="page", shown=…, comment=…)` under the lock. In `eil/pagerender.py`, add the Comment button and its box on settled blocks ("Send this block back for review with your comment"), and the "Reopened by NAME" display. Run T035 to T037.
-- [ ] T045 [US2] In the four prompt files, add "After done" and "A comment on a settled block" (contracts/commands.md items 3 and 4):
+- [X] T040 [US2] In `eil/reviews.py`, add `_reopenable_inferred` (every block of the stage whose status is `settled`, of any class) and use it for `reopen`. `_reopen_inferred` writes the `reopened` mark with the comment and `via`, and `_settle_inferred` removes it.
+- [X] T041 [P] [US2] In `eil/blockstatus.py`, report a block with a `reopened` mark as `needs-review`, whatever its class.
+- [X] T042 [P] [US2] In `eil/show.py`, add "(reopened by NAME: COMMENT)" after the block's review cue.
+- [X] T043 [US2] In `eil/recordfile.py`, make `problems()` accept `reopened` on provenance entries. In `eil/cli.py`, pass `--comment` through `review answer --reopen`, and output `answers` and `last_answers`. Run T034.
+- [X] T044 [US2] In `eil/reviewpage.py`, add `POST /reopen`, which calls `reviews.answer(reopen=[key], via="page", shown=…, comment=…)` under the lock. In `eil/pagerender.py`, add the Comment button and its box on settled blocks ("Send this block back for review with your comment"), and the "Reopened by NAME" display. Run T035 to T037.
+- [X] T045 [US2] In the four prompt files, add "After done" and "A comment on a settled block" (contracts/commands.md items 3 and 4):
   - run `review list --current --json`;
   - show each send-back's comment, rework the block, and say what changed;
   - answer each question in chat, or raise a challenge;
@@ -292,23 +292,23 @@ description: "Task list for the Browser Review Page"
 
 ### Tests for User Story 3 (write first, see them fail)
 
-- [ ] T046 [P] [US3] Write `tests/unit/test_page_state.py`:
+- [X] T046 [P] [US3] Write `tests/unit/test_page_state.py`:
   - **determinism 66**: `GET /state` returns `{current, doc, entries, answers}`, and reflects a block edit and a CLI-stored answer on the next call. The page's poll constant is at most 5000 ms, and the `GET /` HTML embeds the same state it was rendered from;
   - **determinism 65**: with `idle_minutes` patched short, a server receiving only `GET /state` stops, and one receiving `GET /` within the period does not. After the stop, every stored answer is in `eil-record.json`, and `review list` resumes the session;
   - `GET /state` answers in under 200 ms on the 002 performance fixture;
   - a CLI write made between two `GET /state` calls appears in the second, which proves there is no cached package.
-- [ ] T047 [P] [US3] Extend `tests/unit/test_page_security.py`:
+- [X] T047 [P] [US3] Extend `tests/unit/test_page_security.py`:
   - **determinism 56, page half**: a `POST /answer` with an outdated `shown` returns `entry-changed` with the current text, and the record is byte-identical;
   - the default bind is `127.0.0.1`, and a non-loopback host is used only with `--host`;
   - with `--host 0.0.0.0 --public-name box.local`, `Host: box.local` is accepted and `Host: attacker.example` is refused;
   - **determinism 67, page half**: ten `POST /answer` calls and ten `review answer --entry` subprocesses, each to a different entry, are all stored, the record is valid JSON, and no lock remains.
-- [ ] T048 [P] [US3] Write `tests/scenario/test_b40_page_safety.py` (quickstart B-40, SC-002).
+- [X] T048 [P] [US3] Write `tests/scenario/test_b40_page_safety.py` (quickstart B-40, SC-002).
 
 ### Implementation for User Story 3
 
-- [ ] T049 [US3] In `eil/identity.py` and `extensions/eil/config-template.yml`, add `review.page_idle_minutes`, default `60` and a positive integer. Any other key under `review` is still refused.
-- [ ] T050 [US3] In `eil/reviewpage.py`, add `GET /state` (D-68), which loads the package fresh on each call, and the idle stop: `last_use` is updated by every request except `GET /state`, and a timer thread shuts the server down and removes the runtime file. `--idle-minutes` overrides the configuration. Also add the `--public-name` host acceptance, honoured only when the host is not loopback.
-- [ ] T051 [US3] In `eil/pagerender.py`, update the page script:
+- [X] T049 [US3] In `eil/identity.py` and `extensions/eil/config-template.yml`, add `review.page_idle_minutes`, default `60` and a positive integer. Any other key under `review` is still refused.
+- [X] T050 [US3] In `eil/reviewpage.py`, add `GET /state` (D-68), which loads the package fresh on each call, and the idle stop: `last_use` is updated by every request except `GET /state`, and a timer thread shuts the server down and removes the runtime file. `--idle-minutes` overrides the configuration. Also add the `--public-name` host acceptance, honoured only when the host is not loopback.
+- [X] T051 [US3] In `eil/pagerender.py`, update the page script:
   - poll `/state` every 4000 ms;
   - compare with the embedded state and show one notice with a Reload button: "KEY changed", "KEY was answered elsewhere", "A new review is current: STAGE", or "The document changed outside the review blocks";
   - on `entry-changed`, replace the shown text in that control only, with "This block changed; read it again before answering";
@@ -333,26 +333,26 @@ description: "Task list for the Browser Review Page"
 
 ### Tests for User Story 4 (write first, see them fail)
 
-- [ ] T052 [P] [US4] Write `tests/unit/test_page_references.py` (D-69):
+- [X] T052 [P] [US4] Write `tests/unit/test_page_references.py` (D-69):
   - codes resolve from `Block.id` across every existing stage document;
   - a resolved code is a link to `/doc/<stage>?t=…#<id>` with the defining block's rendered text as its preview;
   - an undefined or duplicated code carries the error mark and a title saying which;
   - `GET /doc/<stage>?t=` renders that stage read-only, and shows the Comment control only when it is the current review's stage.
-- [ ] T053 [P] [US4] Write `tests/unit/test_page_diagrams.py`:
+- [X] T053 [P] [US4] Write `tests/unit/test_page_diagrams.py`:
   - a `mermaid` fence is shown as source;
   - **determinism 64**: without `review.diagram_script`, the page contains no URL with a scheme other than its own origin, and the CSP `script-src` is `'self' 'nonce-…'`. With `https://cdn.example/m.mjs`, the page names that URL once in text ("Diagrams drawn by URL"), and `script-src` adds exactly `https://cdn.example`;
   - `review.diagram_script` that is not an `https:` URL is refused by configuration loading;
   - the helper never opens a network connection (socket patched).
-- [ ] T054 [P] [US4] Write `tests/scenario/test_b41_references_diagrams.py` (quickstart B-41).
+- [X] T054 [P] [US4] Write `tests/scenario/test_b41_references_diagrams.py` (quickstart B-41).
 
 ### Implementation for User Story 4
 
-- [ ] T055 [US4] In `eil/identity.py` and `extensions/eil/config-template.yml`, add `review.diagram_script`, default `null`, accepting only an `https:` URL.
-- [ ] T056 [US4] In `eil/pagerender.py`, add the reference index built from `Block.id` of every existing stage document: links, previews and the error mark. Add the diagram handling:
+- [X] T055 [US4] In `eil/identity.py` and `extensions/eil/config-template.yml`, add `review.diagram_script`, default `null`, accepting only an `https:` URL.
+- [X] T056 [US4] In `eil/pagerender.py`, add the reference index built from `Block.id` of every existing stage document: links, previews and the error mark. Add the diagram handling:
   - source always shown;
   - with the opt-in, one module script tag for the configured URL, the "Diagrams drawn by URL" line under the first diagram, and the drawing placed beside its source, which stays visible on failure;
   - `csp()` adds the script's origin only.
-- [ ] T057 [US4] In `eil/reviewpage.py`, render `GET /doc/<stage>` read-only through `page_html` on the route T015 guards, with the Comment control only for the current review's stage. Run T052 to T054.
+- [X] T057 [US4] In `eil/reviewpage.py`, render `GET /doc/<stage>` read-only through `page_html` on the route T015 guards, with the Comment control only for the current review's stage. Run T052 to T054.
 
 **Checkpoint**: B-41 passes, along with determinism 64. Determinism 55 still passes with the rendered `/doc` route.
 

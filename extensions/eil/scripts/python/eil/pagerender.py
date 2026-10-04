@@ -635,16 +635,71 @@ def _document(package: Any, stage: str, review: _Review | None, ctx: RenderConte
         if entry is not None and review is not None:
             placed.add(block.key)
             parts.append(_control(block.key, entry, review.answers.get(block.key), review.last.get(block.key), disabled, review.kind))
-        elif comment and "settled" in classes:
+        elif comment and "settled" in classes and (review is None or review.stage == stage):
             parts.append(_reopen_control(block.key, disabled))
         parts.append("</div>")
         out.append("".join(parts))
     return "\n".join(out), placed
 
 
+def reference_index(package: Any) -> dict[str, list[tuple[str, Any]]]:
+    """``{id: [(stage, Block)]}`` over every existing stage document: the helper's own block ids, so a
+    reference resolves as ``trace`` and ``check`` resolve it (D-69)."""
+    from .content import blocks_of
+
+    index: dict[str, list[tuple[str, Any]]] = {}
+    for stage in package.existing_stages():
+        for block in blocks_of(package.doc(stage)):
+            if block.id:
+                index.setdefault(block.id, []).append((stage, block))
+    return index
+
+
+def reference_marker(package: Any, token: str, here: str) -> Any:
+    """A ``RenderContext`` marker: a code defined once becomes a link to its definition with the
+    defining block's rendered text as a preview; any other code carries the error mark."""
+    index = reference_index(package)
+    previews: dict[str, str] = {}
+
+    def mark(code: str) -> str:
+        found = index.get(code, [])
+        if len(found) != 1:
+            why = f"{code} is not defined in this story" if not found else (
+                f"{code} is defined {len(found)} times: " + ", ".join(stage for stage, _ in found)
+            )
+            return f'<span class="ref-error" title="{esc(why)}">{esc(code)}</span>'
+        stage, block = found[0]
+        href = f"#{code}" if stage == here else f"/doc/{stage}?t={token}#{code}"
+        if code not in previews:
+            previews[code] = render_markdown(block.text, RenderContext(tooltip=True))
+        return (
+            f'<a class="ref" href="{esc(href)}" aria-describedby="pv-{esc(code)}">{esc(code)}</a>'
+            f'<span class="preview" role="tooltip" hidden>{previews[code]}</span>'
+        )
+
+    return mark
+
+
+def _diagram_credit(document: str, url: str | None) -> str:
+    """With ``review.diagram_script``, say under the first diagram which script draws them (D-69)."""
+    if not url or '<pre class="mermaid-src">' not in document:
+        return document
+    end = document.index("</pre>", document.index('<pre class="mermaid-src">')) + len("</pre>")
+    credit = f'<p class="diagram-credit">Diagrams drawn by {esc(url)}</p>'
+    return document[:end] + credit + document[end:]
+
+
 def _reopen_control(key: str, disabled: bool) -> str:
-    """Hook for US2: the Comment control on a settled block (none yet)."""
-    return ""
+    """The Comment control on a settled block of the stage under review (contracts/page.md, D-65)."""
+    off = " disabled" if disabled else ""
+    k = esc(key)
+    return (
+        f'<div class="reopen"><button type="button" data-act="comment" aria-label="Comment on {k}"{off}>Comment</button></div>'
+        f'<div class="comment" hidden><label><span class="comment-label">Send this block back for review with your comment</span>'
+        f'<textarea rows="3" aria-label="Comment on {k}"{off}></textarea></label>'
+        f'<button type="button" data-act="send" aria-label="Send the comment on {k}"{off}>Send</button>'
+        f'<button type="button" data-act="cancel">Cancel</button></div><p class="result" role="status"></p>'
+    )
 
 
 def _panels(review: _Review, placed: set[str]) -> str:
@@ -681,7 +736,7 @@ def review_page(package: Any, ctx: Any, nonce: str, listed: Any = None, current:
     the entries ``review list`` returns (D-61, D-62). ``ctx`` gives ``name``, ``token`` and ``config``."""
     review = _review_of(package, ctx.config, listed, current)
     state = state_of(review, package)
-    render_ctx = RenderContext()
+    render_ctx = RenderContext(marker=reference_marker(package, ctx.token, review.document or ""))
     title = _story_title(package)
     if review.stage is not None:
         heading = f"{stage_label(review.stage)}: {LIST_LABELS.get(review.kind or '', review.kind or '')}"
@@ -692,7 +747,10 @@ def review_page(package: Any, ctx: Any, nonce: str, listed: Any = None, current:
     document, placed = ("", set())
     if review.document:
         document, placed = _document(package, review.document, review, render_ctx, comment=review.stage is not None)
+    document = _diagram_credit(document, ctx.config.diagram_script)
     metas = {"eil-token": ctx.token, "eil-state": json.dumps(state, sort_keys=True)}
+    if ctx.config.diagram_script:
+        metas["eil-diagram-script"] = ctx.config.diagram_script
     body = [
         f'<body><header class="top" data-stage="{esc(review.stage or "")}" data-kind="{esc(review.kind or "")}">',
         f'<p class="story">{esc(title)}</p><h1>{esc(heading)}</h1>',
@@ -713,15 +771,26 @@ def review_page(package: Any, ctx: Any, nonce: str, listed: Any = None, current:
 
 
 def document_page(package: Any, stage: str, ctx: Any, nonce: str) -> str:
-    """``GET /doc/<stage>``: another stage's document, read-only."""
+    """``GET /doc/<stage>``: a stage's document, read-only. The Comment control on settled blocks is
+    shown only when ``stage`` is the current review's stage, so a comment cannot land on a stage nobody
+    is reviewing (D-69)."""
+    review = _review_of(package, ctx.config)
+    current = review.stage == stage and not review.disabled
     title = _story_title(package)
-    document, _ = _document(package, stage, None, RenderContext(), comment=False)
+    marker = reference_marker(package, ctx.token, stage)
+    document, _ = _document(package, stage, None, RenderContext(marker=marker), comment=current)
+    document = _diagram_credit(document, ctx.config.diagram_script)
+    metas = {"eil-token": ctx.token}
+    if ctx.config.diagram_script:
+        metas["eil-diagram-script"] = ctx.config.diagram_script
     body = (
-        f'<body><header class="top" data-stage="" data-kind=""><p class="story">{esc(title)}</p>'
-        f"<h1>{esc(stage_label(stage))} (read-only)</h1></header>"
-        f'<main id="doc">{document}</main></body></html>\n'
+        f'<body><header class="top" data-stage="{esc(stage if current else "")}" data-kind=""><p class="story">{esc(title)}</p>'
+        f"<h1>{esc(stage_label(stage))} (read-only)</h1>"
+        '<p class="meta"><a href="/?t=' + esc(ctx.token) + '">Back to the review</a></p></header>'
+        '<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>'
+        f'<main id="doc">{document}</main><script nonce="{esc(nonce)}">{SCRIPT}</script></body></html>\n'
     )
-    return _head(f"{stage_label(stage)}: {title}", nonce, {}) + body
+    return _head(f"{stage_label(stage)}: {title}", nonce, metas) + body
 
 
 CSS = """
@@ -978,7 +1047,16 @@ SCRIPT = r"""
     } catch (error) { pageStopped(); return; }
     setTimeout(poll, __POLL_MS__);
   }
-  if (TOKEN && top && top.dataset.stage !== undefined && baseline) setTimeout(poll, __POLL_MS__);
+  if (TOKEN && meta("eil-state")) setTimeout(poll, __POLL_MS__);
+
+  function preview(link, show) {
+    const tip = link.nextElementSibling;
+    if (tip && tip.classList.contains("preview")) tip.hidden = !show;
+  }
+  document.addEventListener("mouseover", (e) => { const a = e.target.closest("a.ref"); if (a) preview(a, true); });
+  document.addEventListener("mouseout", (e) => { const a = e.target.closest("a.ref"); if (a) preview(a, false); });
+  document.addEventListener("focusin", (e) => { const a = e.target.closest("a.ref"); if (a) preview(a, true); });
+  document.addEventListener("focusout", (e) => { const a = e.target.closest("a.ref"); if (a) preview(a, false); });
 
   const diagrams = meta("eil-diagram-script");
   if (diagrams) {

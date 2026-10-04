@@ -44,8 +44,16 @@ The person may review the Requirements, Functional and Technical lists on a page
    - **do not print the list in chat**, and do nothing with the review until they say "done";
    - **never open, fetch or post to the page address yourself**: give it to the person only. You never answer on the page;
    - pass `--host` only when the person asks for another address (in a container, for example: `--host 0.0.0.0 --public-name <name>`).
-3. **The page cannot start** (any refusal, such as `page-running`, `port-unavailable` or `ambiguous-story`), or the person cannot reach the address: say why in one line and review in chat exactly as above. If the person asks to switch to chat in the middle of a list, run `review list` and continue here: the helper already holds what was answered on the page.
-4. **Name**: pass the name the person gave in chat (asked at most once per session). Never pass the AI's name. The page shows "Answering as <name>" and lets the person change it there.
+3. **After "done":**
+   - run `eil review list --current --json`; it returns what the person answered on the page, in `answers` while the list is still open and in `last_answers` once it closed, each with the person's comment and name;
+   - for each send-back: show the comment, rework the block, and say what changed;
+   - for each question: answer it in chat, or raise a challenge if the document is wrong, and rework the block if the answer changes it;
+   - then ask the person to reload the page and answer those blocks there;
+   - **never record a page-surface entry's answer in chat** with `review answer`: the person answers it on the page;
+   - when the list is empty, continue the stage: the comprehension check, then approval in chat, as before.
+4. **A comment on a settled block** arrives as a reopened entry on the list, with the person's comment ("reopened by <name>: <comment>"). Act on it as on a send-back.
+5. **The page cannot start** (any refusal, such as `page-running`, `port-unavailable` or `ambiguous-story`), or the person cannot reach the address: say why in one line and review in chat exactly as above. If the person asks to switch to chat in the middle of a list, run `review list` and continue here: the helper already holds what was answered on the page.
+6. **Name**: pass the name the person gave in chat (asked at most once per session). Never pass the AI's name. The page shows "Answering as <name>" and lets the person change it there.
 
 Approval, overrides, waivers and the comprehension check stay in chat. Never send the person to the page for approval.
 

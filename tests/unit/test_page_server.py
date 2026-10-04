@@ -191,3 +191,76 @@ def test_determinism_57_the_page_and_the_command_line_record_the_same(tmp_path: 
 
     assert scrub(on_page) == scrub(in_chat)
 
+
+# ---- T035: a comment on a settled block (D-65)
+
+
+def reopen_body(root: Path, key: str = "FR-003", comment: str | None = "Phone layout?", stage: str = "functional") -> dict[str, Any]:
+    from eil.content import blocks_of
+
+    block = next(b for b in blocks_of(Package(root).doc(stage)) if b.key == key)
+    return {"stage": stage, "key": key, "shown": block.hash, "comment": comment}
+
+
+def test_post_reopen_reopens_a_settled_block(page_server: Page, review_page_story: Any) -> None:
+    root = review_page_story.root
+    status, payload = page_server.post("/reopen", reopen_body(root))
+    assert status == 200 and payload["ok"] is True, payload
+    mark = Package(root).record("functional", "provenance")["blocks"]["FR-003"]["reopened"]
+    assert mark["via"] == "page" and mark["comment"] == "Phone layout?" and mark["by"] == "Ada Dev"
+    _, _, html = page_server.get("/")
+    assert 'data-entry="FR-003"' in html
+    assert "reopened by ada dev: phone layout?" in html.lower()
+
+
+@pytest.mark.parametrize("comment", [None, "", "  "])
+def test_post_reopen_needs_a_comment(page_server: Page, review_page_story: Any, comment: str | None) -> None:
+    before = files_snapshot(review_page_story.root)
+    status, payload = page_server.post("/reopen", reopen_body(review_page_story.root, comment=comment))
+    assert refusals(payload) == ["comment-required"]
+    assert files_snapshot(review_page_story.root) == before
+
+
+def test_post_reopen_shown_an_older_version_is_refused(page_server: Page, review_page_story: Any) -> None:
+    root = review_page_story.root
+    body_ = reopen_body(root)
+    text = review_page_story.story.read("functional")
+    review_page_story.story.write("functional", text.replace("shows both customers side by side.", "shows both customers, side by side."))
+    before = files_snapshot(root)
+    status, payload = page_server.post("/reopen", body_)
+    assert "entry-changed" in refusals(payload) or "unknown-item" in refusals(payload)
+    assert files_snapshot(root) == before
+
+
+def test_post_reopen_only_on_the_current_reviews_stage(page_server: Page, review_page_story: Any) -> None:
+    root = review_page_story.root
+    before = files_snapshot(root)
+    status, payload = page_server.post("/reopen", reopen_body(root, "REQ-001", stage="requirements"))
+    assert refusals(payload) == ["not-current"]
+    assert files_snapshot(root) == before
+
+
+def test_the_comment_button_is_on_settled_blocks_only(page_server: Page, review_page_story: Any) -> None:
+    import re
+
+    from eil import blockstatus
+
+    _, _, html = page_server.get("/")
+    settled = {k for k, i in blockstatus.block_statuses(Package(review_page_story.root))["functional"].items() if i.status == "settled"}
+    with_button = {
+        pagerender_unescape(m.group(1))
+        for m in re.finditer(r'<div class="blk settled" data-key="([^"]+)"[^>]*>.*?data-act="comment"', html, re.S)
+    }
+    buttons = len(re.findall(r'data-act="comment"', html))
+    assert buttons == len(settled) and with_button <= settled
+    for key in review_page_story.listed():
+        block = re.search(rf'<div class="blk[^"]*" data-key="{re.escape(key)}".*?</div><!--/control-->', html, re.S)
+        if block:
+            assert 'data-act="comment"' not in block.group(0)
+
+
+def pagerender_unescape(text: str) -> str:
+    import html as html_module
+
+    return html_module.unescape(text)
+

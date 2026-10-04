@@ -206,6 +206,8 @@ class _Computer:
             return BlockInfo(stage, block, NEEDS_REVIEW)
         klass = entry.get("class")
         info = BlockInfo(stage, block, NEEDS_REVIEW, klass)
+        if isinstance(entry.get("reopened"), dict):
+            return info  # 004 D-65: a person commented on it; it needs review again, whatever its class
         if klass == ADOPTED_PENDING:
             if entry.get("hash") == block.hash:
                 info.status = SETTLED_PENDING

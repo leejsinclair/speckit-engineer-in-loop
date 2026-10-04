@@ -228,12 +228,33 @@ def _merge(config: Config, data: dict[str, Any]) -> None:
         config.main_branches = branches
     review = data.get("review")
     if review is not None:
-        if not isinstance(review, dict) or set(review) - {"one_at_a_time_max"}:
-            raise ConfigError("review may only hold one_at_a_time_max")
+        if not isinstance(review, dict) or set(review) - REVIEW_KEYS:
+            raise ConfigError(f"review may only hold {', '.join(sorted(REVIEW_KEYS))}")
         value = review.get("one_at_a_time_max", config.one_at_a_time_max)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ConfigError("review.one_at_a_time_max must be a whole number")
         config.one_at_a_time_max = value
+        idle = review.get("page_idle_minutes", config.page_idle_minutes)
+        if isinstance(idle, bool) or not isinstance(idle, int) or idle < 1:
+            raise ConfigError("review.page_idle_minutes must be a whole number of minutes, at least 1")
+        config.page_idle_minutes = idle
+        if "diagram_script" in review:
+            config.diagram_script = _diagram_script(review["diagram_script"])
+
+
+REVIEW_KEYS = frozenset({"one_at_a_time_max", "page_idle_minutes", "diagram_script"})
+
+
+def _diagram_script(value: Any) -> str | None:
+    """``review.diagram_script``: one ``https:`` URL the review page's browser may load, or nothing (004 D-69)."""
+    if value is None:
+        return None
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(str(value))
+    if not isinstance(value, str) or parts.scheme != "https" or not parts.netloc or any(c in value for c in " \"'<>"):
+        raise ConfigError("review.diagram_script must be an https: URL, or null")
+    return value
 
 
 # ---- who is who

@@ -162,3 +162,100 @@ def test_a_body_that_is_not_json_is_400(page: Page, review_page_story: Any) -> N
 def test_call_helper_reports_refused_connections() -> None:
     with pytest.raises(OSError):
         call("GET", "http://127.0.0.1:9/")
+
+
+# ---- T047: stale answers, binding and concurrent writers
+
+
+def test_determinism_56_page_half_a_stale_answer_is_refused(page: Page, review_page_story: Any) -> None:
+    from eil import reviews
+    from eil.package import Package
+
+    root = review_page_story.root
+    entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001")
+    text = review_page_story.story.read("functional")
+    review_page_story.story.write("functional", text.replace("flag duplicate customers on import.", "flag duplicate customers on each import."))
+    before = files_snapshot(root)
+    status, payload = page.post("/answer", {**ANSWER, "shown": entry.hash, "question": entry.question})
+    assert status == 200 and [r["code"] for r in payload["refusals"]] == ["entry-changed"]
+    current = payload["refusals"][0]["current"]
+    assert current["key"] == "FR-001" and "each import" in current["what"] and current["hash"] != entry.hash
+    assert files_snapshot(root) == before
+
+
+def test_the_default_bind_is_loopback(review_page_story: Any) -> None:
+    from eil import reviewpage
+
+    server = reviewpage.make_server(review_page_story.root, "Ada Dev", port=0)
+    try:
+        assert server.server_address[0] == "127.0.0.1"
+        assert server.address.startswith("http://127.0.0.1:")
+        assert server.public_name is None
+    finally:
+        server.server_close()
+
+
+def test_a_public_name_is_accepted_only_off_loopback(review_page_story: Any) -> None:
+    from tests.helpers.page import start_page
+
+    loopback = start_page(review_page_story.root, public_name="box.local")
+    try:
+        port = loopback.origin.rsplit(":", 1)[1]
+        assert loopback.call("GET", f"/?t={loopback.token}", headers={"Host": f"box.local:{port}"})[0] == 403
+    finally:
+        loopback.stop()
+    everywhere = start_page(review_page_story.root, host="0.0.0.0", public_name="box.local")
+    try:
+        port = everywhere.origin.rsplit(":", 1)[1]
+        assert everywhere.address.startswith("http://box.local:")
+        origin = f"http://127.0.0.1:{port}"
+        assert call("GET", f"{origin}/?t={everywhere.token}", headers={"Host": f"box.local:{port}"})[0] == 200
+        assert call("GET", f"{origin}/?t={everywhere.token}", headers={"Host": f"attacker.example:{port}"})[0] == 403
+    finally:
+        everywhere.stop()
+
+
+@pytest.mark.slow
+def test_determinism_67_page_half_page_and_cli_writers_together(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+    import subprocess
+    import sys
+    import tempfile
+    from concurrent.futures import ThreadPoolExecutor
+
+    from eil import recordfile, reviews
+    from eil.package import Package
+
+    from tests.conftest import HELPER_DIR
+    from tests.fixtures import review_page
+    from tests.helpers.page import start_page
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    built = review_page.build(tmp_path / "specs" / "001-story", entries=38)
+    root = built.root
+    entries = {e.key: e for e in reviews.build_list(Package(root), "functional", "inferred").entries}
+    on_page, in_cli = [f"FR-{n:03d}" for n in range(1, 11)], [f"FR-{n:03d}" for n in range(11, 21)]
+    page = start_page(root)
+
+    def by_page(key: str) -> bool:
+        _, payload = page.post("/answer", {**ANSWER, "entry": key, "shown": entries[key].hash, "question": entries[key].question})
+        return bool(payload.get("ok"))
+
+    def by_cli(key: str) -> bool:
+        proc = subprocess.run(
+            [sys.executable, str(HELPER_DIR), "review", "answer", "--stage", "functional", "--kind", "inferred", "--entry", key,
+             "--by", "Ada Dev", "--reply", "ok", "--feature-dir", str(root), "--json"],
+            capture_output=True, text=True, env={**os.environ}, check=False,
+        )  # fmt: skip
+        return proc.returncode == 0
+
+    try:
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            done = list(pool.map(lambda job: job[0](job[1]), [(by_page, k) for k in on_page] + [(by_cli, k) for k in in_cli]))
+    finally:
+        page.stop()
+    assert all(done)
+    data = json.loads(recordfile.path(root).read_text())
+    (session,) = data["story"]["review_sessions"].values()
+    assert sorted(session["answers"]) == sorted(on_page + in_cli)
+    assert not (root / LOCK).exists()

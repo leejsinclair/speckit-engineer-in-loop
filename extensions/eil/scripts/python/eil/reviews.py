@@ -173,6 +173,9 @@ class Act:
     reply: str
     summaries: dict[str, str]
     reason: str | None = None
+    marks: set[str] = field(default_factory=set)  # keys reopened by a comment: they get a ``reopened`` mark (004 D-65)
+    comment: str | None = None
+    via: str | None = None
 
 
 Hook = Callable[["Package", str, dict[str, Any], dict[str, str], Act], None]
@@ -189,6 +192,7 @@ class KindSpec:
     limits: tuple[str, ...] = ()
     rework_first: bool = False
     stages: tuple[str, ...] = ()
+    reopenable: Callable[[Package, str], dict[str, str]] | None = None  # wider than ``settled`` for --reopen
 
 
 def _refuse(code: str, message: str, fix: str = "") -> Any:
@@ -221,6 +225,9 @@ def _build_inferred(package: Package, stage: str) -> list[ListEntry]:
         entry = recorded.get(key) if isinstance(recorded.get(key), dict) else None
         if entry is None:
             why = "no record that a person has reviewed it"
+        elif isinstance(entry.get("reopened"), dict):
+            mark = entry["reopened"]
+            why = f"reopened by {mark.get('by')}: {mark.get('comment')}"
         elif entry.get("reviewed"):
             why = "changed since it was reviewed"
         elif entry.get("adds"):
@@ -251,9 +258,11 @@ def _settle_inferred(package: Package, stage: str, record: dict[str, Any], hashe
     current = package.current_item_hashes()
     for key, digest in hashes.items():
         entry = dict(record["blocks"].get(key) or {})
+        reopened = entry.pop("reopened", None)
         entry.update(hash=digest, reviewed={"by": act.by, "at": act.at, "list": act.id, "reply": act.reply})
-        entry["class"] = entry.get("class") if entry.get("class") in ("restated", "inferred") else "inferred"
-        entry.pop("basis", None)
+        if not reopened:  # a reopened block keeps its class: the comment changed nothing about where it came from
+            entry["class"] = entry.get("class") if entry.get("class") in ("restated", "inferred") else "inferred"
+            entry.pop("basis", None)
         block = by_key.get(key)
         if stage in DERIVED and block is not None and block.traces:
             entry["sources"] = {i: current[i] for i in block.traces if i in current}
@@ -262,12 +271,25 @@ def _settle_inferred(package: Package, stage: str, record: dict[str, Any], hashe
 
 def _reopen_inferred(package: Package, stage: str, record: dict[str, Any], hashes: dict[str, str], act: Act) -> None:
     for key in hashes:
+        if key in act.marks:
+            # 004 D-65: the mark alone puts a settled block back on the list; its hash, class and traces stay.
+            entry = record["blocks"].setdefault(key, {"hash": hashes[key], "class": "inferred"})
+            mark = {"by": act.by, "at": act.at, "list": act.id, "comment": act.comment or act.reply}
+            if act.via:
+                mark["via"] = act.via
+            entry["reopened"] = mark
+            continue
         entry = record["blocks"].get(key)
         if isinstance(entry, dict):
             entry.pop("reviewed", None)
             entry.pop("basis", None)
             if entry.get("class") in ("adopted", "adopted-pending"):
                 entry["class"] = "inferred"
+
+
+def _reopenable_inferred(package: Package, stage: str) -> dict[str, str]:
+    """Every settled block of ``stage``, of any class: what a comment may reopen (004 D-65)."""
+    return {key: info.block.hash for key, info in block_statuses(package).get(stage, {}).items() if info.status == SETTLED}
 
 
 def _settled_inferred(package: Package, stage: str) -> dict[str, str]:
@@ -712,6 +734,7 @@ KINDS: dict[str, KindSpec] = {
         _reopen_inferred,
         _settled_inferred,
         limits=(FIDELITY_LIMIT,),
+        reopenable=_reopenable_inferred,
     ),
     "tasks": KindSpec(
         "revalidation", _build_tasks, _settle_tasks, _reopen_tasks, _settled_tasks, rework_first=True
@@ -1075,6 +1098,8 @@ def _apply(
     mode: str,
     unseen: list[str] | None = None,
     extra: dict[str, Any] | None = None,
+    comment: str | None = None,
+    via: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
     """Record one acceptance and let the kind settle or reopen what it names (the one answer path).
     ``extra`` carries 004's ``via``, ``questions``, ``comments`` and ``together`` when they apply."""
@@ -1085,6 +1110,7 @@ def _apply(
     record.setdefault("blocks", {})
     deferring = bool(accepted) and spec.defers
     act = Act(_next_id(package), by, clock.utc_now(), reply, summaries or {}, (defer_reason or "").strip() or None)
+    act.marks, act.comment, act.via = set(reopened) if spec.reopenable else set(), comment, via
     acc: dict[str, Any] = {
         "id": act.id, "stage": stage, "kind": kind, "digest": digest, "by": by, "at": act.at, "reply": reply,
         "accepted": [] if deferring else accepted, "except": excepted, "questioned": questioned,
@@ -1248,6 +1274,12 @@ def answer(
     if settling and spec.defers and not (defer_reason or "").strip():
         add("reason-required", "a deferral needs a reason", "Pass --defer-reason")
     named = list(all_except or []) + list(question or []) + list(reopen or [])
+    if reopen and spec.reopenable is not None and stage != DERIVED_LIST:
+        settled = {**spec.reopenable(package, stage), **settled}
+    for key in reopen or []:
+        now = on_list[key].hash if key in on_list else settled.get(key)
+        if shown is not None and now is not None and shown != now:
+            add("entry-changed", f"{key} changed since it was shown; nothing was stored", "Read it again before commenting")
     for key in named:
         allowed = key in on_list or (not settling and key in settled)
         if not allowed:
@@ -1285,7 +1317,8 @@ def answer(
     acc, rows, resolved = _apply_split(
         package, spec, stage, kind, on_list, digest=digest, by=by, reply=reply, accepted=accepted_x, excepted=excepted_x,
         questioned=questioned_x, reopened=reopened_x, hashes=hashes, resolving=confirmer and settling,
-        defer_reason=defer_reason, summaries=summaries, mode=listed.mode,
+        defer_reason=defer_reason, summaries=summaries, mode=listed.mode, comment=comment, via=via,
+        extra={"via": via, "comments": {k: comment for k in reopened_x} if comment and reopened_x else None},
     )  # fmt: skip
     conflicts = sorted({r["key"] for r in rows if r["key"] in hashes})
     lines = [f"Recorded {acc['id']} by {by}: {len(accepted_x)} accepted, {len(excepted_x)} excepted."]
