@@ -261,6 +261,18 @@ class Doc:
             return RegionRead(None, "; ".join(problems[:3]))
         return read
 
+    def region_lines(self, name: str) -> list[str]:
+        """The non-blank lines of region ``name``'s body (its rendered line, or a 002 JSON body)."""
+        region = self.regions.get(name)
+        if region is None:
+            return []
+        return [line.raw for line in self.lines[region.begin_no : region.end_no - 1] if line.raw.strip()]
+
+    def region_is_json(self, name: str) -> bool:
+        """Whether region ``name`` still holds a JSON body (a document not yet migrated, D-48)."""
+        read = self.read_region(name)
+        return read.obj is not None or read.error is not None and name in self.regions
+
     def _marker_present(self, name: str) -> bool:
         return any((m := _MARKER.match(line.raw)) and m["name"] == name for line in self.lines)
 
@@ -283,13 +295,19 @@ PROVENANCE_KEYS = frozenset(
     {"version", "currency", "blocks", "acceptances", "corrections", "changes", "conflicts"}
 )
 BLOCK_KEYS = frozenset(
-    {"hash", "class", "cites", "adds", "reviewed", "sources", "completed_against", "blocked_at_completion", "basis"}
-)
+    {
+        "hash", "class", "cites", "adds", "reviewed", "sources", "completed_against", "blocked_at_completion", "basis",
+        "reopened",  # 004 D-65: a person commented on the settled block; it needs review again
+    }
+)  # fmt: skip
 REVIEWED_KEYS = frozenset({"by", "at", "list", "reply"})
+REOPENED_KEYS = frozenset({"by", "at", "list", "comment", "via"})
 ACCEPTANCE_KEYS = frozenset(
     {
         "id", "stage", "kind", "digest", "by", "at", "reply", "accepted", "except", "questioned",
-        "reopened", "deferred", "reason", "resolved_conflict", "hashes", "summaries",
+        "reopened", "deferred", "reason", "resolved_conflict", "hashes", "summaries", "mode", "unseen",
+        # 004 D-63, D-70: answered on the page, with the fixed questions, comments and sections accepted together
+        "via", "questions", "comments", "together",
     }
 )  # fmt: skip
 CORRECTION_KEYS = frozenset(
@@ -301,7 +319,7 @@ CORRECTION_KEYS = frozenset(
 FOUND_IN_KEYS = frozenset({"stage", "item"})
 CHANGE_KEYS = frozenset({"at", "item", "summary", "summary_by", "origin", "accepted_by"})
 CONFLICT_KEYS = frozenset({"key", "hash", "answers"})
-BLOCK_CLASSES = ("restated", "decided", "inferred", "adopted")
+BLOCK_CLASSES = ("restated", "decided", "inferred", "adopted", "adopted-pending")
 
 
 def _extra(where: str, obj: Any, allowed: frozenset[str]) -> list[str]:
@@ -328,6 +346,8 @@ def provenance_problems(obj: Any) -> list[str]:
             problems.append(f"{where}.class {entry['class']!r} is not one of {', '.join(BLOCK_CLASSES)}")
         if entry.get("reviewed") is not None:
             problems += _extra(f"{where}.reviewed", entry["reviewed"], REVIEWED_KEYS)
+        if entry.get("reopened") is not None:
+            problems += _extra(f"{where}.reopened", entry["reopened"], REOPENED_KEYS)
     for name, allowed in (
         ("acceptances", ACCEPTANCE_KEYS),
         ("corrections", CORRECTION_KEYS),
@@ -369,6 +389,72 @@ def write_region(text: str, name: str, obj: Any, heading: str | None = None) -> 
     suffix = "\r" if nl == "\r\n" else ""
     pieces[region.begin_no : region.end_no - 1] = [line + suffix for line in body]
     return "\n".join(pieces)
+
+
+# Where a record's region goes when a document does not have it yet.
+REGION_HEADINGS = {
+    "approval": "## Approval",
+    "assessment": "## Quality Assessment",
+    "comprehension": "## Comprehension Check",
+}
+
+
+def ensure_region(text: str, name: str) -> str:
+    """``text`` with an empty region ``name`` added under its usual heading if it has none."""
+    if name == "provenance":
+        return ensure_record_sections(text)
+    doc = Doc(text)
+    if doc._region_problem:
+        raise RegionError("the document has a malformed region; fix it before writing")
+    if name in doc.regions:
+        return text
+    nl = _newline(text)
+    lines = [] if text == "" else ([text] if text.endswith("\n") else [text + nl])
+    block = ["", REGION_HEADINGS[name], f"<!-- eil:begin {name} -->", f"<!-- eil:end {name} -->"]
+    return "".join(lines) + nl.join(block) + nl
+
+
+def set_region_lines(text: str, name: str, body: list[str]) -> str:
+    """Replace the body of region ``name`` with ``body`` (rendered Markdown lines), changing nothing else.
+    The region must exist."""
+    doc = Doc(text)
+    if doc._region_problem:
+        raise RegionError("the document has a malformed region; fix it before writing")
+    region = doc.regions[name]
+    suffix = "\r" if _newline(text) == "\r\n" else ""
+    pieces = text.split("\n")
+    pieces[region.begin_no : region.end_no - 1] = [line + suffix for line in body]
+    return "\n".join(pieces)
+
+
+_AI_DRAFT = re.compile(r"[ \t]*\[ai-draft\]")
+
+
+def strip_ai_draft(text: str) -> str:
+    """``text`` with every ``[ai-draft]`` tag outside HTML comments removed (003 D-50). The tag is
+    fingerprint- and hash-neutral (002 D-23), so removing it changes no approval and no status."""
+    out: list[str] = []
+    in_comment = False
+    for piece in text.split("\n"):
+        kept: list[str] = []
+        i = 0
+        while i < len(piece):
+            if in_comment:
+                end = piece.find("-->", i)
+                if end == -1:
+                    kept.append(piece[i:])
+                    break
+                kept.append(piece[i : end + 3])
+                i, in_comment = end + 3, False
+                continue
+            start = piece.find("<!--", i)
+            if start == -1:
+                kept.append(_AI_DRAFT.sub("", piece[i:]))
+                break
+            kept.append(_AI_DRAFT.sub("", piece[i:start]) + "<!--")
+            i, in_comment = start + 4, True
+        out.append("".join(kept))
+    return "\n".join(out)
 
 
 def replace_record(text: str, record: Record, obj: Any) -> str:
@@ -440,7 +526,9 @@ def _cell(value: Any) -> str:
     return " ".join(str(value if value is not None else "").split()).replace("|", "\\|")
 
 
-def render_changelog(changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None) -> list[str]:
+def render_changelog(
+    changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None
+) -> list[str]:
     """The table lines for ``changes``, oldest first, or no lines when there are none."""
     if not changes:
         return []
@@ -449,11 +537,7 @@ def render_changelog(changes: list[dict[str, Any]], corrections: list[dict[str, 
     for change in changes:
         origin = str(change.get("origin") or "")
         found = by_id.get(origin, {}).get("found_in") if origin.startswith("CR-") else None
-        where = (
-            f"{found.get('stage')} ({found.get('item')}), {origin}"
-            if isinstance(found, dict)
-            else origin
-        )
+        where = f"{found.get('stage')} ({found.get('item')}), {origin}" if isinstance(found, dict) else origin
         cells = [
             str(change.get("at") or "")[:10],
             change.get("item"),
@@ -518,7 +602,9 @@ def write_provenance(text: str, obj: dict[str, Any]) -> str:
     return write_region(ensure_record_sections(text), "provenance", obj)
 
 
-def write_changelog(text: str, changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None) -> str:
+def write_changelog(
+    text: str, changes: list[dict[str, Any]], corrections: list[dict[str, Any]] | None = None
+) -> str:
     """Rewrite the ``changelog`` region from ``changes`` (a generated table, never parsed)."""
     text = ensure_record_sections(text)
     doc = Doc(text)
@@ -526,5 +612,7 @@ def write_changelog(text: str, changes: list[dict[str, Any]], corrections: list[
     nl = _newline(text)
     suffix = "\r" if nl == "\r\n" else ""
     pieces = text.split("\n")
-    pieces[region.begin_no : region.end_no - 1] = [line + suffix for line in render_changelog(changes, corrections)]
+    pieces[region.begin_no : region.end_no - 1] = [
+        line + suffix for line in render_changelog(changes, corrections)
+    ]
     return "\n".join(pieces)

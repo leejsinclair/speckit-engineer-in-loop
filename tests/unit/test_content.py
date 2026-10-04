@@ -186,7 +186,9 @@ def test_task_lines_are_numbered_blocks_keyed_by_id() -> None:
     assert by_key["T001"].traces == ["AIS-001"]
     ticked = _by_key(tasks.replace("- [ ] T001", "- [x] T001"))
     assert ticked["T001"].hash == by_key["T001"].hash, "ticking is not a change to what the task says"
-    coded = _by_key(tasks.replace("Do a thing (traces: AIS-001)", "Do a thing (traces: AIS-001) (code: abc1234)"))
+    coded = _by_key(
+        tasks.replace("Do a thing (traces: AIS-001)", "Do a thing (traces: AIS-001) (code: abc1234)")
+    )
     assert coded["T001"].hash == by_key["T001"].hash
     reworded = _by_key(tasks.replace("Do a thing", "Do another thing"))
     assert reworded["T001"].hash != by_key["T001"].hash

@@ -50,7 +50,12 @@ def eil(reference_story: Story, eil_json: Eil) -> Eil:
 
 def test_a_recorded_decision_is_carried_forward_with_one_ok(reference_story: Story, eil: Eil) -> None:
     reference_story.append("requirements", "\n" + record_block("challenge", CHALLENGE).rstrip("\n") + "\n")
-    edit(reference_story, "requirements", REQ1, REQ1.replace("import.", "import, in real time.") + " (decided: CH-004)")
+    edit(
+        reference_story,
+        "requirements",
+        REQ1,
+        REQ1.replace("import.", "import, in real time.") + " (decided: CH-004)",
+    )
     code, listed = eil("review", "list", "--stage", "requirements", "--kind", "changes")
     assert code == 0 and [e["key"] for e in listed["entries"]] == ["REQ-001"]
     assert listed["entries"][0]["covered_by"] == "CH-004"
@@ -61,7 +66,9 @@ def test_a_recorded_decision_is_carried_forward_with_one_ok(reference_story: Sto
     code, status = eil("status")
     approval = status["stages"]["requirements"]["approval"]
     assert code == 0 and approval["reached"] == "carried-forward" and approval["rests_on"] == ["CH-004"]
-    assert "carried forward, resting on CH-004" in reference_story.path("overview").read_text(encoding="utf-8")
+    assert "carried forward, resting on CH-004" in reference_story.path("overview").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_an_uncovered_addition_is_answered_once_then_confirmed(reference_story: Story, eil: Eil) -> None:
@@ -75,7 +82,9 @@ def test_an_uncovered_addition_is_answered_once_then_confirmed(reference_story: 
         "--reply", "ok", "--by", "Ada Dev", "--all",
     )  # fmt: skip
     assert code == 0, data
-    code, done = eil(*CONFIRM, "Yes, I reviewed the addition.", *summaries(reference_story.root.parent, "REQ-005"))
+    code, done = eil(
+        *CONFIRM, "Yes, I reviewed the addition.", *summaries(reference_story.root.parent, "REQ-005")
+    )
     assert code == 0, done
     assert done["approval"]["reached"] == "reviewed" and data["id"] in done["approval"]["rests_on"]
     assert package_of(reference_story).state("requirements").state == "approved"
@@ -83,5 +92,7 @@ def test_an_uncovered_addition_is_answered_once_then_confirmed(reference_story: 
 
 def test_the_ai_cannot_confirm(reference_story: Story, eil: Eil) -> None:
     edit(reference_story, "requirements", REQ4, REQ4 + "\n\n" + NEW_REQ)
-    code, refusal = eil("review", "confirm", "--stage", "requirements", "--by", "claude", "--confirmation", "ok")
+    code, refusal = eil(
+        "review", "confirm", "--stage", "requirements", "--by", "claude", "--confirmation", "ok"
+    )
     assert code != 0 and "ai-approval" in str(refusal)

@@ -30,7 +30,7 @@ _CR_NUMBER = re.compile(r"^CR-(\d{3,})$")
 
 def _records(pkg: Package, stage: str) -> list[dict[str, Any]]:
     try:
-        obj = pkg.doc(stage).read_provenance().obj
+        obj = pkg.record(stage, "provenance")
     except (OSError, UnicodeDecodeError):
         return []
     found = (obj or {}).get("corrections")
@@ -69,7 +69,9 @@ def _words(text: str) -> str:
 
 def same_text(wording: str, item_text: str) -> bool:
     """Whitespace-collapsed equality, falling back to the fingerprint's own normalisation."""
-    return _words(wording) == _words(item_text) or normalise_fragment(wording) == normalise_fragment(item_text)
+    return _words(wording) == _words(item_text) or normalise_fragment(wording) == normalise_fragment(
+        item_text
+    )
 
 
 def wording_problem(pkg: Package, cr_id: str, item: Item | None) -> tuple[bool, str | None]:
@@ -112,8 +114,12 @@ def _locate(pkg: Package, item_id: str) -> tuple[str, Item, ParseResult]:
                 return stage, item, result
         for task in result.tasks:
             if task.id == item_id:
-                raise refuse(Refusal("unknown-item", f"{item_id} is a task; correct the item it traces to", ""))
-    raise refuse(Refusal("unknown-item", f"{item_id} is not an item of this story", "Name an existing item id"))
+                raise refuse(
+                    Refusal("unknown-item", f"{item_id} is a task; correct the item it traces to", "")
+                )
+    raise refuse(
+        Refusal("unknown-item", f"{item_id} is not an item of this story", "Name an existing item id")
+    )
 
 
 def propose(pkg: Package, item_id: str, found_in: str, problem: str) -> dict[str, Any]:
@@ -161,13 +167,31 @@ def open_correction(
     from .provenance import _load_record, _save_record
 
     if is_ai_actor(by):
-        raise refuse(Refusal("ai-approval", f"{by!r} is the AI; a correction is opened in a person's name", "Ask the developer"))
+        raise refuse(
+            Refusal(
+                "ai-approval",
+                f"{by!r} is the AI; a correction is opened in a person's name",
+                "Ask the developer",
+            )
+        )
     proposal = propose(pkg, item_id, found_in, problem)
     candidates = proposal["candidates"]
     if owner is None and proposal["ambiguous"]:
-        raise refuse(Refusal("owner-ambiguous", f"{item_id} could be corrected in {' or '.join(candidates)}", "Ask the person which stage owns it and pass --owner"))
+        raise refuse(
+            Refusal(
+                "owner-ambiguous",
+                f"{item_id} could be corrected in {' or '.join(candidates)}",
+                "Ask the person which stage owns it and pass --owner",
+            )
+        )
     if owner is not None and owner not in candidates:
-        raise refuse(Refusal("owner-not-candidate", f"{owner} is not one of the candidates: {', '.join(candidates)}", "Pass one of the candidates as --owner"))
+        raise refuse(
+            Refusal(
+                "owner-not-candidate",
+                f"{owner} is not one of the candidates: {', '.join(candidates)}",
+                "Pass one of the candidates as --owner",
+            )
+        )
     owner = owner or candidates[0]
     cr = {
         "id": next_id(pkg),

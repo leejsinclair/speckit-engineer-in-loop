@@ -419,7 +419,7 @@ def test_running_twice_with_the_same_file_is_byte_identical(story_dir: Story, tm
 def test_the_optional_assessment_lists_are_written_as_the_ais(story_dir: Story, tmp_path: Path) -> None:
     lists = {"ambiguity": ["'fast' is unquantified"], "untestable": ["SC-2"]}
     run(story_dir, requirements_doc(), judgments_file(tmp_path, assessment=lists))
-    region = Package(story_dir.root).doc("requirements").read_region("assessment").obj
+    region = Package(story_dir.root).record("requirements", "assessment")
     assert region["assessment"]["ambiguity"] == ["'fast' is unquantified"]
     assert region["assessment"]["untestable"] == ["SC-2"]
     assert set(region["assessment"]) == {
@@ -433,7 +433,7 @@ def test_the_optional_assessment_lists_are_written_as_the_ais(story_dir: Story, 
 
 def test_the_missing_list_reports_missing_sections_without_the_ai(story_dir: Story) -> None:
     run(story_dir, requirements_doc({"Constraints": None}))
-    region = Package(story_dir.root).doc("requirements").read_region("assessment").obj
+    region = Package(story_dir.root).record("requirements", "assessment")
     assert any("Constraints" in entry for entry in region["assessment"]["missing"])
 
 
@@ -452,7 +452,7 @@ def test_check_writes_the_assessment_region_and_leaves_the_fingerprint_alone(sto
     before = package.fingerprint("requirements")
     result = check_stage(package, "requirements")
     assert package.fingerprint("requirements") == before == result.fingerprint
-    region = package.doc("requirements").read_region("assessment").obj
+    region = package.record("requirements", "assessment")
     assert region["stage"] == "requirements" and region["fingerprint"] == before
     assert [c["id"] for c in region["criteria"]][:2] == ["REQ-G01", "REQ-G02"]
     assert {"id", "kind", "status", "reason"} <= set(region["criteria"][0])

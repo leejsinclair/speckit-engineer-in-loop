@@ -44,7 +44,9 @@ def changed_after_rejection(story: Story) -> None:
 # ---- unsettled challenges
 
 
-def test_a_rejected_challenge_whose_target_changed_is_listed_and_is_the_next_human_action(reference_story: Story) -> None:
+def test_a_rejected_challenge_whose_target_changed_is_listed_and_is_the_next_human_action(
+    reference_story: Story,
+) -> None:
     changed_after_rejection(reference_story)
     listed = list_unsettled(reference_story)
     assert [e.key for e in listed.entries] == ["CH-005"]
@@ -117,7 +119,12 @@ def test_a_resolved_implementation_finding_passes(reference_story: Story) -> Non
 def test_an_excepted_finding_needs_a_person_and_a_reason(reference_story: Story) -> None:
     package = verification_with(reference_story, rf(status="excepted", extra="Accepted by: claude\n"))
     assert crit(check_stage(package, "verification"), "VER-G07").status != "met"
-    reference_story.write("verification", reference_story.read("verification").replace("Accepted by: claude\n", "Accepted by: Ada Dev\nReason: Cosmetic.\n"))
+    reference_story.write(
+        "verification",
+        reference_story.read("verification").replace(
+            "Accepted by: claude\n", "Accepted by: Ada Dev\nReason: Cosmetic.\n"
+        ),
+    )
     assert crit(check_stage(Package(reference_story.root), "verification"), "VER-G07").status == "met"
 
 
@@ -140,6 +147,9 @@ def test_a_finding_added_or_changed_after_completion_makes_it_needs_re_review(re
 def test_an_unrelated_verification_edit_does_not_reopen_completion(reference_story: Story) -> None:
     package = verification_with(reference_story, rf(status="resolved"))
     approve(package, COMPLETION_CONFIG, "completion", "Ada Dev", YES)
-    reference_story.write("verification", reference_story.read("verification").replace("\n## Open Tasks", "\nA remark.\n\n## Open Tasks", 1))
+    reference_story.write(
+        "verification",
+        reference_story.read("verification").replace("\n## Open Tasks", "\nA remark.\n\n## Open Tasks", 1),
+    )
     state = Package(reference_story.root).state("completion")
     assert "review finding" not in (state.reason or "")

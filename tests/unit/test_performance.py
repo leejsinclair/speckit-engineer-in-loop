@@ -106,7 +106,9 @@ def provenance_story(story_dir: Story) -> Story:
     for stage in STAGES:
         text = story_dir.read(stage)
         marker = "## Not applicable"
-        story_dir.write(stage, text.replace(marker, f"## Background notes\n\n{block_padding(stage)}\n\n{marker}", 1))
+        story_dir.write(
+            stage, text.replace(marker, f"## Background notes\n\n{block_padding(stage)}\n\n{marker}", 1)
+        )
     approve_stages(story_dir, "requirements", "functional", "technical")
     cli._persist_adoption(Package(story_dir.root))
     return story_dir
@@ -115,16 +117,87 @@ def provenance_story(story_dir: Story) -> Story:
 def test_the_fixture_records_two_thousand_blocks_per_document(provenance_story: Story) -> None:
     package = Package(provenance_story.root)
     for stage in STAGES:
-        region = package.doc(stage).read_region("provenance").obj
+        region = package.record(stage, "provenance")
         assert len(region["blocks"]) >= BLOCKS_PER_DOCUMENT, stage
     assert sum(1 for p in provenance_story.root.glob("s0*.md") if p.stat().st_size > 900_000) >= 7
 
 
 @pytest.mark.parametrize(
     "argv",
-    [["status"], ["check", "--stage", "technical"], ["enter", "implement"]],
+    [
+        ["status"],
+        ["check", "--stage", "technical"],
+        ["enter", "implement"],
+        ["show", "technical"],
+        ["show", "tasks", "--items", "T001"],
+    ],
 )
-def test_status_check_and_enter_stay_under_a_second_with_provenance(provenance_story: Story, argv: list[str]) -> None:
+def test_status_check_and_enter_stay_under_a_second_with_provenance(
+    provenance_story: Story, argv: list[str]
+) -> None:
+    """003 T082: with every record in ``eil-record.json`` (the fixture's adoption write migrates them),
+    and for ``show``."""
+    assert (provenance_story.root / "eil-record.json").stat().st_size > 1_000_000
     code, elapsed = run(provenance_story, *argv)
     assert code in (0, 1), argv  # enter may refuse; only its speed is under test
     assert elapsed < LIMIT_SECONDS, f"{' '.join(argv)} took {elapsed:.2f}s"
+
+
+# ---- 004 T068: the review page (plan Performance Goals; SC-003)
+
+
+def _page_seconds(root: object, **config: object) -> float:
+    from types import SimpleNamespace
+
+    from eil import pagerender
+    from eil.identity import Config
+
+    package = Package(root)  # type: ignore[arg-type]
+    started = time.perf_counter()
+    page = pagerender.review_page(
+        package, SimpleNamespace(name="Ada Dev", token="t", config=Config(**config)), "n"
+    )  # type: ignore[arg-type]
+    elapsed = time.perf_counter() - started
+    assert "<main" in page
+    return elapsed
+
+
+def test_the_page_renders_a_100_kb_stage_in_under_a_second(tmp_path: object) -> None:
+    from tests.fixtures import review_page
+
+    built = review_page.build(tmp_path / "specs" / "001-story")  # type: ignore[operator]
+    lines = "".join(
+        f"- **Note {n}**: a narrative line with several ordinary words and a little punctuation.\n\n"
+        for n in range(1200)
+    )
+    text = built.story.read("functional")
+    built.story.write(
+        "functional",
+        text.replace("## Not applicable", f"## Background notes\n\n{lines}\n## Not applicable", 1),
+    )
+    assert len(built.story.read("functional").encode()) > 100_000
+    _page_seconds(built.root)
+    assert _page_seconds(built.root) < LIMIT_SECONDS
+
+
+def test_the_page_renders_a_38_entry_list_in_full_in_under_a_second(tmp_path: object) -> None:
+    from eil import reviews
+
+    from tests.fixtures import review_page
+
+    built = review_page.build(tmp_path / "specs" / "001-story", entries=38)  # type: ignore[operator]
+    listed = reviews.build_list(Package(built.root), "functional", "inferred")
+    assert len(listed.entries) == 38
+    assert _page_seconds(built.root) < LIMIT_SECONDS
+
+
+@pytest.mark.parametrize(
+    "argv", [["status"], ["check", "--stage", "functional"], ["enter", "analyze"], ["show", "functional"]]
+)
+def test_commands_stay_under_a_second_with_the_record_lock(tmp_path: object, argv: list[str]) -> None:
+    from tests.fixtures import review_page
+
+    built = review_page.build(tmp_path / "specs" / "001-story")  # type: ignore[operator]
+    run(built.story, *argv)
+    code, seconds = run(built.story, *argv)
+    assert seconds < LIMIT_SECONDS, (argv, seconds)

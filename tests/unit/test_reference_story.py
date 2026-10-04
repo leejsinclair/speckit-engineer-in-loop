@@ -30,6 +30,8 @@ def test_counts_and_states(reference_story: Story) -> None:
     assert all(t.code for t in tasks[:6])
 
 
-def test_eil_json_reports_the_status(reference_story: Story, eil_json: Callable[..., tuple[int, Any]]) -> None:
+def test_eil_json_reports_the_status(
+    reference_story: Story, eil_json: Callable[..., tuple[int, Any]]
+) -> None:
     code, data = eil_json(["status", "--feature-dir", str(reference_story.root)], reference_story.root)
     assert code == 0 and data["governed"] is True

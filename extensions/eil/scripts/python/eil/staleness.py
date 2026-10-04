@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from .blocks import RegionError, write_provenance
+from .blocks import RegionError
 from .blockstatus import DERIVED, NEEDS_REVIEW, SETTLED, SOURCE_CHANGED, adopt, block_statuses
 from .content import Block, blocks_of
 
@@ -71,7 +71,7 @@ def _pending(block: Block) -> bool:
 
 
 def _sources_moved(package: Package, stage: str, key: str, hashes: dict[str, str]) -> list[str]:
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     entry = ((obj or {}).get("blocks") or {}).get(key)
     if not isinstance(entry, dict):
         return []
@@ -135,7 +135,10 @@ def scoped_work(package: Package) -> tuple[dict[str, list[Cause]], dict[str, lis
                         add(soft, key, Cause(f"{source} changed and was accepted"))
                     else:
                         add(hard, key, Cause(f"{source} changed", accept(source)))
-                elif statuses[known[source][0]][source].status == SETTLED and not statuses[known[source][0]][source].stale:
+                elif (
+                    statuses[known[source][0]][source].status == SETTLED
+                    and not statuses[known[source][0]][source].stale
+                ):
                     found = True
                     add(soft, key, Cause(f"{source} changed"))
             for source in block.traces:
@@ -168,12 +171,22 @@ def scoped_work(package: Package) -> tuple[dict[str, list[Cause]], dict[str, lis
             add(hard, message.split(" ", 1)[0], Cause(message, "Correct the id or remove the trace"))
     for stage in package.existing_stages():
         for key in conflicted_keys(package, stage):
-            add(hard, key, Cause("its recorded answers conflict", "A configured confirmer resolves the conflict"))
+            add(
+                hard,
+                key,
+                Cause("its recorded answers conflict", "A configured confirmer resolves the conflict"),
+            )
     from .corrections import blocked_keys
 
     for key, cr_id in blocked_keys(package).items():
         if key in known and known[key][0] in DERIVED:
-            add(hard, key, Cause(f"{cr_id} is open and corrects or reaches {key}", f"Confirm {cr_id} (/speckit-eil-accept)"))
+            add(
+                hard,
+                key,
+                Cause(
+                    f"{cr_id} is open and corrects or reaches {key}", f"Confirm {cr_id} (/speckit-eil-accept)"
+                ),
+            )
     changed = True
     while changed:
         changed = False
@@ -184,7 +197,10 @@ def scoped_work(package: Package) -> tuple[dict[str, list[Cause]], dict[str, lis
                 if source not in known or known[source][0] not in DERIVED:
                     continue
                 if source in hard:
-                    cause = Cause(f"{source} is blocked ({hard[source][0]})", f"Clear {source} first: {hard[source][0].fix}")
+                    cause = Cause(
+                        f"{source} is blocked ({hard[source][0]})",
+                        f"Clear {source} first: {hard[source][0].fix}",
+                    )
                 elif source in soft:
                     cause = Cause(f"{source} must be re-derived first", f"Re-derive {source} first")
                 else:
@@ -236,7 +252,7 @@ def sync_task_snapshots(package: Package) -> dict[str, Any]:
     if not package.exists("tasks"):
         return result
     doc = package.doc("tasks")
-    read = doc.read_provenance()
+    read = package.record_read("tasks", "provenance")
     if read.error:
         return result
     record = read.obj if read.obj is not None else (adopt(package, "tasks") or {"version": 1, "blocks": {}})
@@ -264,10 +280,9 @@ def sync_task_snapshots(package: Package) -> dict[str, Any]:
             dirty = True
     if dirty:
         try:
-            text = write_provenance(package.read("tasks"), record)
+            package.write_record("tasks", "provenance", record)
         except RegionError:
             return result
-        package.doc_path("tasks").write_bytes(text.encode("utf-8"))
     return result
 
 

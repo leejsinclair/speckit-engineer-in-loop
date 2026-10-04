@@ -118,7 +118,7 @@ def test_the_full_acceptance_scenario(story_dir: Story, tmp_path: Path) -> None:
 
     # No comprehension question was asked: the region is complete, every level not-applicable,
     # naming the review as the reason.
-    comp = story_dir.read("functional")
+    comp = json.dumps(Package(story_dir.root).record("functional", "comprehension"))
     assert '"outcome": "not-applicable"' in comp
     assert "each change reviewed individually" in comp or "recorded human decision" in comp
 

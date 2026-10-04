@@ -111,11 +111,12 @@ def test_b18_an_extra_key_added_by_hand_makes_the_record_malformed(project: Path
     write_ready_functional(project, eil)
     for level in LEVELS:
         assert record(eil, level, "understood").code == 0
-    path = doc_path(project)
+    path = doc_path(project).parent / "eil-record.json"  # 003: the record lives in the record file
     text = path.read_text(encoding="utf-8")
+    assert '"taken_by": "Ada Dev",' in text
     path.write_text(
         text.replace(
-            '"taken_by": "Ada Dev",', '"taken_by": "Ada Dev",\n  "answer": "the analyst uploads a file",'
+            '"taken_by": "Ada Dev",', '"taken_by": "Ada Dev",\n      "answer": "the analyst uploads a file",'
         ),
         encoding="utf-8",
     )
@@ -123,7 +124,9 @@ def test_b18_an_extra_key_added_by_hand_makes_the_record_malformed(project: Path
     assert "malformed-comprehension" in [f["code"] for f in result.json["findings"]]
     assert {c["id"]: c["status"] for c in result.json["criteria"]}["FUN-G16"] == "not-met"
     approve = eil(["approve", "functional", "--by", "Ada Dev", "--attestation", "Yes.", "--json"])
-    assert approve.code == 1 and "FUN-G16" in approve.json["refusals"][0]["message"]
+    # A hand-edited record file is malformed, so every approval it held is unverifiable (003 FR-011).
+    assert approve.code == 1 and "stage-not-approved" in approve.refusal_codes
+    assert "FUN-G16" in " ".join(r["message"] for r in approve.json["refusals"])
 
 
 def test_b18_the_counts_reach_the_approval_and_the_overview(project: Path, eil: Callable) -> None:

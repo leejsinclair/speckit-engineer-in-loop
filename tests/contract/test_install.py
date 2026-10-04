@@ -169,7 +169,7 @@ def test_c04_an_ungoverned_project_is_left_alone_by_every_other_command(installe
         text=True,
         check=False,
     )
-    assert proc.returncode == 3 and json.loads(proc.stdout) == {"governed": False}
+    assert proc.returncode == 3 and json.loads(proc.stdout) == {"governed": False, "story": None}
 
 
 def test_c01_removal_restores_a_project_without_the_preset_or_extension(scratch_project: Path) -> None:
@@ -186,9 +186,9 @@ def test_c01_removal_restores_a_project_without_the_preset_or_extension(scratch_
     assert json.loads(resolved.stdout)["TEMPLATE_CONTENT"] == core
 
 
-@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 22, reason="the last command arrives in task T129")
-def test_the_finished_extension_registers_twenty_two_commands_and_four_hooks(installed: Path) -> None:
-    assert len(EXTENSION_COMMANDS) == 22
+@pytest.mark.skipif(len(EXTENSION_COMMANDS) < 20, reason="the last command arrives in task T129")
+def test_the_finished_extension_registers_twenty_commands_and_four_hooks(installed: Path) -> None:
+    assert len(EXTENSION_COMMANDS) == 20
     hooks = (installed / ".specify" / "extensions.yml").read_text(encoding="utf-8")
     for name in ("after_clarify", "after_plan", "after_tasks", "after_implement"):
         assert name in hooks
@@ -206,9 +206,22 @@ def test_the_finished_preset_composes_seven_core_commands(installed: Path) -> No
     assert len(PRESET_TEMPLATES) == 9
 
 
-def test_accept_is_registered_and_the_old_review_commands_say_they_are_superseded() -> None:
+def test_accept_is_registered_and_the_superseded_commands_are_gone() -> None:
     manifest = (REPO / "extensions" / "eil" / "extension.yml").read_text(encoding="utf-8")
     assert "speckit.eil.accept" in manifest
     for name in ("amend", "review"):
-        text = (REPO / "extensions" / "eil" / "commands" / f"speckit.eil.{name}.md").read_text(encoding="utf-8")
-        assert "/speckit-eil-accept" in text and "superseded" in text.lower()
+        assert f"speckit.eil.{name}" not in manifest
+        assert not (REPO / "extensions" / "eil" / "commands" / f"speckit.eil.{name}.md").exists()
+
+
+def test_the_installed_configuration_template_carries_the_003_keys(installed: Path) -> None:
+    """003 T087: `main_branches` (D-47) and `review.one_at_a_time_max` (D-51) ship in the template, and the
+    shipped template parses to the defaults."""
+    from eil.identity import parse_simple_yaml
+
+    text = (installed / ".specify" / "extensions" / "eil" / "config-template.yml").read_text(encoding="utf-8")
+    parsed = parse_simple_yaml(text)
+    assert parsed["main_branches"] == ["main", "master"]
+    assert parsed["review"] == {"one_at_a_time_max": 8, "page_idle_minutes": 60, "diagram_script": None}, (
+        "004 T070: review.page_idle_minutes and review.diagram_script ship with their defaults"
+    )

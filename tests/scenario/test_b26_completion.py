@@ -49,7 +49,9 @@ def test_b26_step_2_evidence_the_files_confirm_is_not_asked(
     edit(reference_story, "functional", "behaviour 1 of duplicate", "behaviour 1 of the duplicate")
 
     def listed() -> list[str]:
-        return [e.key for e in reviews.build_list(package_of(reference_story), "verification", "evidence").entries]
+        return [
+            e.key for e in reviews.build_list(package_of(reference_story), "verification", "evidence").entries
+        ]
 
     assert "EVD-003" in listed()
     project = reference_story.root.parent.parent
@@ -85,17 +87,21 @@ def test_b26_step_3_low_challenges_are_deferred_in_one_reply(driver: Driver, ref
     )  # fmt: skip
     assert code == 0, done
     assert len(done["deferred"]) == 5
-    challenges = [r for r in package_of(reference_story).doc("requirements").records() if r.kind == "challenge"]
+    challenges = [
+        r for r in package_of(reference_story).doc("requirements").records() if r.kind == "challenge"
+    ]
     assert len(challenges) == 5
-    assert {(c.obj["status"], c.obj["response"], c.obj["reason"], c.obj["responder"]) for c in challenges} == {
-        ("closed", "deferred", "accepted as minor", "Ada Dev")
-    }
+    assert {
+        (c.obj["status"], c.obj["response"], c.obj["reason"], c.obj["responder"]) for c in challenges
+    } == {("closed", "deferred", "accepted as minor", "Ada Dev")}
     code, status = driver("status")
     assert len(status["outstanding"]["deferred_challenges"]) == 5
     assert status["outstanding"]["low_challenges"] == []
 
 
-def test_b26_step_4_an_accepted_design_difference_is_a_correction_with_origin_completion(driver: Driver) -> None:
+def test_b26_step_4_an_accepted_design_difference_is_a_correction_with_origin_completion(
+    driver: Driver,
+) -> None:
     code, opened = driver(
         "correct", "open", "--item", "ART-006", "--found-in", "completion", "--problem", "built as a queue, not a call",
         "--by", "Ada Dev",

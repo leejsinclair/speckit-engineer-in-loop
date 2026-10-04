@@ -140,6 +140,13 @@ def fingerprint_text(text: str) -> str:
     return _digest(normalise(text))
 
 
+def fingerprint_text_001(text: str) -> str:
+    """The fingerprint under 001's rule, before ``[ai-draft]`` tags were stripped (002 D-23). Only used
+    to recognise a 001 record as describing the current text (003 D-56); never recorded."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return _digest("\n".join(_collapse(_strip_regions(text.split("\n")))) + "\n")
+
+
 def fingerprint_file(path: Path | str) -> str:
     try:
         text = Path(path).read_bytes().decode("utf-8")

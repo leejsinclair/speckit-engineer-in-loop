@@ -95,7 +95,8 @@ def _skipped(doc: Doc) -> set[int]:
         heading = _HEADING_TITLE.match(line.live) if line.kind == "text" else None
         if heading and len(heading["hashes"]) <= 2:
             administrative = (
-                len(heading["hashes"]) == 2 and " ".join(heading["title"].split()).casefold() in ADMINISTRATIVE_SECTIONS
+                len(heading["hashes"]) == 2
+                and " ".join(heading["title"].split()).casefold() in ADMINISTRATIVE_SECTIONS
             )
         if administrative:
             skip.add(line.no)
@@ -117,7 +118,11 @@ def _attached_fences(doc: Doc, items: dict[int, Item], task_lines: set[int]) -> 
             current = None
         elif line.no in fences:
             fence = fences[line.no]
-            if (fence.language == "mermaid" or fence.info.split()[:1] == ["eil:artifact"]) and current and not taken:
+            if (
+                (fence.language == "mermaid" or fence.info.split()[:1] == ["eil:artifact"])
+                and current
+                and not taken
+            ):
                 current.attachment = "\n".join(fence.body)
                 attached.add(line.no)
                 taken = True
@@ -195,16 +200,16 @@ def _walk(doc: Doc) -> list[Block]:
                 section = " ".join(_TAG.sub("", _CLAUSE.sub("", heading["title"])).split())
             if any(m["name"] == "traces" for m in _CLAUSE.finditer(text)) and len(heading["hashes"]) >= 2:
                 body = [line]
-                while i < len(lines) and not (lines[i].kind == "text" and _HEADING_TITLE.match(lines[i].live)):
+                while i < len(lines) and not (
+                    lines[i].kind == "text" and _HEADING_TITLE.match(lines[i].live)
+                ):
                     if lines[i].no not in skip:
                         body.append(lines[i])
                     i += 1
                 while len(body) > 1 and not body[-1].live.strip():
                     body.pop()
                 title = " ".join(_TAG.sub("", _CLAUSE.sub("", heading["title"])).split())
-                out.append(
-                    _make("plan", body, title, key=f"§{title}", traces=cited_ids(text))
-                )
+                out.append(_make("plan", body, title, key=f"§{title}", traces=cited_ids(text)))
             continue
         if line.no in items:
             flush()
@@ -223,7 +228,12 @@ def _walk(doc: Doc) -> list[Block]:
             task = tasks[line.no]
             out.append(
                 _make(
-                    "task", [line], section, key=task.id, id=task.id, traces=list(task.traces),
+                    "task",
+                    [line],
+                    section,
+                    key=task.id,
+                    id=task.id,
+                    traces=list(task.traces),
                     hashed=task_hash(line.live),
                 )  # fmt: skip
             )

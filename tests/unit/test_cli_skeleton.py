@@ -91,13 +91,13 @@ def test_every_subcommand_but_start_exits_3_and_changes_nothing_when_not_governe
     before = snapshot(tmp_path)
     result = run_eil([*argv, "--json", "--feature-dir", "specs/000-legacy"], tmp_path)
     assert result.code == 3, result.stderr
-    assert result.json == {"governed": False}
+    assert result.json == {"governed": False, "story": "000-legacy"}  # every result names its story (003)
     assert snapshot(tmp_path) == before
 
 
 def test_with_no_feature_directory_at_all_it_is_also_not_governed(run_eil: Callable, tmp_path: Path) -> None:
     result = run_eil(["status", "--json"], tmp_path)
-    assert result.code == 3 and result.json == {"governed": False}
+    assert result.code == 3 and result.json == {"governed": False, "story": None}
 
 
 def test_a_directory_without_the_overview_is_not_governed_even_with_stage_documents(
@@ -121,7 +121,11 @@ def test_json_mode_prints_exactly_one_object(restore_handlers: Callable, story_d
     cli.HANDLERS["status"] = lambda ctx, args: {"ok": True, "governed": True}
     code, out, _ = run_main(["status", "--json", "--feature-dir", str(story_dir.root)], story_dir.root)
     assert code == 0
-    assert out.count("\n") == 1 and json.loads(out) == {"ok": True, "governed": True}
+    assert out.count("\n") == 1 and json.loads(out) == {
+        "ok": True,
+        "governed": True,
+        "story": story_dir.root.name,
+    }
 
 
 def test_global_flags_are_accepted_before_or_after_the_subcommand(
@@ -134,7 +138,7 @@ def test_global_flags_are_accepted_before_or_after_the_subcommand(
         ["status", "--json", "--feature-dir", feature],
     ):
         code, out, _ = run_main(argv, story_dir.root)
-        assert code == 0 and json.loads(out) == {"ok": True}
+        assert code == 0 and json.loads(out) == {"ok": True, "story": story_dir.root.name}
 
 
 def test_a_refusal_exits_1_with_the_documented_shape(restore_handlers: Callable, story_dir: Story) -> None:
@@ -150,6 +154,7 @@ def test_a_refusal_exits_1_with_the_documented_shape(restore_handlers: Callable,
         "refusals": [
             {"code": "unmet-criteria", "message": "REQ-G03 is not met", "fix": "Fix REQ-G03 then retry"}
         ],
+        "story": story_dir.root.name,
     }
 
 

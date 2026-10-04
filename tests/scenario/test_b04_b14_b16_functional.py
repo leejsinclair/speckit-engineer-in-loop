@@ -332,10 +332,10 @@ def test_b16_the_record_holds_no_question_answer_or_score(project: Path, eil: Ca
                 "--json",
             ]
         )
-    text = (feature(project) / "s02-functional-spec.md").read_text(encoding="utf-8")
-    start = text.index("<!-- eil:begin comprehension -->")
-    body = text[start : text.index("<!-- eil:end comprehension -->")]
-    record = json.loads(body[body.index("```json") + 7 : body.rindex("```")])
+    saved = json.loads(
+        (feature(project) / "eil-record.json").read_text(encoding="utf-8")
+    )  # 003: the record file
+    record = saved["stages"]["functional"]["comprehension"]
     assert set(record) == {"stage", "fingerprint", "taken_by", "started_at", "updated_at", "levels"}
     assert all(
         set(level) <= {"level", "outcome", "attempts", "items", "reason"} for level in record["levels"]

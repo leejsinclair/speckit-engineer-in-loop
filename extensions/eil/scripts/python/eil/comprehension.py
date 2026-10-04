@@ -20,7 +20,7 @@ import hashlib
 import re
 from typing import TYPE_CHECKING, Any
 
-from .blocks import Doc, write_region
+from .blocks import Doc, ensure_region
 from .clock import utc_now
 from .fingerprint import fingerprint_text
 from .identity import Config, confirmer_refusal, is_ai_actor
@@ -32,8 +32,9 @@ if TYPE_CHECKING:
     from .gates import Sections
 
 LEVELS = ("recognise", "explain", "apply", "trace", "evaluate")
-OUTCOMES = ("understood", "coached", "revealed", "skipped", "not-applicable")
-COUNT_KEYS = ("understood", "coached", "revealed", "skipped", "not_applicable")
+OUTCOMES = ("understood", "coached", "revealed", "skipped", "not-applicable", "own-decision")
+COUNT_KEYS = ("understood", "coached", "revealed", "skipped", "not_applicable", "own_decision")
+WAIVER_QUESTION = "Waive the remaining comprehension levels for {stage}?"
 ELIGIBLE_STAGES = ("functional", "technical")
 CRITERION_FOR = {"functional": "FUN-G16", "technical": "TEC-G19"}
 # The stage documents a stage's items may be drawn from besides its own (approved upstream).
@@ -41,7 +42,7 @@ UPSTREAM = {"functional": ("requirements",), "technical": ("requirements", "func
 
 _RECORD_KEYS = {"stage", "fingerprint", "taken_by", "started_at", "updated_at", "levels"}
 _REQUIRED_KEYS = {"stage", "fingerprint", "taken_by", "levels"}
-_LEVEL_KEYS = {"level", "outcome", "attempts", "items", "reason"}
+_LEVEL_KEYS = {"level", "outcome", "attempts", "items", "reason", "waived", "question"}
 _LIMIT = re.compile(
     r"\d|\b(at most|at least|no more than|no fewer than|within|maximum|minimum|limit|exceed|exceeds|"
     r"less than|greater than|per)\b",
@@ -86,11 +87,16 @@ def validate_record(record: Any, stage: str | None = None) -> str | None:
             return f"unknown level {entry.get('level')!r}"
         if entry.get("outcome") not in OUTCOMES:
             return f"unknown outcome {entry.get('outcome')!r}"
-        if entry["outcome"] == "not-applicable":
+        waived = entry.get("waived")
+        if waived is not None and (waived is not True or entry["outcome"] != "skipped"):
+            return f"level {entry['level']}: only a skipped level is waived"
+        if entry["outcome"] == "not-applicable" or waived:
             if not str(entry.get("reason", "")).strip():
-                return f"level {entry['level']} is not-applicable and needs a reason"
+                return (
+                    f"level {entry['level']} is {'waived' if waived else 'not-applicable'} and needs a reason"
+                )
         elif "reason" in entry:
-            return f"level {entry['level']} has a reason but is not not-applicable"
+            return f"level {entry['level']} has a reason but is not not-applicable or waived"
         attempts = entry.get("attempts", 1)
         if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 0:
             return f"level {entry['level']}: attempts must be a whole number"
@@ -313,13 +319,86 @@ def _all_decided(pkg: Package, pool: set[str]) -> tuple[bool, str]:
     decided: list[str] = []
     for item_id in sorted(changed):
         item = home.get(item_id)
-        if item is None or item.decided is None or decided_eligible(pkg, item.decided, None, item) is not None:
+        if (
+            item is None
+            or item.decided is None
+            or decided_eligible(pkg, item.decided, None, item) is not None
+        ):
             return False, ""
         decided.append(item.decided)
     return True, "every changed item is a recorded human decision: " + ", ".join(sorted(set(decided)))
 
 
-def plan(pkg: Package, stage: str, level: str | None = None, attempt: int = 1) -> dict[str, Any]:
+def _decider(pkg: Package, decided_id: str, item: Item) -> str | None:
+    """The person a ``(decided: ID)`` clause's decision record names: who answered the challenge,
+    accepted the open question, made the review or opened the correction."""
+    from . import corrections
+    from .provenance import _review_records
+
+    kind = decided_id.split("-")[0]
+    if kind == "CH":
+        for stage in pkg.existing_stages():
+            for record in pkg.doc(stage).records():
+                if record.kind == "challenge" and record.obj and record.obj.get("id") == decided_id:
+                    return str(record.obj.get("responder") or "") or None
+        return None
+    if kind == "OQ":
+        for stage in pkg.existing_stages():
+            for found in parse_document(pkg.doc(stage)).items:
+                if found.id == decided_id:
+                    return found.accepted_by
+        return None
+    if kind == "RVW":
+        for record in _review_records(pkg):
+            if record.obj.get("id") == decided_id:
+                return str(record.obj.get("by") or "") or None
+        for stage in pkg.existing_stages():
+            for acc in (pkg.record(stage, "provenance") or {}).get("acceptances") or []:
+                if isinstance(acc, dict) and acc.get("id") == decided_id:
+                    return str(acc.get("by") or "") or None
+        return None
+    if kind == "CR":
+        found = corrections.find(pkg, decided_id)
+        return str(found[1].get("opened_by") or "") or None if found else None
+    return None
+
+
+def profile_reason(found: dict[str, Any]) -> str:
+    return f"small-story profile (authorised by {found.get('by')} on {str(found.get('at', ''))[:10]})"
+
+
+def own_decisions(pkg: Package, world: _World, by: str) -> set[str]:
+    """D-54: the items that are ``by``'s own decision at their current content: a settled DEC they own,
+    or a block classified ``decided`` whose decision record names them. Established from the records,
+    never asked."""
+    from .blockstatus import SETTLED, block_statuses
+    from .identity import same_person
+    from .trace import decision_fields
+
+    statuses = block_statuses(pkg)
+    own: set[str] = set()
+    for item_id, (stage, item) in world.home.items():
+        info = statuses.get(stage, {}).get(item_id)
+        if item.kind == "DEC" and same_person(decision_fields(item).get("owner", ""), by):
+            if info is not None and info.status == SETTLED:
+                own.add(item_id)
+            continue
+        entry = ((pkg.record(stage, "provenance") or {}).get("blocks") or {}).get(item_id)
+        if (
+            isinstance(entry, dict)
+            and entry.get("class") == "decided"
+            and info is not None
+            and info.status == SETTLED
+        ):
+            who = _decider(pkg, item.decided, item) if item.decided else None
+            if who and same_person(who, by):
+                own.add(item_id)
+    return own
+
+
+def plan(
+    pkg: Package, stage: str, level: str | None = None, attempt: int = 1, by: str | None = None
+) -> dict[str, Any]:
     """The target items for each level (or one). Ids and sections only, never a question or answer.
 
     On a stage previously approved and now stale, this is a **delta** check (D-27): each level's
@@ -349,11 +428,31 @@ def plan(pkg: Package, stage: str, level: str | None = None, attempt: int = 1) -
                 () if human_decided else tuple(n for n in LEVELS if eligible[n])[:DELTA_LEVEL_CAP]
             )
 
+    own = own_decisions(pkg, world, by) if by else set()
+    from .profile import LEVELS as PROFILE_LEVELS
+    from .profile import active as profile_active
+
+    in_force = profile_active(pkg) if delta_payload is None else None
     rows: list[dict[str, Any]] = []
     taken: set[str] = set()
     for name in LEVELS:
         ids = eligible[name]
         if level is not None and name != level:
+            continue
+        if in_force is not None and name not in PROFILE_LEVELS:
+            rows.append({"level": name, "status": "not-applicable", "reason": profile_reason(in_force)})
+            continue
+        mine = [i for i in ids if i in own]
+        ids = [i for i in ids if i not in own]
+        if mine and not ids and not (delta_payload is not None and name not in allowed_levels):
+            rows.append(
+                {
+                    "level": name,
+                    "status": "own-decision",
+                    "items": [mine[0]],
+                    "reason": f"{mine[0]} is {by}'s own recorded decision; it is not asked (D-54)",
+                }
+            )
             continue
         if delta_payload is not None and name not in allowed_levels:
             row = {"level": name, "status": "no-material", "reason": delta_payload["reason"]}
@@ -385,6 +484,8 @@ def plan(pkg: Package, stage: str, level: str | None = None, attempt: int = 1) -
     }
     if delta_payload is not None:
         result["delta"] = delta_payload
+    if by:
+        result["by"] = by
     return result
 
 
@@ -429,6 +530,17 @@ def record(
         )
     world = _World(pkg, stage)
     unknown = [i for i in items if i not in world.home]
+    if outcome == "own-decision" and not refusals:
+        planned = next((r for r in plan(pkg, stage, level, by=by)["levels"] if r["level"] == level), {})
+        if planned.get("status") != "own-decision" or list(items) != planned.get("items"):
+            refusals.append(
+                Refusal(
+                    "not-own-decision",
+                    f"the plan for {level} names no own decision of {by}"
+                    + (f" (it asks about {planned.get('target')})" if planned.get("target") else ""),
+                    "Ask the level, or record another outcome; own-decision is the helper's to establish",
+                )
+            )
     if unknown:
         refusals.append(
             Refusal(
@@ -441,12 +553,10 @@ def record(
         raise refuse(*refusals)
     _require_prerequisites(pkg, stage)
 
-    text = pkg.read(stage)
-    if "comprehension" not in Doc(text).regions:
-        text = write_region(text, "comprehension", {}, heading="## Comprehension Check")
+    text = ensure_region(pkg.read(stage), "comprehension")
     fingerprint = fingerprint_text(text)
     now = utc_now()
-    existing = Doc(text).read_region("comprehension").obj
+    existing = pkg.record(stage, "comprehension")
     current = (
         bool(existing)
         and validate_record(existing, stage) is None
@@ -462,6 +572,23 @@ def record(
     if outcome == "not-applicable":
         entry["reason"] = (reason or "").strip()
     levels = [e for e in levels if e["level"] != level] + [entry]
+    from .profile import LEVELS as PROFILE_LEVELS
+    from .profile import active as profile_active
+
+    if (in_force := profile_active(pkg)) is not None:
+        # The levels the profile does not ask are recorded with it, so no reply is spent on them (FR-021).
+        held = {e["level"] for e in levels}
+        for name in LEVELS:
+            if name not in PROFILE_LEVELS and name not in held:
+                levels.append(
+                    {
+                        "level": name,
+                        "outcome": "not-applicable",
+                        "attempts": 0,
+                        "items": [],
+                        "reason": profile_reason(in_force),
+                    }
+                )
     levels.sort(key=lambda e: LEVELS.index(e["level"]))
     saved = {
         "stage": stage,
@@ -474,7 +601,7 @@ def record(
     error = validate_record(saved, stage)
     if error:  # only reachable through a bug or an out-of-range argument
         raise refuse(Refusal("reason-required", error, "Correct the arguments"))
-    pkg.doc_path(stage).write_bytes(write_region(text, "comprehension", saved).encode("utf-8"))
+    pkg.write_record(stage, "comprehension", saved, text=text)
     state = summarise(saved, fingerprint)
     return {
         "ok": True,
@@ -487,4 +614,89 @@ def record(
     }
 
 
-__all__ = ["DOC_FILES", "STAGES", "counts", "plan", "record", "summarise", "validate_record"]
+def waive(pkg: Package, config: Config, stage: str, by: str, reason: str) -> dict[str, Any]:
+    """FR-033: one reply waives every level not yet recorded, each recorded ``skipped`` with the person's
+    name, their reason and the helper's fixed question. The check is then complete; nothing else is waived."""
+    from .records import approvers_for
+
+    _require_eligible(pkg, stage)
+    refusals: list[Refusal] = []
+    if is_ai_actor(by):
+        refusals.append(
+            Refusal(
+                "ai-approval",
+                f"{by!r} is the AI; only the person taking the check waives it",
+                "Ask the developer",
+            )
+        )
+    problem = confirmer_refusal(by, approvers_for(pkg, config, stage), stage)
+    if problem and not is_ai_actor(by):
+        refusals.append(problem)
+    if not (reason or "").strip():
+        refusals.append(
+            Refusal(
+                "reason-required",
+                "a waiver needs the person's reason",
+                "Ask why, and pass their words with --reason",
+            )
+        )
+    if refusals:
+        raise refuse(*refusals)
+    _require_prerequisites(pkg, stage)
+    text = ensure_region(pkg.read(stage), "comprehension")
+    fingerprint = fingerprint_text(text)
+    existing = pkg.record(stage, "comprehension")
+    current = (
+        bool(existing)
+        and validate_record(existing, stage) is None
+        and existing.get("fingerprint") == fingerprint
+    )
+    levels = [dict(e) for e in existing["levels"]] if current else []  # type: ignore[index]
+    recorded = {e["level"] for e in levels}
+    remaining = [name for name in LEVELS if name not in recorded]
+    if not remaining:
+        raise refuse(
+            Refusal(
+                "nothing-to-waive",
+                f"every level of the {stage} check is already recorded",
+                "Nothing is left to waive",
+            )
+        )
+    question = WAIVER_QUESTION.format(stage=stage)
+    for name in remaining:
+        levels.append(
+            {
+                "level": name,
+                "outcome": "skipped",
+                "attempts": 0,
+                "items": [],
+                "reason": reason.strip(),
+                "waived": True,
+                "question": question,
+            }
+        )
+    levels.sort(key=lambda e: LEVELS.index(e["level"]))
+    now = utc_now()
+    saved = {
+        "stage": stage,
+        "fingerprint": fingerprint,
+        "taken_by": by.strip(),
+        "started_at": existing["started_at"] if current and "started_at" in existing else now,  # type: ignore[index]
+        "updated_at": now,
+        "levels": levels,
+    }
+    pkg.write_record(stage, "comprehension", saved, text=text)
+    state = summarise(saved, fingerprint)
+    return {
+        "ok": True,
+        "stage": stage,
+        "waived": remaining,
+        "question": question,
+        "record": saved,
+        "state": state["state"],
+        "counts": state["counts"],
+        "text": f"Waived {', '.join(remaining)} for {stage} ({by.strip()}: {reason.strip()}).",
+    }
+
+
+__all__ = ["DOC_FILES", "STAGES", "counts", "plan", "record", "summarise", "validate_record", "waive"]

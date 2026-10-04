@@ -38,11 +38,12 @@ from . import (
     staleness,
 )
 from . import fingerprint as fingerprint_module
+from . import target as targeting
 from .artifacts import list_artifacts, register
-from .blocks import write_provenance
+from .clock import utc_now
 from .gates import JudgmentsError, check_stage
-from .identity import Config, ConfigError, load_config
-from .package import STAGES, Package, resolve_feature_dir
+from .identity import Config, ConfigError, is_ai_actor, load_config
+from .package import STAGES, Package
 from .results import (
     EXIT_INTERNAL,
     EXIT_OK,
@@ -57,6 +58,71 @@ from .results import (
 from .templates import load_template
 
 UNGOVERNED_OK = frozenset({"start", "fingerprint"})
+
+# Every subcommand is declared here as writing records or not (contracts/cli.md delta, D-46). A
+# ``writes`` call whose story came from the pointer, or from nothing, is refused ``ambiguous-story``
+# before anything is read for modification when that story cannot be told for certain.
+READ_ONLY, WRITES = "read-only", "writes"
+COMMAND_KINDS: dict[str, str] = {
+    "status": READ_ONLY,
+    "show": READ_ONLY,
+    "trace": READ_ONLY,
+    "fingerprint": READ_ONLY,
+    "blocks list": READ_ONLY,
+    "review list": READ_ONLY,
+    "review show": READ_ONLY,
+    "review start": READ_ONLY,
+    "comprehension plan": READ_ONLY,
+    "check": READ_ONLY,
+    "enter": READ_ONLY,
+    "artifact list": READ_ONLY,
+    "correct propose": READ_ONLY,
+    "start": WRITES,
+    "sync": WRITES,
+    "check --judgments": WRITES,
+    "stage-init": WRITES,
+    "challenge add": WRITES,
+    "challenge severity": WRITES,
+    "challenge answer": WRITES,
+    "approve": WRITES,
+    "override": WRITES,
+    "amend": WRITES,
+    "review accept": WRITES,
+    "review finish": WRITES,
+    "review confirm": WRITES,
+    "review answer": WRITES,
+    "correct open": WRITES,
+    "blocks classify": WRITES,
+    "blocks reclassify": WRITES,
+    "abbreviate": WRITES,
+    "resolve": WRITES,
+    "artifact register": WRITES,
+    "comprehension record": WRITES,
+    "comprehension waive": WRITES,
+    "profile set": WRITES,
+    "profile withdraw": WRITES,
+    "overview": WRITES,
+    # 004: starting the page writes nothing itself; its answers are written one at a time, under the
+    # lock, by ``reviews.answer``. It is refused ``ambiguous-story`` like any write (D-66).
+    "review serve": WRITES,
+    "review serve --status": READ_ONLY,
+    "review serve --stop": READ_ONLY,
+}
+# 004: the page process writes through ``reviews.answer`` under the lock, one answer at a time; it must
+# not hold the lock while it serves.
+UNLOCKED = frozenset({"review serve"})
+
+
+def command_key(args: argparse.Namespace) -> str:
+    """The ``COMMAND_KINDS`` entry a parsed call falls under."""
+    if args.command == "check" and getattr(args, "judgments", None):
+        return "check --judgments"
+    action = getattr(args, "action", None)
+    if action == "serve" and (getattr(args, "status", False) or getattr(args, "stop", False)):
+        return f"review serve --{'status' if args.status else 'stop'}"
+    return f"{args.command} {action}" if action else args.command
+
+
 ENTER_COMMANDS = handoff.ENTER_COMMANDS
 # Stages whose document has a compatibility alias, created only after the document (FR-049).
 ALIAS_STAGES = ("ai-spec", "plan", "tasks")
@@ -70,9 +136,15 @@ class Context:
     env: Mapping[str, str]
     json_mode: bool
     feature_dir_arg: str | None
+    target: targeting.Target | None = None
+    # A read-only call whose story is ambiguous runs, but writes nothing at all (not even s00).
+    quiet: bool = False
+    stdout: TextIO | None = None  # for a subcommand that prints before it ends (``review serve``)
 
     def feature_dir(self) -> Path | None:
-        return resolve_feature_dir(self.cwd, self.feature_dir_arg, self.env)
+        if self.target is None:
+            self.target = targeting.resolve_target(self.cwd, self.feature_dir_arg, self.env)
+        return self.target.directory
 
     def package(self) -> Package:
         """The governed package, or exit 3."""
@@ -121,6 +193,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     p = add("start", "create s00 and s01 in the feature directory")
     p.add_argument("--title", required=True)
     p.add_argument("--owner")
+    p.add_argument("--on-branch", help="confirm the story is written on this (unexpected) branch")
+    p.add_argument("--by", help="the person confirming the branch")
+    p.add_argument("--reply", help="their reply, verbatim")
 
     p = add("sync", "classify and refresh aliases, regenerate the overview")
     p.add_argument("--check-only", action="store_true")
@@ -135,7 +210,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     p.add_argument("--chain", action="store_true")
     p.add_argument("--judgments", metavar="PATH")
     p.add_argument("--strict", action="store_true")
-    p.add_argument("--full", action="store_true", help="list every criterion, including the met structural ones")
+    p.add_argument(
+        "--full", action="store_true", help="list every criterion, including the met structural ones"
+    )
 
     p = add("stage-init", "create a stage's document from its template")
     p.add_argument("stage")
@@ -206,9 +283,20 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--summaries", metavar="FILE")
     a = actions.add_parser("list", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage")
+    a.add_argument("--kind", choices=REVIEW_KINDS)
+    a.add_argument(
+        "--current", action="store_true", help="the review the page shows now (replaces --stage and --kind)"
+    )
+    a.add_argument("--views", metavar="FILE")
+    a = actions.add_parser("show", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
     a.add_argument("--kind", required=True, choices=REVIEW_KINDS)
-    a.add_argument("--views", metavar="FILE")
+    which = a.add_mutually_exclusive_group(required=True)
+    which.add_argument("--entry", metavar="KEY")
+    which.add_argument("--group", metavar="SECTION")
+    which.add_argument("--all", dest="all_", action="store_true")
     a = actions.add_parser("answer", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
@@ -216,13 +304,39 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--digest")
     a.add_argument("--by", required=True)
     a.add_argument("--reply", required=True)
-    mode = a.add_mutually_exclusive_group(required=True)
+    mode = a.add_mutually_exclusive_group()
     mode.add_argument("--all", dest="all_", action="store_true")
     mode.add_argument("--all-except", metavar="IDS")
-    mode.add_argument("--question", metavar="IDS")
     mode.add_argument("--reopen", metavar="IDS")
+    mode.add_argument("--entry", metavar="KEY", help="answer one entry; stored until the list is complete")
+    mode.add_argument("--rest", action="store_true", help='"ok to the rest": accept every remaining entry')
+    # Alone, --question names the entries a whole-list reply questions. With --entry or --rest it is the
+    # helper's fixed question the person answered (004 D-64), refused unless it is the helper's wording.
+    a.add_argument("--question", metavar="IDS|TEXT")
+    a.add_argument("--disposition", choices=("accept", "except", "question"), default="accept")
     a.add_argument("--defer-reason")
     a.add_argument("--summaries", metavar="FILE")
+    a.add_argument(
+        "--shown", metavar="HASH", help="the version of the entry the person saw (refused if it changed)"
+    )
+    a.add_argument("--comment", metavar="TEXT", help="the person's comment, stored verbatim")
+    a.add_argument(
+        "--section", metavar="NAME", help="with --rest: accept the unanswered entries of this section only"
+    )
+    a = actions.add_parser("serve", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--by", help="the person answering on the page (never the AI)")
+    a.add_argument(
+        "--host", default="127.0.0.1", help="the address to listen on; loopback unless the person asks"
+    )
+    a.add_argument("--port", type=int, help="the port (default: the first free one from 8100)")
+    a.add_argument(
+        "--public-name", metavar="NAME", help="another host name the page answers to, when not on loopback"
+    )
+    a.add_argument("--idle-minutes", type=int, metavar="M", help="stop after this many minutes unused")
+    which = a.add_mutually_exclusive_group()
+    which.add_argument("--status", action="store_true", help="is a page running for this story, and where")
+    which.add_argument("--stop", action="store_true", help="stop this story's page")
 
     p = add("correct", "propose or open a backwards correction")
     actions = p.add_subparsers(dest="action", metavar="ACTION", parser_class=_Parser)
@@ -244,7 +358,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a = actions.add_parser("list", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
-    a.add_argument("--status", choices=("settled", "needs-review", "source-changed", "stale", "unknown-currency"))
+    a.add_argument(
+        "--status", choices=("settled", "needs-review", "source-changed", "stale", "unknown-currency")
+    )
     a = actions.add_parser("classify", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
@@ -291,6 +407,7 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--stage", required=True)
     a.add_argument("--level")
     a.add_argument("--attempt", type=int, default=1)
+    a.add_argument("--by", help="the person taking the check: their own decisions are not asked")
     a = actions.add_parser("record", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
     a.add_argument("--stage", required=True)
@@ -298,17 +415,40 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument(
         "--outcome",
         required=True,
-        choices=("understood", "coached", "revealed", "skipped", "not-applicable"),
+        choices=("understood", "coached", "revealed", "skipped", "not-applicable", "own-decision"),
     )
     a.add_argument("--by", required=True)
     a.add_argument("--attempts", type=int, default=1)
     a.add_argument("--items", default="")
     a.add_argument("--reason")
+    a = actions.add_parser("waive", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--stage", required=True)
+    a.add_argument("--by", required=True)
+    a.add_argument("--reason", required=True)
+
+    p = add("profile", "authorise or withdraw the small-story profile")
+    actions = p.add_subparsers(dest="action", metavar="ACTION", parser_class=_Parser)
+    actions.required = True
+    a = actions.add_parser("set", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("name", choices=("small",))
+    a.add_argument("--by", required=True)
+    a.add_argument("--reason", required=True)
+    a = actions.add_parser("withdraw", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--by", required=True)
+    a.add_argument("--reason", required=True)
 
     p = add("trace", "forward and reverse chains, and gaps")
     p.add_argument("--from", dest="from_id")
     p.add_argument("--to", dest="to_id")
     p.add_argument("--report", action="store_true")
+
+    p = add("show", "print a stage as a person reads it: no records, review cues shown")
+    p.add_argument("stage")
+    p.add_argument("--items", metavar="IDS", help="only these items, under their section headings")
+    p.add_argument("--section", metavar="NAME", help="only this section")
 
     add("status", "derived state, approvals and the next action")
     add("overview", "regenerate s00-README.md")
@@ -390,6 +530,7 @@ def _start(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 
     owner = args.owner or next(iter(developer_identities(package, config)), None) or "unassigned"
     project = package.project_root or ctx.cwd
+    start = _branch_guard(ctx, args, directory, project, config)
     overview_template = load_template(project, "s00-readme-template")
     requirements_template = load_template(project, TEMPLATE_NAMES["requirements"])
     directory.mkdir(parents=True, exist_ok=True)
@@ -399,30 +540,99 @@ def _start(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
             requirements_template.replace("{{title}}", args.title).encode("utf-8")
         )
         created.append(package.doc_path("requirements").name)
+    pointer = _persist_feature_json(package, project)
+    start["previous_pointer"] = pointer["previous"]
+    package.write_story_record("start", {k: v for k, v in start.items() if v is not None})
     overview.write(package, overview_template, args.title, owner)
     created.insert(0, package.overview_path.name)
-    _persist_feature_json(package, project)
-    return {
+    text = f"Started {directory.name}: created {', '.join(created)}."
+    if pointer["current"] and pointer["previous"] != pointer["current"]:
+        text += f" The active story was {pointer['previous'] or 'none'} and is now {pointer['current']}."
+    if start.get("branch_confirmed_by"):
+        text += f" Written on branch {start['branch']}, confirmed by {start['branch_confirmed_by']}."
+    payload: dict[str, Any] = {
         "ok": True,
         "feature_dir": str(directory),
         "created": created,
-        "text": f"Started {directory.name}: created {', '.join(created)}.",
+        "pointer": pointer,
+        "branch": start.get("branch"),
+        "text": text,
     }
+    if start.get("note"):
+        payload["note"] = start["note"]
+        payload["text"] += f" Note: {start['note']}."
+    return payload
 
 
-def _persist_feature_json(package: Package, project: Path) -> None:
+def _branch_guard(
+    ctx: Context, args: argparse.Namespace, directory: Path, project: Path, config: Config
+) -> dict[str, Any]:
+    """D-47: refuse a start on a branch that is neither a main branch nor named for the new story,
+    unless a person confirmed it (``--on-branch``, ``--by``, ``--reply``). Returns ``story.start``."""
+    branch = targeting.current_branch(project)
+    start: dict[str, Any] = {"at": utc_now(), "branch": branch}
+    if branch is None:
+        start["note"] = (
+            "no git branch is checked out (no repository, or a detached HEAD), so none was compared"
+        )
+        return start
+    if targeting.branch_expected(branch, directory.name, config.main_branches):
+        return start
+    question = targeting.branch_question(directory.name, branch)
+    by, reply = (args.by or "").strip(), (args.reply or "").strip()
+    if args.on_branch != branch:
+        raise refuse(
+            Refusal(
+                "unexpected-branch",
+                f"the current git branch is {branch}, which is neither a main branch "
+                f"({', '.join(config.main_branches)}) nor named for {directory.name}",
+                f"Switch to a branch for {directory.name}, or ask the developer to confirm and run eil start again "
+                f"with --on-branch {branch} --by NAME --reply WORDS. The helper never creates or switches branches.",
+                question=question,
+            )
+        )
+    refusals = []
+    if not by or is_ai_actor(by):
+        refusals.append(
+            Refusal(
+                "ai-approval",
+                "a person confirms the branch, never the AI",
+                "Ask the developer",
+                question=question,
+            )
+        )
+    if not reply:
+        refusals.append(
+            Refusal(
+                "reply-required",
+                "the confirmation needs the person's reply",
+                "Pass their words with --reply",
+                question=question,
+            )
+        )
+    if refusals:
+        raise refuse(*refusals)
+    start.update(branch_confirmed_by=by, reply=reply, question=question)
+    return start
+
+
+def _persist_feature_json(package: Package, project: Path) -> dict[str, str | None]:
+    """Point ``.specify/feature.json`` at the new story, always (FR-001); returns the move."""
     saved = project / ".specify" / "feature.json"
-    if not (project / ".specify").is_dir() or saved.exists():
-        return
+    previous = targeting.read_pointer(project)
+    if not (project / ".specify").is_dir():
+        return {"previous": previous, "current": None}
     try:
         relative = os.path.relpath(package.root.resolve(), project.resolve())
     except ValueError:
         relative = str(package.root.resolve())
     if relative.startswith(".."):
         relative = str(package.root.resolve())
+    relative = relative.replace(os.sep, "/")
     import json
 
     saved.write_text(json.dumps({"feature_directory": relative}) + "\n", encoding="utf-8")
+    return {"previous": previous, "current": relative}
 
 
 def _known_stage(package: Package, name: str) -> str:
@@ -479,7 +689,7 @@ def _check(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         raise usage_error("--chain checks the whole story: give it without --stage")
     judgments = ctx.cwd / args.judgments if args.judgments else None
     try:
-        result = check_stage(package, stage, judgments_path=judgments)
+        result = check_stage(package, stage, judgments_path=judgments, write=not ctx.quiet)
     except JudgmentsError as exc:
         raise usage_error(str(exc)) from exc
     except NotImplementedError as exc:
@@ -547,7 +757,9 @@ REVIEW_KINDS = (
 )  # fmt: skip
 
 
-def _read_keyed(path: str, stage: str, what: str, rows: str, value: str, kind: str | None = None) -> dict[str, str]:
+def _read_keyed(
+    path: str, stage: str, what: str, rows: str, value: str, kind: str | None = None
+) -> dict[str, str]:
     """A ``--views`` or ``--summaries`` file: ``{"stage", rows: [{"key", value}]}`` as ``{key: value}``."""
     import json
 
@@ -558,7 +770,9 @@ def _read_keyed(path: str, stage: str, what: str, rows: str, value: str, kind: s
     if not isinstance(data, dict) or data.get("stage") != stage or (kind and data.get("kind", kind) != kind):
         raise usage_error(f"{what} file {path} is not for stage {stage}" + (f" kind {kind}" if kind else ""))
     found = data.get(rows)
-    if not isinstance(found, list) or not all(isinstance(r, dict) and "key" in r and value in r for r in found):
+    if not isinstance(found, list) or not all(
+        isinstance(r, dict) and "key" in r and value in r for r in found
+    ):
         raise usage_error(f'{what} file {path} needs "{rows}": [{{"key", "{value}"}}]')
     return {str(r["key"]): str(r[value]) for r in found}
 
@@ -569,11 +783,36 @@ def _ids(text: str | None) -> list[str] | None:
 
 def _review_list(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
+    threshold = _config(ctx, package).one_at_a_time_max
+    if args.current:
+        if args.stage or args.kind or args.views:
+            raise usage_error("--current replaces --stage, --kind and --views")
+        found = reviews.current_review(package, threshold)
+        if found["list"] is None:
+            return {
+                "ok": True, "current": None, "document": found["document"], "entries": [],
+                "text": "No review is current." + (f" The latest document is {found['document']}." if found["document"] else ""),
+            }  # fmt: skip
+        payload = _list_payload(found["list"])
+        payload["current"] = {"stage": found["stage"], "kind": found["kind"], "document": found["document"]}
+        return payload
+    if not (args.stage and args.kind):
+        raise usage_error("give --stage and --kind, or --current")
     views = _read_keyed(args.views, args.stage, "views", "views", "view", args.kind) if args.views else None
-    listed = reviews.build_list(package, args.stage, args.kind, views)
-    lines = [f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose})"]
-    for entry in listed.entries:
-        lines.append(f"  {entry.key}: {entry.what.splitlines()[0] if entry.what else ''}")
+    return _list_payload(reviews.build_list(package, args.stage, args.kind, views, threshold=threshold))
+
+
+def _list_payload(listed: reviews.ReviewList) -> dict[str, Any]:
+    lines = [
+        f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose}, {listed.mode})"
+    ]
+    if listed.session:
+        lines.append(f"  {listed.session['answered']} answered already; these remain:")
+    for group in listed.groups():
+        if group["section"]:
+            lines.append(f"  {group['section']}:")
+        for entry in (e for e in listed.entries if e.key in group["entries"]):
+            lines.append(f"    {entry.key}: {entry.summary} ({entry.why})")
     lines += [f"  limit: {limit}" for limit in listed.limits]
     return {"ok": True, **listed.to_json(), "text": "\n".join(lines)}
 
@@ -583,8 +822,27 @@ def _review_answer(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     _persist_adoption(package)
     package = ctx.package()
     summaries = (
-        _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary") if args.summaries else None
+        _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary")
+        if args.summaries
+        else None
     )
+    per_entry = args.entry is not None or args.rest
+    if not (
+        per_entry
+        or args.all_
+        or args.all_except is not None
+        or args.reopen is not None
+        or args.question is not None
+    ):
+        raise usage_error("give one of --all, --all-except, --question, --reopen, --entry, --rest")
+    if (
+        args.question is not None
+        and not per_entry
+        and (args.all_ or args.all_except is not None or args.reopen is not None)
+    ):
+        raise usage_error("--question names entries alone, or is the question text with --entry or --rest")
+    if args.section is not None and not args.rest:
+        raise usage_error("--section is given with --rest")
     result = reviews.answer(
         package,
         _config(ctx, package),
@@ -595,13 +853,54 @@ def _review_answer(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         reply=args.reply,
         all_=args.all_,
         all_except=_ids(args.all_except),
-        question=_ids(args.question),
+        question=None if per_entry else _ids(args.question),
         reopen=_ids(args.reopen),
         defer_reason=args.defer_reason,
         summaries=summaries,
+        entry=args.entry,
+        disposition=args.disposition,
+        rest=args.rest,
+        shown=args.shown,
+        asked=args.question if per_entry else None,
+        comment=args.comment,
+        section=args.section,
     )
     _regenerate_overview(ctx, package)
     return result
+
+
+def _review_serve(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    """``review serve``: the browser review page (004 D-66). Starting prints one JSON line with the
+    address and serves until stopped; ``--status`` and ``--stop`` read and end it."""
+    from . import reviewpage
+
+    package = ctx.package()
+    if args.status:
+        return reviewpage.status(package)
+    if args.stop:
+        return reviewpage.stop(package)
+    if not args.by:
+        raise usage_error("review serve needs --by: the person answering on the page")
+    if args.idle_minutes is not None and args.idle_minutes < 1:
+        raise usage_error("--idle-minutes is a whole number of minutes, at least 1")
+    stream = ctx.stdout or sys.stdout
+
+    def emit(payload: dict[str, Any]) -> None:
+        line = {k: v for k, v in payload.items() if k != "ok"} if ctx.json_mode else payload
+        if ctx.json_mode:
+            emit_json(line, stream)
+        else:
+            stream.write(f"Review page for {payload['story']}: {payload['address']}\n")
+        stream.flush()
+
+    reviewpage.serve(
+        package.root, args.by, emit=emit, host=args.host, port=args.port, public_name=args.public_name,
+        idle_minutes=args.idle_minutes, config=_config(ctx, package),
+    )  # fmt: skip
+    return {EMITTED: True}
+
+
+EMITTED = "_emitted"  # a payload already printed (the page's one JSON line); nothing more is written
 
 
 def _blocks(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
@@ -624,7 +923,8 @@ def _blocks(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     rows = []
     for info in blockstatus.block_statuses(package).get(args.stage, {}).values():
         if args.status and not (
-            info.status == args.status or (args.status == "stale" and (info.stale or info.status == "source-changed"))
+            info.status == args.status
+            or (args.status == "stale" and (info.stale or info.status == "source-changed"))
         ):
             continue
         row = {"key": info.key, "class": info.klass, "status": info.status}
@@ -642,15 +942,30 @@ def _review(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         return _review_list(ctx, args)
     if args.action == "answer":
         return _review_answer(ctx, args)
+    if args.action == "serve":
+        return _review_serve(ctx, args)
+    if args.action == "show":
+        package = ctx.package()
+        return reviews.show_entries(
+            package, args.stage, args.kind, entry=args.entry, group=args.group, all_=args.all_,
+            threshold=_config(ctx, package).one_at_a_time_max,
+        )  # fmt: skip
     package = ctx.package()
     if args.action == "confirm":
         _persist_adoption(package)
         package = ctx.package()
         summaries = (
-            _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary") if args.summaries else None
+            _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary")
+            if args.summaries
+            else None
         )
         result = reviews.confirm(
-            package, _config(ctx, package), args.stage, by=args.by, confirmation=args.confirmation, summaries=summaries
+            package,
+            _config(ctx, package),
+            args.stage,
+            by=args.by,
+            confirmation=args.confirmation,
+            summaries=summaries,
         )
         _regenerate_overview(ctx, package)
         return result
@@ -683,24 +998,44 @@ def _correct(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _regenerate_overview(ctx: Context, package: Package) -> bool:
+    if ctx.quiet:
+        return False
     return overview.write(package, load_template(package.project_root or ctx.cwd, "s00-readme-template"))
+
+
+def _migrate(package: Package) -> list[str]:
+    """D-48, D-50: move every JSON region body into ``eil-record.json`` and strip the old ``[ai-draft]``
+    tags. Both are fingerprint-neutral, so no approval moves. Returns the stages that changed."""
+    from .blocks import RegionError, strip_ai_draft
+
+    changed = []
+    for stage in package.existing_stages():
+        fresh = Package(package.root)
+        text = fresh.read(stage)
+        stripped = strip_ai_draft(text)
+        if stripped != text:
+            fresh.doc_path(stage).write_bytes(stripped.encode("utf-8"))
+            changed.append(stage)
+        try:
+            if Package(package.root).migrate(stage) and stage not in changed:
+                changed.append(stage)
+        except RegionError:
+            continue  # a malformed region or record file is reported by status; it is never written over
+    return changed
 
 
 def _persist_adoption(package: Package) -> None:
     """D-42: the first writing command records the provenance an upgrade adopts, once per document."""
-    for stage in package.existing_stages():
-        record = blockstatus.adopt(package, stage)
-        if record is not None:
-            text = write_provenance(package.read(stage), record)
-            package.doc_path(stage).write_bytes(text.encode("utf-8"))
+    blockstatus.persist_adoption(package)
 
 
 def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
     snapshots: dict[str, Any] = {"snapshotted": [], "completed_while_blocked": [], "cleared": []}
+    migrated: list[str] = []
     if not args.check_only:
-        _persist_adoption(package)
-        provenance.refresh_cues(package)
+        migrated = _migrate(package)
+        _persist_adoption(ctx.package())
         changelog.refresh_all(ctx.package())
         snapshots = staleness.sync_task_snapshots(ctx.package())
     before, after = aliases.refresh(package, aliases.alias_mode(ctx.env), check_only=args.check_only)
@@ -715,6 +1050,8 @@ def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
             )
         )
     lines = ["Synchronised."] + [f"  alias fault {s.name}: {s.fault}" for s in faults]
+    if migrated:
+        lines.append(f"  records moved to eil-record.json or tags removed: {', '.join(migrated)}")
     lines += [f"  completed-while-blocked {t}" for t in snapshots["completed_while_blocked"]]
     return {
         "ok": True,
@@ -726,6 +1063,7 @@ def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         "alias_faults": [s.to_json() for s in faults],
         "aliases": [s.to_json() for s in after],
         "overview_changed": changed,
+        "migrated": migrated,
         "text": "\n".join(lines),
     }
 
@@ -785,12 +1123,16 @@ def _artifact(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
 def _comprehension(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
     if args.action == "plan":
-        result = comprehension.plan(package, args.stage, args.level, args.attempt)
+        result = comprehension.plan(package, args.stage, args.level, args.attempt, by=args.by)
         lines = [
-            f"{r['level']:<10} {r.get('target', r['status'])}  {r.get('section', '')}"
+            f"{r['level']:<10} {r.get('target', r['status'])}  {r.get('section', '') or ', '.join(r.get('items', []))}"
             for r in result["levels"]
         ]
         result["text"] = "\n".join(lines)
+        return result
+    if args.action == "waive":
+        result = comprehension.waive(package, _config(ctx, package), args.stage, args.by, args.reason)
+        _regenerate_overview(ctx, package)
         return result
     items = [i.strip() for i in args.items.split(",") if i.strip()]
     result = comprehension.record(
@@ -804,6 +1146,18 @@ def _comprehension(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         items=items,
         reason=args.reason,
     )
+    _regenerate_overview(ctx, package)
+    return result
+
+
+def _profile(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    from . import profile
+
+    package = ctx.package()
+    if args.action == "set":
+        result = profile.set_profile(package, _config(ctx, package), args.name, args.by, args.reason)
+    else:
+        result = profile.withdraw(package, _config(ctx, package), args.by, args.reason)
     _regenerate_overview(ctx, package)
     return result
 
@@ -850,12 +1204,29 @@ def _render_report(result: dict[str, Any]) -> str:
         lines.append(f"{row['id']}: {end}")
         for key in ("functional", "decisions", "ai_spec", "tasks", "code", "evidence"):
             lines.append(f"  {key:<10} {', '.join(row[key]) or '-'}")
+    from .recordfile import REACHED_TEXT
+
+    lines += [
+        f"Approved {a['stage']} by {a['by']} on {str(a['at'])[:10]} ({REACHED_TEXT.get(a['reached'], a['reached'])})"
+        for a in result.get("approvals", [])
+    ]
     lines += [
         f"Override {o['id']}: {o['criterion']} in {o['stage']} by {o['by']}" for o in result["overrides"]
     ]
     lines += [f"Abbreviated: {a['stage']} (authorised by {a['by']})" for a in result["abbreviated"]]
+    if result.get("profile"):
+        found = result["profile"]
+        state = " (withdrawn)" if found.get("withdrawn") else ""
+        lines.append(f"Small-story profile{state}: authorised by {found.get('by')}: {found.get('reason')}")
     lines += [f"Accepted risk {r['id']} ({r['by']}, {r['stage']})" for r in result["accepted_risks"]]
     return "\n".join(lines) or "No requirements."
+
+
+def _show(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    from .show import view
+
+    items = _ids(args.items)
+    return view(ctx.package(), args.stage, items=items or None, section=args.section)
 
 
 def _status(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
@@ -897,9 +1268,11 @@ def _render_status(report: dict[str, Any]) -> str:
 HANDLERS.update(
     {
         "abbreviate": _abbreviate,
+        "profile": _profile,
         "challenge": _challenge,
         "trace": _trace,
         "status": _status,
+        "show": _show,
         "artifact": _artifact,
         "comprehension": _comprehension,
         "start": _start,
@@ -920,6 +1293,50 @@ HANDLERS.update(
 
 
 # ---- output
+
+
+def _guard_target(ctx: Context, args: argparse.Namespace) -> None:
+    """D-46: refuse a write whose story cannot be told for certain, before anything is touched; let a
+    read-only call through, but quietly (it writes nothing at all)."""
+    assert ctx.target is not None
+    reason = targeting.ambiguity(ctx.target, ctx.cwd)
+    if reason is None:
+        return
+    if COMMAND_KINDS.get(command_key(args), WRITES) == READ_ONLY:
+        ctx.quiet = True
+        return
+    names = ", ".join(s.name for s in ctx.target.candidates) or "none"
+    raise refuse(
+        Refusal(
+            "ambiguous-story",
+            f"cannot tell which story this is for: {reason}. Nothing was written.",
+            f"Name the story with --feature-dir <dir> (stories: {names}), or start a new one with eil start",
+        )
+    )
+
+
+def _locked(ctx: Context, args: argparse.Namespace, handler: Handler) -> dict[str, Any]:
+    """Run a ``writes`` subcommand's read-modify-write under the record lock (004 D-67); a busy lock
+    refuses ``record-busy`` before anything is read for modification."""
+    key = command_key(args)
+    directory = ctx.target.directory if ctx.target is not None else None
+    if (
+        COMMAND_KINDS.get(key, WRITES) != WRITES
+        or key in UNLOCKED
+        or ctx.quiet
+        or directory is None
+        or not directory.is_dir()
+    ):
+        return handler(ctx, args)
+    from .recordfile import record_lock
+
+    with record_lock(directory) as held:
+        payload = handler(ctx, args)
+    if held.broken:
+        payload = {**payload, "lock": held.broken}
+        if isinstance(payload.get("text"), str):
+            payload["text"] += f"\nNote: {held.broken}."
+    return payload
 
 
 def render_text(payload: Mapping[str, Any]) -> str:
@@ -971,9 +1388,17 @@ def main(
             env=environment,
             json_mode=json_mode,
             feature_dir_arg=getattr(args, "feature_dir", None),
+            stdout=stdout,
         )
-        if args.command not in UNGOVERNED_OK:
-            ctx.package()
+        ctx.feature_dir()
+        story = ctx.target.name if ctx.target is not None else None
+        try:
+            _guard_target(ctx, args)
+            if args.command not in UNGOVERNED_OK:
+                ctx.package()
+        except EilExit as exc:
+            exc.payload.setdefault("story", story)
+            raise
         handler = HANDLERS.get(args.command)
         if handler is None:
             raise EilExit(
@@ -981,13 +1406,20 @@ def main(
                 {"ok": False, "error": f"not implemented: {args.command}"},
                 f"not implemented: {args.command}",
             )
-        payload = handler(ctx, args)
+        try:
+            payload = _locked(ctx, args, handler)
+        except EilExit as exc:
+            exc.payload.setdefault("story", story)
+            raise
+        if payload.get(EMITTED):
+            return EXIT_OK
+        payload = {**payload, "story": story}
         if json_mode:
             emit_json(payload, stdout)
         else:
-            text = render_text(payload)
+            text = render_text({k: v for k, v in payload.items() if k != "story"})
             if text:
-                stdout.write(text + "\n")
+                stdout.write((f"Story {story}: {text}" if story else text) + "\n")
         return EXIT_OK
     except EilExit as exc:
         return _report_exit(exc, json_mode, stdout, stderr)

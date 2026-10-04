@@ -29,7 +29,7 @@ def entry(story: Story, stage: str, key: str) -> dict[str, Any]:
 
 
 def story_record(story: Story, stage: str) -> dict[str, Any]:
-    obj = package_of(story).doc(stage).read_provenance().obj
+    obj = package_of(story).record(stage, "provenance")
     assert obj is not None
     return obj
 
@@ -81,27 +81,47 @@ def test_a_block_with_no_citation_is_inferred_whatever_the_verdict(reference_sto
 
 
 def test_decided_takes_precedence_over_restated_and_inferred(reference_story: Story) -> None:
-    edit(reference_story, "ai-spec", "Implement behaviour 2. (traces: FR-002)", "Implement behaviour 2. (traces: FR-002) (decided: AIS-001)")
+    edit(
+        reference_story,
+        "ai-spec",
+        "Implement behaviour 2. (traces: FR-002)",
+        "Implement behaviour 2. (traces: FR-002) (decided: AIS-001)",
+    )
     classify(reference_story, "ai-spec", ("AIS-002", "something else"))
     assert entry(reference_story, "ai-spec", "AIS-002")["class"] == "decided"
     assert status(reference_story, "ai-spec", "AIS-002") == "settled"
 
 
 def test_a_decided_clause_that_cannot_be_verified_is_not_decided(reference_story: Story) -> None:
-    edit(reference_story, "ai-spec", "Implement behaviour 2. (traces: FR-002)", "Implement behaviour 2. (traces: FR-002) (decided: AIS-777)")
+    edit(
+        reference_story,
+        "ai-spec",
+        "Implement behaviour 2. (traces: FR-002)",
+        "Implement behaviour 2. (traces: FR-002) (decided: AIS-777)",
+    )
     classify(reference_story, "ai-spec", ("AIS-002", None))
     assert entry(reference_story, "ai-spec", "AIS-002")["class"] != "decided"
 
 
 def test_a_citation_to_a_changed_source_is_inferred(reference_story: Story) -> None:
-    edit(reference_story, "functional", "behaviour 3 of duplicate analysis", "behaviour 3 of duplicate analysis, reworded")
+    edit(
+        reference_story,
+        "functional",
+        "behaviour 3 of duplicate analysis",
+        "behaviour 3 of duplicate analysis, reworded",
+    )
     classify(reference_story, "ai-spec", ("AIS-003", None), ("AIS-004", None))
     assert entry(reference_story, "ai-spec", "AIS-003")["class"] == "inferred"
     assert entry(reference_story, "ai-spec", "AIS-004")["class"] == "restated"
 
 
 def test_a_citation_to_an_id_nothing_defines_is_inferred(reference_story: Story) -> None:
-    edit(reference_story, "ai-spec", "Implement behaviour 5. (traces: FR-005)", "Implement behaviour 5. (traces: FR-999)")
+    edit(
+        reference_story,
+        "ai-spec",
+        "Implement behaviour 5. (traces: FR-005)",
+        "Implement behaviour 5. (traces: FR-999)",
+    )
     classify(reference_story, "ai-spec", ("AIS-005", None))
     assert entry(reference_story, "ai-spec", "AIS-005")["class"] == "inferred"
 
@@ -109,9 +129,13 @@ def test_a_citation_to_an_id_nothing_defines_is_inferred(reference_story: Story)
 # ---- sources below the approved documents settle by block status (D-32)
 
 
-def test_a_plan_section_and_task_follow_the_status_of_the_ai_spec_item_they_restate(reference_story: Story) -> None:
+def test_a_plan_section_and_task_follow_the_status_of_the_ai_spec_item_they_restate(
+    reference_story: Story,
+) -> None:
     edit(reference_story, "plan", "Summary (traces: DEC-001)", "Summary (traces: AIS-001)")
-    edit(reference_story, "plan", "Technical Context (traces: DEC-002)", "Technical Context (traces: AIS-002)")
+    edit(
+        reference_story, "plan", "Technical Context (traces: DEC-002)", "Technical Context (traces: AIS-002)"
+    )
     classify(reference_story, "ai-spec", ("AIS-001", None), ("AIS-002", "extra behaviour"))
     classify(reference_story, "plan", ("§Summary", None), ("§Technical Context", None))
     assert entry(reference_story, "plan", "§Summary")["class"] == "restated"
@@ -124,13 +148,19 @@ def test_a_plan_section_and_task_follow_the_status_of_the_ai_spec_item_they_rest
 
 def test_a_source_that_is_stale_makes_its_restating_block_inferred(reference_story: Story) -> None:
     classify(reference_story, "ai-spec", *every_ais(reference_story))
-    edit(reference_story, "functional", "behaviour 1 of duplicate analysis", "behaviour 1 of duplicate analysis, reworded")
+    edit(
+        reference_story,
+        "functional",
+        "behaviour 1 of duplicate analysis",
+        "behaviour 1 of duplicate analysis, reworded",
+    )
     classify(reference_story, "tasks", ("T001", None), ("T002", None))
     assert entry(reference_story, "tasks", "T001")["class"] == "inferred"
     assert entry(reference_story, "tasks", "T002")["class"] == "restated"
 
 
 # ---- what classification leaves alone
+
 
 def test_classifying_again_keeps_a_reviewed_block_reviewed(reference_story: Story) -> None:
     from tests.helpers.derived import answer_all
@@ -177,7 +207,9 @@ def test_classifying_an_approved_stage_keeps_its_adopted_blocks(reference_story:
         ["AIS-001"],
     ],
 )
-def test_an_invalid_classification_is_a_usage_error_and_writes_nothing(reference_story: Story, data: Any) -> None:
+def test_an_invalid_classification_is_a_usage_error_and_writes_nothing(
+    reference_story: Story, data: Any
+) -> None:
     before = reference_story.read("ai-spec")
     assert usage_code(reference_story, "ai-spec", data) == 2
     assert reference_story.read("ai-spec") == before
@@ -206,9 +238,13 @@ def test_the_cli_reads_the_file_and_exits_2_on_bad_input(
 # ---- reclassify: scrutiny can be added by anyone, never removed this way
 
 
-def test_anyone_may_reclassify_a_restated_block_as_inferred_and_it_is_recorded(reference_story: Story) -> None:
+def test_anyone_may_reclassify_a_restated_block_as_inferred_and_it_is_recorded(
+    reference_story: Story,
+) -> None:
     classify(reference_story, "ai-spec", ("AIS-001", None))
-    provenance.reclassify(package_of(reference_story), "ai-spec", "AIS-001", by="Sam QA", reason="reads wider than FR-001")
+    provenance.reclassify(
+        package_of(reference_story), "ai-spec", "AIS-001", by="Sam QA", reason="reads wider than FR-001"
+    )
     got = entry(reference_story, "ai-spec", "AIS-001")
     assert got["class"] == "inferred" and "cites" not in got
     assert "Sam QA" in got["adds"] and "reads wider than FR-001" in got["adds"]
@@ -230,3 +266,43 @@ def test_reclassify_refuses_an_unknown_block(reference_story: Story) -> None:
     with pytest.raises(EilExit) as exc:
         provenance.reclassify(package_of(reference_story), "ai-spec", "AIS-404", by="Sam QA")
     assert exc.value.payload["refusals"][0]["code"] == "unknown-item"
+
+
+# ---- 003 D-57: classification is additive; an unknown key is skipped, not fatal (determinism 49)
+
+
+def test_classifying_a_subset_keeps_the_rest(reference_story: Story) -> None:
+    classify(reference_story, "ai-spec", ("AIS-001", None), ("AIS-002", "a retry policy"))
+    first = entry(reference_story, "ai-spec", "AIS-001")
+    assert first["class"] == "restated"
+    classify(reference_story, "ai-spec", ("AIS-002", "a different addition"))
+    assert entry(reference_story, "ai-spec", "AIS-001") == first, (
+        "a restated numbered block left out is not reclassified"
+    )
+    assert entry(reference_story, "ai-spec", "AIS-002")["adds"] == "a different addition"
+
+
+def test_an_unknown_key_is_skipped_with_the_sections_current_keys(reference_story: Story) -> None:
+    result = classify(
+        reference_story, "ai-spec", ("AIS-001", None), ("Functional Requirements#0123456789ab", "x")
+    )
+    assert result["ok"] is True
+    (skipped,) = result["skipped"]
+    assert skipped["key"] == "Functional Requirements#0123456789ab"
+    assert skipped["section"] == "Functional Requirements"
+    assert "AIS-001" in skipped["current_keys"]
+    assert entry(reference_story, "ai-spec", "AIS-001")["class"] == "restated"
+
+
+def test_only_unknown_keys_is_nothing_classified(reference_story: Story, tmp_path: Any) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps({"stage": "ai-spec", "blocks": [{"block": "AIS-999", "adds": None}]}))
+    out = io.StringIO()
+    code = cli.main(
+        ["blocks", "classify", "--stage", "ai-spec", "--file", str(path), "--json", "--feature-dir", str(reference_story.root)],
+        cwd=reference_story.root, env={}, stdout=out, stderr=io.StringIO(),
+    )  # fmt: skip
+    assert code == 2
+    payload = json.loads(out.getvalue())
+    assert payload["error"].startswith("nothing-classified")
+    assert payload["skipped"][0]["key"] == "AIS-999"

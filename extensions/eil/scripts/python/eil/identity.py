@@ -172,6 +172,14 @@ class Config:
     default_developer: str | None = None
     approvers: dict[str, list[str]] = field(default_factory=lambda: {stage: [] for stage in CONFIG_STAGES})
     abbreviation_authorisers: list[str] = field(default_factory=list)
+    # Branches a story may be started on without asking (D-47).
+    main_branches: list[str] = field(default_factory=lambda: ["main", "master"])
+    # The longest review list presented one entry at a time (D-51).
+    one_at_a_time_max: int = 8
+    # The review page stops after this many minutes without use (004 D-66).
+    page_idle_minutes: int = 60
+    # The one script a browser may load to draw diagrams on the review page; ``None`` shows source (D-69).
+    diagram_script: str | None = None
 
 
 def _names(value: Any, where: str) -> list[str]:
@@ -213,6 +221,45 @@ def _merge(config: Config, data: dict[str, Any]) -> None:
             config.approvers[stage] = _names(names, f"approvers.{stage}")
     if "abbreviation_authorisers" in data:
         config.abbreviation_authorisers = _names(data["abbreviation_authorisers"], "abbreviation_authorisers")
+    if "main_branches" in data:
+        branches = _names(data["main_branches"], "main_branches")
+        if not branches:
+            raise ConfigError("main_branches must name at least one branch")
+        config.main_branches = branches
+    review = data.get("review")
+    if review is not None:
+        if not isinstance(review, dict) or set(review) - REVIEW_KEYS:
+            raise ConfigError(f"review may only hold {', '.join(sorted(REVIEW_KEYS))}")
+        value = review.get("one_at_a_time_max", config.one_at_a_time_max)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ConfigError("review.one_at_a_time_max must be a whole number")
+        config.one_at_a_time_max = value
+        idle = review.get("page_idle_minutes", config.page_idle_minutes)
+        if isinstance(idle, bool) or not isinstance(idle, int) or idle < 1:
+            raise ConfigError("review.page_idle_minutes must be a whole number of minutes, at least 1")
+        config.page_idle_minutes = idle
+        if "diagram_script" in review:
+            config.diagram_script = _diagram_script(review["diagram_script"])
+
+
+REVIEW_KEYS = frozenset({"one_at_a_time_max", "page_idle_minutes", "diagram_script"})
+
+
+def _diagram_script(value: Any) -> str | None:
+    """``review.diagram_script``: one ``https:`` URL the review page's browser may load, or nothing (004 D-69)."""
+    if value is None:
+        return None
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(str(value))
+    if (
+        not isinstance(value, str)
+        or parts.scheme != "https"
+        or not parts.netloc
+        or any(c in value for c in " \"'<>")
+    ):
+        raise ConfigError("review.diagram_script must be an https: URL, or null")
+    return value
 
 
 # ---- who is who

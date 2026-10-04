@@ -118,7 +118,10 @@ def test_an_ais_id_is_eligible_once_it_exists(story_dir: Story) -> None:
 
 def test_an_id_shaped_wrong_is_never_eligible(story_dir: Story) -> None:
     package = Package(story_dir.root)
-    assert decided_eligible(package, "FR-004") == "'FR-004' is not a CH-###, OQ-###, AIS-###, RVW-### or CR-### id"
+    assert (
+        decided_eligible(package, "FR-004")
+        == "'FR-004' is not a CH-###, OQ-###, AIS-###, RVW-### or CR-### id"
+    )
 
 
 # ---- decided_findings, wired into the gate
@@ -228,9 +231,7 @@ def test_amend_succeeds_when_every_change_is_covered(
     assert package3.state("requirements").state == "approved"
 
 
-def test_amend_refuses_while_a_block_is_unreviewed(
-    story_dir: Story, tmp_path: Path, config: Config
-) -> None:
+def test_amend_refuses_while_a_block_is_unreviewed(story_dir: Story, tmp_path: Path, config: Config) -> None:
     package = ready_and_approved(story_dir, tmp_path, config)
     text = package.read("requirements")
     edited = text.replace(

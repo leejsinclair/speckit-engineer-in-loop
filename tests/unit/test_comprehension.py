@@ -288,7 +288,7 @@ def take(package: Package, config: Config, level: str, outcome: str = "understoo
 
 
 def region_of(package: Package) -> dict:
-    return package.doc("functional").read_region("comprehension").obj
+    return package.record("functional", "comprehension")
 
 
 def test_a_record_holds_only_the_allowed_keys(story_dir: Story, tmp_path: Path, config: Config) -> None:
@@ -567,13 +567,14 @@ def test_the_counts_are_copied_into_the_approval_record(
     for level, outcome in zip(LEVELS, outcomes, strict=True):
         take(package, config, level, outcome)
     approve_functional(package, config)
-    approval = package.doc("functional").read_region("approval").obj
+    approval = package.record("functional", "approval")
     assert approval["comprehension"] == {
         "understood": 3,
         "coached": 1,
         "revealed": 0,
         "skipped": 1,
         "not_applicable": 0,
+        "own_decision": 0,  # 003 D-54
     }
 
 
@@ -584,7 +585,7 @@ def test_the_approval_records_the_upstream_fingerprint(
     for level in LEVELS:
         take(package, config, level)
     approve_functional(package, config)
-    approval = package.doc("functional").read_region("approval").obj
+    approval = package.record("functional", "approval")
     assert approval["upstream"] == {"requirements": package.fingerprint("requirements")}
 
 
@@ -607,11 +608,155 @@ def test_approving_requirements_is_unaffected_by_the_comprehension_rule(
     package = Package(story_dir.root)
     check_stage(package, "requirements", judgments_path=path)
     result = approve(package, config, "requirements", by="Ada Dev", attestation="yes")
-    assert (
-        result["ok"] is True
-        and "comprehension" not in package.doc("requirements").read_region("approval").obj
-    )
+    assert result["ok"] is True and "comprehension" not in package.record("requirements", "approval")
 
 
 def test_functional_document_helper_leaves_the_region_empty_by_default() -> None:
     assert "<!-- eil:begin comprehension -->\n<!-- eil:end comprehension -->" in functional_doc()
+
+
+# ---- 003 D-54: the person's own decisions are not asked; one waiver (determinism 51)
+
+
+def technical_ready(story: Story, tmp: Path) -> Package:
+    """A Technical Specification whose one decision, DEC-001, is Ada's and settled (restated)."""
+    from eil import provenance
+    from eil.blockstatus import blocks_of
+    from eil.gates import JUDGMENT, criteria_for
+
+    from tests.helpers.package import approve_stages, with_record_sections, with_technical
+
+    with_technical(story)
+    story.write("technical", with_record_sections(story.read("technical")))
+    approve_stages(story, "requirements", "functional")
+    package = Package(story.root)
+    keys = [b.key for b in blocks_of(package.doc("technical"))]
+    provenance.classify(
+        package, "technical", {"stage": "technical", "blocks": [{"block": k, "adds": None} for k in keys]}
+    )
+    path = tmp / "tj.json"
+    ids = [c.id for c in criteria_for("technical") if c.kind == JUDGMENT]
+    path.write_text(
+        json.dumps(
+            {"stage": "technical", "judgments": [{"id": i, "status": "met", "reason": "ok"} for i in ids]}
+        )
+    )
+    check_stage(Package(story.root), "technical", judgments_path=path)
+    return Package(story.root)
+
+
+TECH_CONFIG = Config(
+    default_developer="Ada Dev",
+    approvers={s: ["Ada Dev", "Priya QA"] for s in ("requirements", "functional", "technical")},
+)
+
+
+def test_plan_by_the_owner_never_targets_their_own_settled_decision(story_dir: Story, tmp_path: Path) -> None:
+    package = technical_ready(story_dir, tmp_path)
+    assert plan(package, "technical")["levels"][1]["target"] == "DEC-001", "explain can only be DEC-001"
+    for attempt in range(1, 6):
+        planned = plan(Package(story_dir.root), "technical", attempt=attempt, by="Ada Dev")
+        assert all(row.get("target") != "DEC-001" for row in planned["levels"])
+    rows = {r["level"]: r for r in plan(Package(story_dir.root), "technical", by="Ada Dev")["levels"]}
+    assert rows["explain"]["status"] == "own-decision" and rows["explain"]["items"] == ["DEC-001"]
+    assert rows["evaluate"]["status"] == "own-decision"
+    assert rows["recognise"]["status"] == "ok" and rows["recognise"]["target"].startswith("ART-")
+
+
+def test_someone_elses_decision_is_asked_as_normal(story_dir: Story, tmp_path: Path) -> None:
+    package = technical_ready(story_dir, tmp_path)
+    rows = {r["level"]: r for r in plan(package, "technical", by="Priya QA")["levels"]}
+    assert rows["explain"]["target"] == "DEC-001"
+
+
+def test_an_own_decision_level_is_recorded_as_such_and_counted(story_dir: Story, tmp_path: Path) -> None:
+    package = technical_ready(story_dir, tmp_path)
+    result = record(
+        package, TECH_CONFIG, "technical", "explain", "own-decision", by="Ada Dev", items=["DEC-001"]
+    )
+    assert result["counts"]["own_decision"] == 1
+
+
+def test_own_decision_is_refused_where_the_plan_did_not_say_so(story_dir: Story, tmp_path: Path) -> None:
+    package = technical_ready(story_dir, tmp_path)
+    with pytest.raises(EilExit) as caught:
+        record(
+            package, TECH_CONFIG, "technical", "recognise", "own-decision", by="Ada Dev", items=["ART-004"]
+        )
+    assert [r["code"] for r in caught.value.payload["refusals"]] == ["not-own-decision"]
+    with pytest.raises(EilExit) as caught:
+        record(package, TECH_CONFIG, "technical", "explain", "own-decision", by="Priya QA", items=["DEC-001"])
+    assert [r["code"] for r in caught.value.payload["refusals"]] == ["not-own-decision"]
+
+
+def test_a_waiver_records_every_remaining_level_as_skipped_with_the_reason(
+    story_dir: Story, tmp_path: Path
+) -> None:
+    package = technical_ready(story_dir, tmp_path)
+    record(package, TECH_CONFIG, "technical", "recognise", "understood", by="Ada Dev", items=["ART-004"])
+    result = comprehension.waive(
+        Package(story_dir.root),
+        TECH_CONFIG,
+        "technical",
+        by="Ada Dev",
+        reason="I wrote this design yesterday",
+    )
+    levels = {e["level"]: e for e in result["record"]["levels"]}
+    assert levels["recognise"]["outcome"] == "understood"
+    for name in ("explain", "apply", "trace", "evaluate"):
+        assert levels[name]["outcome"] == "skipped" and levels[name]["waived"] is True
+        assert levels[name]["reason"] == "I wrote this design yesterday"
+        assert levels[name]["question"] == "Waive the remaining comprehension levels for technical?"
+    assert result["state"] == "complete"
+
+
+def test_a_waiver_needs_a_reason_and_something_to_waive(story_dir: Story, tmp_path: Path) -> None:
+    package = technical_ready(story_dir, tmp_path)
+    with pytest.raises(EilExit) as caught:
+        comprehension.waive(package, TECH_CONFIG, "technical", by="Ada Dev", reason=" ")
+    assert [r["code"] for r in caught.value.payload["refusals"]] == ["reason-required"]
+    comprehension.waive(Package(story_dir.root), TECH_CONFIG, "technical", by="Ada Dev", reason="known")
+    with pytest.raises(EilExit) as caught:
+        comprehension.waive(Package(story_dir.root), TECH_CONFIG, "technical", by="Ada Dev", reason="again")
+    assert [r["code"] for r in caught.value.payload["refusals"]] == ["nothing-to-waive"]
+
+
+def test_the_ai_cannot_waive(story_dir: Story, tmp_path: Path) -> None:
+    package = technical_ready(story_dir, tmp_path)
+    with pytest.raises(EilExit) as caught:
+        comprehension.waive(package, TECH_CONFIG, "technical", by="Claude", reason="busy")
+    assert "ai-approval" in [r["code"] for r in caught.value.payload["refusals"]]
+
+
+def test_a_decided_item_whose_decision_names_the_taker_is_their_own(
+    story_dir: Story, tmp_path: Path, config: Config
+) -> None:
+    """D-54: a block classified `decided` whose cited challenge was answered by the person taking the check."""
+    from eil import provenance
+    from eil.blockstatus import blocks_of
+
+    from tests.helpers.package import approve_stages, with_record_sections
+
+    challenge = record_block(
+        "challenge",
+        {"id": "CH-001", "stage": "functional", "raised_by": "ai", "raised_at": NOW, "target": "FR-001", "text": "x",
+         "status": "closed", "responder": "Ada Dev", "response": "accepted", "at": NOW, "severity": "medium"},
+    )  # fmt: skip
+    sections = {
+        "Functional Requirements": "**FR-001**: The system shall flag duplicate customers on import. (traces: REQ-001) (decided: CH-001)"
+    }
+    with_functional(story_dir, sections=sections, extra=challenge)
+    story_dir.write("functional", with_record_sections(story_dir.read("functional")))
+    approve_stages(story_dir, "requirements")
+    package = Package(story_dir.root)
+    keys = [b.key for b in blocks_of(package.doc("functional"))]
+    provenance.classify(
+        package, "functional", {"stage": "functional", "blocks": [{"block": k, "adds": None} for k in keys]}
+    )
+    assert (
+        Package(story_dir.root).record("functional", "provenance")["blocks"]["FR-001"]["class"] == "decided"
+    )
+    check_stage(Package(story_dir.root), "functional", judgments_path=judgments(tmp_path))
+    for attempt in range(1, 4):
+        rows = plan(Package(story_dir.root), "functional", attempt=attempt, by="Ada Dev")["levels"]
+        assert all(r.get("target") != "FR-001" for r in rows)

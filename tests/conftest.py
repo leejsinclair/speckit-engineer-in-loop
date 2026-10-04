@@ -94,6 +94,57 @@ def reference_story(tmp_path: Path) -> Story:
 
 
 @pytest.fixture
+def legacy_upgrade(tmp_path: Path) -> Story:
+    """The ``bd7a0d5``-shaped story: legacy approvals, changed since, judgments recorded (T003, B-30)."""
+    from tests.fixtures import legacy_upgrade as legacy
+
+    return legacy.build(tmp_path / "specs" / "001-story")
+
+
+@pytest.fixture
+def two_stories(tmp_path: Path) -> Any:
+    """Completed story A, in-progress story B, and the pointer on A (T004, B-29)."""
+    from tests.fixtures import two_stories as fixture
+
+    return fixture.build(tmp_path / "project")
+
+
+def files_snapshot(root: Path) -> dict[str, bytes]:
+    """``{relative path: bytes}`` of every file under ``root`` (``.git`` excluded), for byte-identity checks."""
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and ".git" not in path.relative_to(root).parts
+    }
+
+
+@pytest.fixture
+def review_page_story(tmp_path: Path) -> Any:
+    """The browser review page's story: Requirements approved, five Functional blocks listed (004 T002)."""
+    from tests.fixtures import review_page
+
+    built = review_page.build(tmp_path / "specs" / "001-story")
+    yield built
+    assert not (built.root / "eil-record.json.lock").exists(), "a record lock outlived its write"
+
+
+@pytest.fixture
+def page_server(review_page_story: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
+    """The page for ``review_page_story``, served in a thread; stopped after the test (004 T004)."""
+    import tempfile
+
+    from tests.helpers.page import start_page
+
+    runtime = tmp_path / "tmp"
+    runtime.mkdir(exist_ok=True)
+    monkeypatch.setattr(tempfile, "tempdir", str(runtime))
+    page = start_page(review_page_story.root)
+    yield page
+    page.stop()
+    assert not (review_page_story.root / "eil-record.json.lock").exists(), "a record lock outlived its write"
+
+
+@pytest.fixture
 def eil_json(run_eil: Callable[..., EilResult]) -> Callable[..., tuple[int, Any]]:
     """``eil_json(args, cwd, env=None)`` runs the helper with ``--json``; returns ``(exit code, parsed JSON)``."""
 

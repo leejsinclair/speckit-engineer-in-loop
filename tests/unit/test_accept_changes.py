@@ -57,7 +57,6 @@ def add_req5(story: Story) -> None:
     edit(story, "requirements", REQ4, REQ4 + "\n\n" + NEW_REQ)
 
 
-
 STAGE = "requirements"
 
 
@@ -73,12 +72,18 @@ def answer(story: Story, by: str = "Ada Dev", reply: str = "ok", **kwargs: Any) 
     listed = the_list(story)
     if not kwargs.get("reopen"):
         kwargs.setdefault("all_", True)
-    return reviews.answer(package_of(story), CONFIG, STAGE, "changes", digest=listed.digest, by=by, reply=reply, **kwargs)
+    return reviews.answer(
+        package_of(story), CONFIG, STAGE, "changes", digest=listed.digest, by=by, reply=reply, **kwargs
+    )
 
 
-def confirm(story: Story, confirmation: str = "ok", by: str = "Ada Dev", stage: str = STAGE) -> dict[str, Any]:
+def confirm(
+    story: Story, confirmation: str = "ok", by: str = "Ada Dev", stage: str = STAGE
+) -> dict[str, Any]:
     pkg = package_of(story)
-    return reviews.confirm(pkg, CONFIG, stage, by=by, confirmation=confirmation, summaries=summaries_for(pkg, stage))
+    return reviews.confirm(
+        pkg, CONFIG, stage, by=by, confirmation=confirmation, summaries=summaries_for(pkg, stage)
+    )
 
 
 def codes(exc: pytest.ExceptionInfo[EilExit]) -> list[str]:
@@ -235,7 +240,9 @@ def test_a_non_confirmers_inferred_acceptance_does_not_answer_the_change(referen
     assert "REQ-005" in [e.key for e in the_list(reference_story).entries]
 
 
-def test_an_opposing_answer_after_an_inferred_acceptance_keeps_the_change_open(reference_story: Story) -> None:
+def test_an_opposing_answer_after_an_inferred_acceptance_keeps_the_change_open(
+    reference_story: Story,
+) -> None:
     prepared(reference_story)
     add_req5(reference_story)
     answer_inferred(reference_story, all_=True)
@@ -284,7 +291,9 @@ def test_a_conflicting_answer_blocks_confirm_until_a_confirmer_answers_again(ref
         package_of(reference_story), CONFIG, STAGE, "changes", digest=None, by="Priya QA",
         reply="I don't agree with REQ-005", reopen=["REQ-005"],
     )  # fmt: skip
-    conflicted = reviews.conflicted_keys(package_of(reference_story), STAGE, {"REQ-005": _hash(reference_story, "REQ-005")})
+    conflicted = reviews.conflicted_keys(
+        package_of(reference_story), STAGE, {"REQ-005": _hash(reference_story, "REQ-005")}
+    )
     assert conflicted == {"REQ-005"}
     assert "acceptance-conflict" in refused(reference_story)
     assert entry(the_list(reference_story), "REQ-005").conflict is True
@@ -301,11 +310,16 @@ def test_a_covered_change_to_a_checked_stage_carries_forward_without_a_question(
 ) -> None:
     approved_functional(story_dir, tmp_path)
     cli._persist_adoption(package_of(story_dir))
-    edit(story_dir, "requirements", "The system detects duplicate customers on import.", "The system detects duplicate customers on import, in real time. (decided: CH-004)")
+    edit(
+        story_dir,
+        "requirements",
+        "The system detects duplicate customers on import.",
+        "The system detects duplicate customers on import, in real time. (decided: CH-004)",
+    )
     story_dir.append("requirements", "\n" + record_block("challenge", CHALLENGE).rstrip("\n") + "\n")
     approval = confirm(story_dir, "ok", stage="functional")["approval"]
     assert approval["reached"] == "carried-forward" and approval["rests_on"] == ["CH-004"]
-    comp = package_of(story_dir).doc("functional").read_region("comprehension").obj
+    comp = package_of(story_dir).record("functional", "comprehension")
     assert comp and {row["outcome"] for row in comp["levels"]} == {"not-applicable"}
 
 
@@ -314,7 +328,12 @@ def test_an_answered_change_to_a_checked_stage_still_needs_the_delta_check(
 ) -> None:
     approved_functional(story_dir, tmp_path)
     cli._persist_adoption(package_of(story_dir))
-    edit(story_dir, "functional", "**FR-001**: The system shall flag duplicate customers on import.", "**FR-001**: The system shall flag duplicate customers on import, in real time.")
+    edit(
+        story_dir,
+        "functional",
+        "**FR-001**: The system shall flag duplicate customers on import.",
+        "**FR-001**: The system shall flag duplicate customers on import, in real time.",
+    )
     reviews.answer(
         package_of(story_dir), CONFIG, "functional", "changes",
         digest=the_list(story_dir, "functional").digest, by="Ada Dev", reply="ok", all_=True,

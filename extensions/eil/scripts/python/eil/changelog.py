@@ -34,7 +34,7 @@ def stored_summary(record: dict[str, Any], key: str, digest: str) -> str | None:
 def refresh(pkg: Package, stage: str) -> bool:
     """Rewrite the ``changelog`` region of ``stage`` from its record. Returns whether the file changed."""
     try:
-        record = pkg.doc(stage).read_provenance().obj
+        record = pkg.record(stage, "provenance")
     except (OSError, UnicodeDecodeError):
         return False
     changes = [c for c in (record or {}).get("changes") or [] if isinstance(c, dict)]
@@ -60,7 +60,7 @@ def recent(pkg: Package, limit: int = RECENT) -> list[dict[str, Any]]:
     rows = []
     for order, stage in enumerate(pkg.existing_stages()):
         try:
-            record = pkg.doc(stage).read_provenance().obj
+            record = pkg.record(stage, "provenance")
         except (OSError, UnicodeDecodeError):
             continue
         for index, change in enumerate((record or {}).get("changes") or []):

@@ -71,7 +71,7 @@ def test_a_met_gate_and_a_configured_confirmer_records_the_approval(
     fingerprint = package.fingerprint("requirements")
     result = approve_ok(package, config)
     assert result["ok"] is True
-    record = package.doc("requirements").read_region("approval").obj
+    record = package.record("requirements", "approval")
     assert record["stage"] == "requirements"
     assert record["by"] == "Ada Dev"
     assert record["at"] == NOW
@@ -90,10 +90,7 @@ def test_the_approval_covers_the_current_content_and_the_stage_becomes_approved(
     package = ready(story_dir, tmp_path)
     approve_ok(package, config)
     assert package.state("requirements").state == "approved"
-    assert (
-        package.fingerprint("requirements")
-        == package.doc("requirements").read_region("approval").obj["fingerprint"]
-    )
+    assert package.fingerprint("requirements") == package.record("requirements", "approval")["fingerprint"]
 
 
 def test_the_record_carries_each_items_hash_for_impact_analysis(
@@ -101,7 +98,7 @@ def test_the_record_carries_each_items_hash_for_impact_analysis(
 ) -> None:
     package = ready(story_dir, tmp_path)
     approve_ok(package, config)
-    record = package.doc("requirements").read_region("approval").obj
+    record = package.record("requirements", "approval")
     doc = package.doc("requirements")
     parsed = parse_document(doc)
     scan_document(doc, "requirements", parsed)  # attaches the diagram, which is part of an artifact's hash
@@ -113,10 +110,7 @@ def test_the_record_carries_each_items_hash_for_impact_analysis(
 def test_a_played_back_note_is_recorded_when_given(story_dir: Story, tmp_path: Path, config: Config) -> None:
     package = ready(story_dir, tmp_path)
     approve_ok(package, config, played_back_to="Sam (business), Priya (QA)")
-    assert (
-        package.doc("requirements").read_region("approval").obj["played_back_to"]
-        == "Sam (business), Priya (QA)"
-    )
+    assert package.record("requirements", "approval")["played_back_to"] == "Sam (business), Priya (QA)"
 
 
 def test_one_confirmation_is_enough(story_dir: Story, tmp_path: Path) -> None:
@@ -157,7 +151,7 @@ def test_a_second_approval_replaces_the_first_rather_than_appending(
     approve_ok(package, config, attestation="Re-confirmed after the edit.")
     text = story_dir.read("requirements")
     assert text.count("<!-- eil:begin approval -->") == 1
-    record = package.doc("requirements").read_region("approval").obj
+    record = package.record("requirements", "approval")
     assert record["attestation"] == "Re-confirmed after the edit."
     assert package.state("requirements").state == "approved"
 
@@ -264,7 +258,7 @@ def test_unreviewed_ai_content_can_be_overridden_by_a_confirmer(
     )
     check_stage(package, "requirements", judgments_path=judgments(tmp_path))
     approve_ok(package, config)
-    assert package.doc("requirements").read_region("approval").obj["overrides_used"] == ["OVR-001"]
+    assert package.record("requirements", "approval")["overrides_used"] == ["OVR-001"]
 
 
 def test_a_blank_attestation_is_refused(story_dir: Story, tmp_path: Path, config: Config) -> None:
@@ -436,3 +430,85 @@ def test_an_override_is_visible_in_the_document_for_review(story_dir: Story, con
     )
     override(Package(story_dir.root), config, "requirements", "REQ-G06", by="Ada Dev", reason="visible")
     assert "visible" in story_dir.read("requirements") and '"CH-001"' in story_dir.read("requirements")
+
+
+# ---- 003 D-59: approving takes one word, recorded with the helper's question (determinism 53)
+
+
+def test_every_approvable_stage_has_a_fixed_question() -> None:
+    from eil.package import APPROVABLE
+
+    assert set(records.APPROVAL_QUESTIONS) == set(APPROVABLE)
+    assert (
+        records.APPROVAL_QUESTIONS["functional"]
+        == "Approve the Functional Specification as the behaviour you require?"
+    )
+    assert all(q.endswith("?") for q in records.APPROVAL_QUESTIONS.values())
+
+
+def test_ok_approves_and_is_recorded_with_the_question(
+    story_dir: Story, tmp_path: Path, config: Config
+) -> None:
+    package = ready(story_dir, tmp_path)
+    approve_ok(package, config, attestation="ok")
+    record = package.record("requirements", "approval")
+    assert record["attestation"] == "ok"
+    assert record["question"] == records.APPROVAL_QUESTIONS["requirements"]
+    line = story_dir.read("requirements")
+    assert '"ok" to "Approve the Requirements as the problem we intend to solve?"' in line
+
+
+def test_an_empty_reply_is_still_refused(story_dir: Story, tmp_path: Path, config: Config) -> None:
+    package = ready(story_dir, tmp_path)
+    with pytest.raises(EilExit) as exc:
+        approve_ok(package, config, attestation="  ")
+    assert "attestation-required" in refusals(exc)
+
+
+def test_status_offers_the_question_when_the_next_step_is_an_approval(
+    story_dir: Story, tmp_path: Path
+) -> None:
+    from eil import overview
+
+    package = ready(story_dir, tmp_path)
+    action = overview.status(package)["next_action"]
+    assert action["kind"] == "human" and action["purpose"] == "approval"
+    assert action["question"] == records.APPROVAL_QUESTIONS["requirements"]
+
+
+def test_review_confirm_records_its_question(reference_story: Story) -> None:
+    from eil import reviews
+    from eil.records import CONFIRM_QUESTIONS
+
+    from tests.helpers.changes import summaries_for
+    from tests.helpers.derived import CONFIG, edit
+
+    edit(
+        reference_story,
+        "requirements",
+        "Analysts can review each flagged pair.",
+        "Analysts can review each flagged pair, with notes.",
+    )
+    package = Package(reference_story.root)
+    listed = reviews.build_list(package, "requirements", "changes")
+    summaries = summaries_for(package, "requirements")
+    reviews.answer(
+        package,
+        CONFIG,
+        "requirements",
+        "changes",
+        digest=listed.digest,
+        by="Ada Dev",
+        reply="ok",
+        all_=True,
+        summaries=summaries,
+    )
+    result = reviews.confirm(
+        Package(reference_story.root),
+        CONFIG,
+        "requirements",
+        by="Ada Dev",
+        confirmation="ok",
+        summaries=summaries,
+    )
+    assert result["approval"]["question"] == CONFIRM_QUESTIONS["requirements"]

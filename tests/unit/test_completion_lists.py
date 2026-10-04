@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 from eil import records, reviews, staleness
-from eil.blocks import write_region
 from eil.results import EilExit
 
 from tests.helpers.derived import CONFIG, package_of, settle_derived
@@ -51,10 +50,10 @@ def test_a_task_without_code_touches_nothing(story: Story) -> None:
 
 
 def test_an_artefact_whose_hash_moved_since_approval_is_touched(story: Story) -> None:
-    doc = package_of(story).doc("technical")
-    approval = dict(doc.read_region("approval").obj)
+    package = package_of(story)
+    approval = dict(package.record("technical", "approval") or {})
     approval["items"] = {**approval["items"], "ART-002": "sha256:" + "1" * 64}
-    story.write("technical", write_region(story.read("technical"), "approval", approval))
+    package.write_record("technical", "approval", approval)
     assert "ART-002" in staleness.touched_artifacts(package_of(story))
 
 
@@ -79,7 +78,9 @@ def test_answering_diagram_currency_settles_it_until_the_artefact_moves(story: S
 
 
 def add_challenge(story: Story, stage: str, target: str, severity: str) -> str:
-    out = records.add_challenge(package_of(story), stage, target, "Is this right?", "Priya", severity=severity)
+    out = records.add_challenge(
+        package_of(story), stage, target, "Is this right?", "Priya", severity=severity
+    )
     return out["id"]
 
 
@@ -105,7 +106,9 @@ def test_defer_all_closes_each_as_deferred_with_the_shared_reason_and_name(story
         defer_reason="accepted as minor",
     )  # fmt: skip
     for cid in ids:
-        found = next(r for r in package_of(story).doc("requirements").records() if (r.obj or {}).get("id") == cid)
+        found = next(
+            r for r in package_of(story).doc("requirements").records() if (r.obj or {}).get("id") == cid
+        )
         assert found.obj["status"] == "closed" and found.obj["response"] == "deferred"
         assert found.obj["reason"] == "accepted as minor" and found.obj["responder"] == "Ada Dev"
     assert keys(reviews.build_list(package_of(story), "completion", "low-challenges")) == []

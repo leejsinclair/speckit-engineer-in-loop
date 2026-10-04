@@ -50,7 +50,10 @@ def stored(package: Package) -> dict[str, dict]:
 
 def approve_after_checking(package: Package, tmp: Path) -> dict:
     path = tmp / "judgments.json"
-    body = {"stage": "requirements", "judgments": [{"id": c, "status": "met", "reason": "ok"} for c in JUDGED]}
+    body = {
+        "stage": "requirements",
+        "judgments": [{"id": c, "status": "met", "reason": "ok"} for c in JUDGED],
+    }
     path.write_text(json.dumps(body))
     check_stage(package, "requirements", judgments_path=path)
     return records.approve(package, CONFIG, "requirements", "Ada Dev", YES)
@@ -94,12 +97,14 @@ def test_a_legacy_record_without_severity_counts_as_medium() -> None:
 # ---- approval: only high and medium block
 
 
-def test_low_challenges_do_not_block_and_are_recorded_as_outstanding(package: Package, tmp_path: Path) -> None:
+def test_low_challenges_do_not_block_and_are_recorded_as_outstanding(
+    package: Package, tmp_path: Path
+) -> None:
     add(package, "First minor point?", "low")
     add(package, "Second minor point on wording?", "low")
     result = approve_after_checking(package, tmp_path)
     assert result["approval"]["outstanding"] == ["CH-001", "CH-002"]
-    assert package.doc("requirements").read_region("approval").obj["outstanding"] == ["CH-001", "CH-002"]
+    assert package.record("requirements", "approval")["outstanding"] == ["CH-001", "CH-002"]
 
 
 def test_no_outstanding_key_when_there_are_none(package: Package, tmp_path: Path) -> None:

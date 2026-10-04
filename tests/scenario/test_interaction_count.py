@@ -212,3 +212,113 @@ def _maybe_update_baseline(request: pytest.FixtureRequest, tmp_path_factory: pyt
     if request.config.getoption("--update-baseline", default=False):
         data = capture_baseline(tmp_path_factory.mktemp("baseline"))
         BASELINE_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+# ---- 003 SC-005: developer replies from requirements to implementation, under the small-story profile
+
+
+def first_pass(tmp_path: Path, generation: str, monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """The replies a developer gives on a first pass from requirements to implementation, measured with
+    the helper on the reference story, and counted by this model (one reply per item):
+
+    * the profile's authorisation (003 only) and the three definition approvals;
+    * every decision question: under 002 every DEC was asked; under 003 the two with no observable
+      effect are recorded `ai-decided` and validated on the review list instead;
+    * a wireframe export unless the gate's wireframe criterion is met without one;
+    * every comprehension level the helper plans as a question (`status: ok`), after the stage's review
+      list has been answered (002 had no `--by`, so no own decision was left out);
+    * one reply per review list: three definition lists, then three derived lists (002) or one (003).
+
+    The comprehension check's gate prerequisites are not modelled; nothing else is changed."""
+    from eil import blockstatus, comprehension, profile, provenance, reviews
+    from eil.gates import check_stage
+    from eil.identity import Config
+    from eil.package import Package
+    from eil.trace import ai_decided_ids, parse_document
+
+    from tests.helpers.package import with_record_sections
+
+    monkeypatch.setattr(comprehension, "_require_prerequisites", lambda pkg, stage: None)
+    config = Config(
+        default_developer="Ada Dev",
+        approvers={s: ["Ada Dev"] for s in ("requirements", "functional", "technical")},
+        abbreviation_authorisers=["Ada Dev"],
+    )
+    story = reference.build(tmp_path / generation / "specs" / "001-story")
+    if generation == "003":
+        text = story.read("technical")
+        for n in (3, 4):  # queue per import file; retry three times: nothing a user observes changes
+            text = text.replace(
+                f"Trade-off: Trade-off {n}.\nOwner: Ada Dev", f"Trade-off: Trade-off {n}.\nOwner: ai-decided"
+            )
+        story.write("technical", text)
+    for stage in ("functional", "technical"):
+        clear_approval(story, stage)
+        story.write(stage, with_record_sections(story.read(stage)))
+    for stage in ("ai-spec", "plan", "tasks"):
+        story.write(stage, with_record_sections(story.read(stage)))
+    root = story.root
+    counts: dict[str, int] = {}
+    if generation == "003":
+        profile.set_profile(
+            Package(root), config, "small", by="Ada Dev", reason="A detailed request for a small change"
+        )
+        counts["profile"] = 1
+    counts["approvals"] = 3
+    decisions = [i for i in parse_document(Package(root).doc("technical")).items if i.kind == "DEC"]
+    counts["decisions"] = len(decisions) - len(ai_decided_ids(decisions))
+    criterion = next(
+        c for c in check_stage(Package(root), "functional", write=False).criteria if c.id == "FUN-G15"
+    )
+    counts["wireframes"] = 0 if generation == "003" and criterion.status == "met" else 1
+    counts["lists"] = 0
+    for stage in ("functional", "technical"):
+        keys = [b.key for b in blockstatus.blocks_of(Package(root).doc(stage))]
+        provenance.classify(
+            Package(root), stage, {"stage": stage, "blocks": [{"block": k, "adds": None} for k in keys]}
+        )
+        listed = reviews.build_list(Package(root), stage, "inferred")
+        if listed.entries:
+            reviews.answer(
+                Package(root),
+                config,
+                stage,
+                "inferred",
+                digest=listed.digest,
+                by="Ada Dev",
+                reply="ok",
+                all_=True,
+            )
+        rows = comprehension.plan(Package(root), stage, by="Ada Dev" if generation == "003" else None)[
+            "levels"
+        ]
+        counts[f"comprehension {stage}"] = sum(1 for r in rows if r["status"] == "ok")
+    counts["lists"] = 3
+    if generation == "003":
+        counts["lists"] += 1 if reviews.build_list(Package(root), "derived", "inferred").entries else 0
+    else:
+        counts["lists"] += sum(
+            1
+            for s in ("ai-spec", "plan", "tasks")
+            if reviews.build_list(Package(root), s, "inferred").entries
+        )
+    return counts
+
+
+def test_sc005_approvals_and_observable_decisions_are_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before, after = first_pass(tmp_path, "002", monkeypatch), first_pass(tmp_path, "003", monkeypatch)
+    assert after["approvals"] == before["approvals"] == 3
+    assert after["decisions"] == 3, "the three decisions with an observable effect are still asked"
+    assert sum(after.values()) < sum(before.values())
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="SC-005 target not met: measured 40% fewer replies on the reference story (25 under 002, 15 under "
+    "the profile), against a target of 50%; see specs/003-proportionate-effort/research.md, Evidence",
+)
+def test_sc005_replies_fall_by_at_least_half(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    before, after = first_pass(tmp_path, "002", monkeypatch), first_pass(tmp_path, "003", monkeypatch)
+    assert sum(after.values()) <= sum(before.values()) * 0.5, (before, after)

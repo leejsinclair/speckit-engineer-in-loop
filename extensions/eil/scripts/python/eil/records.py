@@ -14,7 +14,7 @@ from typing import Any
 
 from . import comprehension, impact, verification
 from .artifacts import scan_document
-from .blocks import Doc, append_record, replace_record, write_region
+from .blocks import Doc, append_record, ensure_region, replace_record
 from .blockstatus import unreviewed
 from .clock import utc_now
 from .fingerprint import fingerprint_text
@@ -40,9 +40,26 @@ from .identity import (
 )
 from .package import APPROVABLE, DOC_FILES, STAGES, Package
 from .results import Refusal, refuse, usage_error
-from .trace import item_hash, parse_document, section_fingerprints
+from .trace import ai_decided_ids, item_hash, parse_document, section_fingerprints
 
 DEFINITION_STAGES = ("requirements", "functional", "technical", "ai-spec")
+# The helper's fixed approval question per stage (D-59). The question states what is confirmed, so any
+# non-empty reply ("ok", "yes", "approved") is a complete approval; it is recorded with the question.
+APPROVAL_QUESTIONS = {
+    "requirements": "Approve the Requirements as the problem we intend to solve?",
+    "functional": "Approve the Functional Specification as the behaviour you require?",
+    "technical": "Approve the Technical Specification as the engineering solution we intend to build?",
+    "completion": "Approve completion: the evidence is reviewed and the story is done?",
+}
+_NAMES = {
+    "requirements": "Requirements",
+    "functional": "Functional Specification",
+    "technical": "Technical Specification",
+    "completion": "completion",
+}
+CONFIRM_QUESTIONS = {
+    stage: f"Re-approve the {name} with the changes listed?" for stage, name in _NAMES.items()
+}
 # Completion has its own refusal codes (FR-064, FR-065); each is the reason for one criterion.
 COMPLETION_REFUSALS = {
     "CMP-G02": ("verification-missing", "Record the evidence first: /speckit-eil-verify"),
@@ -108,6 +125,9 @@ def next_override_id(pkg: Package) -> str:
             if record.kind == "override" and record.obj:
                 match = _OVERRIDE_ID.fullmatch(str(record.obj.get("id", "")))
                 highest = max(highest, int(match[1]) if match else 0)
+    held = (pkg.story_record().get("profile") or {}).get("override") or {}
+    match = _OVERRIDE_ID.fullmatch(str(held.get("id", "")))
+    highest = max(highest, int(match[1]) if match else 0)
     return f"OVR-{highest + 1:03d}"
 
 
@@ -204,7 +224,8 @@ def _unreviewed_evidence(pkg: Package) -> list[Refusal]:
     return [
         Refusal(
             "unreviewed-ai-content",
-            f"{len(keys)} block(s) of the verification document have not been reviewed: " + ", ".join(keys[:8]),
+            f"{len(keys)} block(s) of the verification document have not been reviewed: "
+            + ", ".join(keys[:8]),
             "Answer the inferred list for verification, or record an override for unreviewed-ai-content",
         )
     ]
@@ -255,9 +276,7 @@ def approve(
     refusals.extend(_open_challenge_refusals(pkg, stage))
 
     original = pkg.read(stage)
-    text = original
-    if "approval" not in Doc(text).regions:
-        text = write_region(text, "approval", {}, heading="## Approval")
+    text = ensure_region(original, "approval")
     ctx = build_context(pkg, stage, text)
     refusals.extend(_gate_refusals(pkg, stage, ctx, text))
     if refusals:
@@ -272,6 +291,7 @@ def approve(
         "fingerprint": fingerprint,
         "reached": "first",
         "attestation": attestation.strip(),
+        "question": APPROVAL_QUESTIONS[stage],
     }
     if played_back_to and played_back_to.strip():
         record["played_back_to"] = played_back_to.strip()
@@ -286,15 +306,21 @@ def approve(
     all_parsed[stage] = ctx.parsed
     record["upstream_items"] = impact.upstream_item_hashes(pkg, stage, all_parsed)
     record["overrides_used"] = [str(o.get("id")) for o in ctx.overrides.values()]
+    if decided_by_ai := ai_decided_ids(ctx.parsed.items):
+        record["ai_decided"] = decided_by_ai  # covered by this approval, named in its line (D-53)
+    from .profile import active as profile_active
+
+    if (in_force := profile_active(pkg)) is not None:
+        record["profile"] = in_force["name"]  # kept after a withdrawal: what this approval was given under
     if outstanding := open_low_challenges(pkg, stage):
         record["outstanding"] = outstanding
     if stage == "completion" and (deferred := deferred_challenges(pkg)):
         record["deferred"] = deferred
     if stage in comprehension.ELIGIBLE_STAGES:  # copied so review sees skipped and revealed levels (FR-093)
-        record["comprehension"] = comprehension.counts(ctx.doc.read_region("comprehension").obj or {})
+        record["comprehension"] = comprehension.counts(pkg.record(stage, "comprehension") or {})
     if stage == "completion":
         record["review_findings"] = verification.finding_hashes(pkg)
-    pkg.doc_path(stage).write_bytes(write_region(text, "approval", record).encode("utf-8"))
+    pkg.write_record(stage, "approval", record, text=text)
     return {
         "ok": True,
         "stage": stage,
@@ -539,7 +565,9 @@ def add_challenge(
     }
 
 
-def set_challenge_severity(pkg: Package, config: Config, challenge_id: str, to: str, by: str) -> dict[str, Any]:
+def set_challenge_severity(
+    pkg: Package, config: Config, challenge_id: str, to: str, by: str
+) -> dict[str, Any]:
     """Change a challenge's severity (FR-030, FR-048). Anyone may raise it; lowering needs a configured
     confirmer of the stage. Every change is recorded with the person's name."""
     if to not in SEVERITIES:
@@ -547,7 +575,11 @@ def set_challenge_severity(pkg: Package, config: Config, challenge_id: str, to: 
     located = _find_challenge(pkg, challenge_id)
     if located is None:
         raise refuse(
-            Refusal("unknown-item", f"{challenge_id} is not a challenge of this story", "Check the id with eil status")
+            Refusal(
+                "unknown-item",
+                f"{challenge_id} is not a challenge of this story",
+                "Check the id with eil status",
+            )
         )
     stage, record = located
     current: dict[str, Any] = dict(record.obj)
@@ -562,7 +594,11 @@ def set_challenge_severity(pkg: Package, config: Config, challenge_id: str, to: 
     if SEVERITIES.index(to) < SEVERITIES.index(before):
         if is_ai_actor(by):
             raise refuse(
-                Refusal("ai-approval", f"{by!r} is the AI; a person lowers a challenge's severity", "Ask the developer")
+                Refusal(
+                    "ai-approval",
+                    f"{by!r} is the AI; a person lowers a challenge's severity",
+                    "Ask the developer",
+                )
             )
         problem = confirmer_refusal(by, approvers_for(pkg, config, stage), stage)
         if problem:

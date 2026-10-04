@@ -8,12 +8,13 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["playwright", "pytest", "ruff==0.16.9"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["extensions/eil/scripts/python", "."]
 markers = [
+    "browser: executes the review page in a real browser (requires Playwright Chromium)",
     "contract: installs the preset and extension into a scratch Spec Kit project",
     "scenario: replays a quickstart scenario end to end",
     "slow: takes more than a few seconds",
@@ -28,3 +29,8 @@ extend-exclude = [".venv", "specs"]
 select = ["E", "F", "I", "B", "UP"]
 # Long message strings are fine; `ruff format` owns code layout.
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# The renderer is copied from the rich specification viewer and keeps its formatting, so the two stay
+# comparable line by line (004 research D-60, R-32).
+"extensions/eil/scripts/python/eil/pagerender.py" = ["UP031"]

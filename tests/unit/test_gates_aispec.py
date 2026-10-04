@@ -67,7 +67,8 @@ def test_the_gate_writes_only_the_assessment_region(story_dir: Story) -> None:
     before = story_dir.read("ai-spec")
     check(story_dir)
     after = story_dir.read("ai-spec")
-    assert "eil:begin assessment -->\n```json" in after
+    assert "eil:begin assessment -->\nGate: " in after  # one rendered line; the record is in eil-record.json
+    assert Package(story_dir.root).record("ai-spec", "assessment")["stage"] == "ai-spec"
     assert fingerprint_text(after) == fingerprint_text(before)
 
 
@@ -228,12 +229,16 @@ def test_an_artefact_that_changed_since_its_stage_was_approved_is_named(story_di
     assert any(f.code == "artifact-changed-since-approval" and f.where == "AIS-013" for f in result.findings)
 
 
-def test_a_change_to_other_text_of_the_stage_leaves_the_artefact_and_the_sources_current(story_dir: Story) -> None:
+def test_a_change_to_other_text_of_the_stage_leaves_the_artefact_and_the_sources_current(
+    story_dir: Story,
+) -> None:
     with_ai_spec(story_dir)
     story_dir.write("technical", story_dir.read("technical").replace("three times", "four times"))
     result = check(story_dir)
     assert crit(result, "AIS-G04").status == "met"
-    assert crit(result, "AIS-G02").status == "met", "only an item's own change makes it an unapproved source (FR-002)"
+    assert crit(result, "AIS-G02").status == "met", (
+        "only an item's own change makes it an unapproved source (FR-002)"
+    )
 
 
 def test_a_referenced_artefact_that_was_removed_is_a_dangling_trace_not_current(story_dir: Story) -> None:
@@ -320,4 +325,26 @@ def test_any_criterion_can_be_overridden_by_a_named_confirmer(story_dir: Story, 
 def test_a_met_gate_puts_the_stage_in_review_and_never_approved(story_dir: Story, tmp_path: Path) -> None:
     with_ai_spec(story_dir)
     check(story_dir)
-    assert Package(story_dir.root).state("ai-spec").state == "in-review"
+    assert Package(story_dir.root).state("ai-spec").state in (
+        "in-review",
+        "reviewed",
+    )  # 003 D-58: reviewed when every block is settled
+
+
+def test_the_plans_own_record_headings_need_no_trace(story_dir: Story) -> None:
+    """003 FR-036, D-58: Change Log and Record are the helper's headings, never `plan-not-derivable`."""
+    from eil.blocks import ensure_record_sections
+
+    from tests.helpers.package import plan_doc, tasks_doc
+
+    with_ai_spec(story_dir)
+    story_dir.write("plan", ensure_record_sections(plan_doc()))
+    story_dir.write("tasks", tasks_doc())
+    assert "## Change Log" in story_dir.read("plan") and "## Record" in story_dir.read("plan")
+    result = check_stage(Package(story_dir.root), "plan", write=False)
+    assert not [
+        f
+        for f in result.findings
+        if f.code == "plan-not-derivable" and ("Change Log" in f.message or "Record" in f.message)
+    ]
+    assert not any("Change Log" in c.reason or "Record" in c.reason for c in result.criteria)

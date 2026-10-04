@@ -177,6 +177,7 @@ def test_comprehension_counts_come_from_the_current_record(story_dir: Story) -> 
         "revealed": 0,
         "skipped": 1,
         "not_applicable": 0,
+        "own_decision": 0,  # 003 D-54
     }
 
 
@@ -373,3 +374,54 @@ def test_open_tasks_send_the_story_to_implementation_before_verification(story_d
     )
     story_dir.write("tasks", "# Tasks\n\n- [x] T001 done\n")
     assert overview.next_action(package, model)["command"] == "/speckit-eil-7-verify"
+
+
+# ---- 003 D-58: the `reviewed` terminal state, and `done` after completion (FR-040)
+
+
+def _reviewed_story(reference_story: Story) -> Package:
+    from eil.gates import check_stage
+
+    from tests.helpers.derived import settle_derived
+
+    settle_derived(reference_story)
+    for stage in ("ai-spec", "plan", "tasks", "verification"):
+        check_stage(Package(reference_story.root), stage)
+    return Package(reference_story.root)
+
+
+def test_a_derived_stage_with_every_block_reviewed_and_its_code_criteria_met_is_reviewed(
+    reference_story: Story,
+) -> None:
+    package = _reviewed_story(reference_story)
+    assert package.state("plan").state == "reviewed"
+    # The reference AI Specification misses sections its gate requires: not reviewed, whatever its blocks say.
+    assert package.state("ai-spec").state != "reviewed"
+
+
+def test_reviewed_falls_back_to_draft_when_a_block_needs_review_again(reference_story: Story) -> None:
+    package = _reviewed_story(reference_story)
+    assert package.state("plan").state == "reviewed"
+    reference_story.write(
+        "plan",
+        reference_story.read("plan").replace(
+            "Queue Design follows decision 4.", "Queue design follows decision four."
+        ),
+    )
+    assert Package(reference_story.root).state("plan").state in ("draft", "in-review")
+
+
+def test_the_current_stage_skips_a_reviewed_stage(reference_story: Story) -> None:
+    package = _reviewed_story(reference_story)
+    current = package.current_stage()
+    assert current is None or package.state(current).state != "reviewed"
+
+
+def test_after_completion_is_approved_the_story_is_done(two_stories: Any) -> None:
+    package = Package(two_stories.a.root)
+    assert package.current_stage() is None
+    report = overview.status(package, TEMPLATE)
+    action = report["next_action"]
+    assert action["kind"] == "done"
+    assert action["message"].startswith("Story complete; approved by Ada Dev on 2026-09-30")
+    assert "Continue verification" not in str(report)

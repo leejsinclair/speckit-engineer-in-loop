@@ -117,8 +117,11 @@ RULES: list[tuple[Path, str, list[str]]] = [
     ),
     (
         EXT / "speckit.eil.technical.md",
-        "never writes a decision the developer has not made; never hides an inconsistency",
-        [r"never write a decision the developer has not made", r"never by hiding it"],
+        "never writes an observable decision the developer has not made; never hides an inconsistency",
+        [
+            r"never write a decision with an observable effect, scope or trade-off that the developer has not made",
+            r"never by hiding it",
+        ],
     ),
     # abbreviation (FR-040)
     (
@@ -181,28 +184,13 @@ RULES: list[tuple[Path, str, list[str]]] = [
         "shows the human the recorded text and writes a verbatim carry untagged",
         [r"verbatim carry", r"\(decided: AIS-###\)"],
     ),
-    # eil amend (D-25): re-signs an approval covered by cited human decisions
-    (EXT / "speckit.eil.amend.md", "asks the human directly", [r"ask the human directly"]),
-    (EXT / "speckit.eil.amend.md", "never supplies the attestation", [r"never supply the attestation"]),
-    (
-        EXT / "speckit.eil.amend.md",
-        "never chooses the cited decisions for the human",
-        [r"never choose the decisions"],
-    ),
-    # eil review (D-28): walks the human through each change and records their "ok" as the decision
-    (
-        EXT / "speckit.eil.review.md",
-        "never accepts a change on the human's behalf",
-        [r"never accept a change on the human's behalf"],
-    ),
-    (
-        EXT / "speckit.eil.review.md",
-        "never supplies the attestation for eil review finish",
-        [r"never supply the attestation"],
-    ),
     # accept (FR-015): covered changes take a short sign-off; the person's words are never supplied
     (EXT / "speckit.eil.accept.md", "never supplies the sign-off", [r"never supply the sign-off"]),
-    (EXT / "speckit.eil.accept.md", "labels its own summaries as drafts", [r"draft by the AI and must be labelled"]),
+    (
+        EXT / "speckit.eil.accept.md",
+        "labels its own summaries as drafts",
+        [r"draft by the AI and must be labelled"],
+    ),
     (EXT / "speckit.eil.accept.md", "asks once for the uncovered changes", [r"ask once", r"one reply"]),
     # conversational friction (D-24, D-25, D-27): reuse a known name; batch challenge answers
     *[
@@ -420,13 +408,17 @@ PURPOSE_STATED = [EXT / f"speckit.eil.{n}.md" for n in ("status", "next", "appro
 def test_purpose_stated(path: Path) -> None:
     """Principle IV, FR-032: each request to a person says its purpose, from the helper's `purpose`."""
     text = read(path)
-    assert "purpose" in text and re.search(r"awareness.*understanding.*decision.*validation.*approval", text, re.S)
+    assert "purpose" in text and re.search(
+        r"awareness.*understanding.*decision.*validation.*approval", text, re.S
+    )
 
 
 def test_challenge_prompt_rates_severity_and_leads_with_the_highest() -> None:
     text = read(EXT / "speckit.eil.challenge.md")
     assert "--severity" in text and "challenge severity" in text
-    assert re.search(r"high.{0,40}first", text, re.I | re.S) and re.search(r"label.{0,40}AI", text, re.I | re.S)
+    assert re.search(r"high.{0,40}first", text, re.I | re.S) and re.search(
+        r"label.{0,40}AI", text, re.I | re.S
+    )
 
 
 def test_approve_prompt_shows_the_focused_gate_and_outstanding_lows() -> None:
@@ -442,5 +434,305 @@ def test_complete_prompt_asks_only_what_implementation_touched() -> None:
     assert re.search(r"only.{0,40}non-empty|non-empty.{0,60}only|skip.{0,40}empty", text, re.I | re.S)
     assert "untouched" in text and re.search(r"without (?:a|any) question", text, re.I)
     assert "--defer-reason" in text and re.search(r"purpose", text)
-    assert "--found-in completion" in text and re.search(r"correct.{0,80}not.{0,40}(?:annotat|deviation)", text, re.I | re.S)
+    assert "--found-in completion" in text and re.search(
+        r"correct.{0,80}not.{0,40}(?:annotat|deviation)", text, re.I | re.S
+    )
     assert re.search(r"exists; result attested", text)
+
+
+# ---- 003 Proportionate Effort: Tier 2 rules (contracts/commands.md, last table)
+
+STARTING = [WRAPS / "speckit.specify.md", EXT / "speckit.eil.requirements.md"]
+
+
+@pytest.mark.parametrize("path", STARTING, ids=lambda p: p.stem)
+def test_pointer_not_reused(path: Path) -> None:
+    """FR-005, FR-006 (probe P-30): a governed story's pointer is never reused for a new story,
+    `--feature-dir` is always passed, and an unexpected branch is put to a person."""
+    text = read(path)
+    assert re.search(r"never reuse `\.specify/feature\.json` when it names a governed story", text, re.I)
+    assert re.search(r"always pass `--feature-dir`", text, re.I)
+    assert "unexpected-branch" in text and "--on-branch" in text
+    assert re.search(r"ask the (developer|person) to switch branch or confirm", text, re.I)
+    assert re.search(r"never (pass|supply) `--on-branch` (yourself|without)", text, re.I)
+
+
+STAGE_COMMANDS = [
+    EXT / f"speckit.eil.{n}.md"
+    for n in (
+        "requirements",
+        "functional",
+        "technical",
+        "ai-spec",
+        "verify",
+        "complete",
+        "comprehend",
+        "approve",
+        "accept",
+        "correct",
+        "challenge",
+        "resolve",
+        "trace",
+        "status",
+        "next",
+    )
+] + [WRAPS / f"speckit.{n}.md" for n in WRAP_PROMPTS]
+
+
+@pytest.mark.parametrize("path", STAGE_COMMANDS, ids=lambda p: p.stem)
+def test_show_not_raw(path: Path) -> None:
+    """FR-012 (probe P-29): stages are read with `eil show`, never by opening the document, and the
+    record file is never read."""
+    text = read(path)
+    assert "eil show" in text, f"{path.name} does not read stages with eil show"
+    assert re.search(r"never read `eil-record\.json`", text, re.I), path.name
+    assert not re.search(r"\*\*Read\*\* `s0\d", text), f"{path.name} still opens a stage document"
+
+
+LIST_PRESENTERS = [
+    EXT / f"speckit.eil.{n}.md"
+    for n in (
+        "requirements",
+        "functional",
+        "technical",
+        "ai-spec",
+        "accept",
+        "verify",
+        "complete",
+        "correct",
+        "approve",
+    )
+] + [WRAPS / f"speckit.{n}.md" for n in ("plan", "tasks")]
+
+
+@pytest.mark.parametrize("path", LIST_PRESENTERS, ids=lambda p: p.stem)
+def test_list_mode_no_tally(path: Path) -> None:
+    """FR-014 to FR-016 (probe P-28): a list is presented in the helper's mode, each answer is stored as
+    it is given, "ok to the rest" is offered, and no tally is kept in chat."""
+    text = read(path)
+    assert re.search(r"in the helper'?s `mode`", text, re.I)
+    assert "--entry" in text and "--rest" in text and re.search(r"ok to the rest", text, re.I)
+    assert re.search(r"never keep a tally", text, re.I)
+    assert re.search(r"never list a block the helper did not return", text, re.I)
+
+
+def test_accept_resigns_a_legacy_approval_in_one_reply() -> None:
+    """FR-025: the legacy statement is shown and one reply re-signs; a full re-approval is never asked."""
+    text = read(EXT / "speckit.eil.accept.md")
+    assert "legacy:<stage>" in text and re.search(r"one reply", text, re.I)
+    assert re.search(r"never point the person to a full re-approval", text, re.I)
+    assert "re-signed without comparison" in text
+
+
+CHALLENGE_PROMPTS = [
+    p
+    for p in ALL_PROMPTS + [EXT / "speckit.eil.correct.md", EXT / "speckit.eil.accept.md"]
+    if p.is_file() and "challenge add" in p.read_text(encoding="utf-8")
+]
+
+
+@pytest.mark.parametrize("path", CHALLENGE_PROMPTS, ids=lambda p: p.stem)
+def test_challenge_severity_written(path: Path) -> None:
+    """FR-039: every `challenge add` shows `--severity` and says it is required."""
+    text = read(path)
+    for line in [ln for ln in text.splitlines() if "challenge add" in ln]:
+        assert "--severity" in line, f"{path.name}: {line.strip()[:80]}"
+    assert re.search(r"severity[^.]{0,80}required|required[^.]{0,40}severity", text, re.I), path.name
+
+
+def test_mechanism_not_asked() -> None:
+    """FR-026 to FR-029 (probe P-24): only observable, scope or trade-off choices are asked, each with a
+    recommended option; the rest are `Owner: ai-decided` with a `Reason:`; when unsure, ask; they are named
+    in the summary. The Functional prompt never asks about mechanism."""
+    technical = read(EXT / "speckit.eil.technical.md")
+    assert re.search(r"observable effect, (the )?scope or a trade-off", technical, re.I)
+    assert re.search(r"recommended option", technical, re.I)
+    assert "Owner: ai-decided" in technical and "Reason:" in technical
+    assert re.search(r"when (you are )?unsure, ask", technical, re.I)
+    assert re.search(r"name every `ai-decided` (DEC|decision)", technical, re.I)
+    assert re.search(
+        r"a technical decision with an observable effect is the developer'?s, never yours", technical, re.I
+    )
+    functional = read(EXT / "speckit.eil.functional.md")
+    assert re.search(r"never ask (the developer )?about mechanism", functional, re.I)
+
+
+COMPREHEND = EXT / "speckit.eil.comprehend.md"
+
+
+def test_item_shown_before_question() -> None:
+    """FR-031 (probe P-25): the item is shown, with `eil show --items`, before each question; `--by` is
+    passed to the plan; an `own-decision` level is never asked; the waiver is offered."""
+    text = read(COMPREHEND)
+    assert re.search(r"eil show <stage> --items", text) and re.search(
+        r"before (each|every) question", text, re.I
+    )
+    assert "comprehension plan --stage <stage> --by" in text
+    assert re.search(r"never ask an `own-decision` level", text, re.I)
+    assert "comprehension waive" in text and re.search(r"waive", text, re.I)
+
+
+def test_behaviour_questions_and_reread() -> None:
+    """FR-030, FR-034 (probe P-26): questions are about behaviour; answers are judged on meaning and
+    re-read against the item before any hint."""
+    text = read(COMPREHEND)
+    assert re.search(r"ask about behaviour", text, re.I) and re.search(r"not (about )?mechanism", text, re.I)
+    assert re.search(r"judge (each|the) answer on (its )?meaning", text, re.I)
+    assert re.search(r"re-read the answer against the item before (giving )?(a|any) hint", text, re.I)
+
+
+@pytest.mark.parametrize("stage", ["functional", "technical"])
+def test_gap_scan_while_drafting(stage: str) -> None:
+    """FR-035 (probe P-27): before the first inferred list, the drafting command scans the items the
+    comprehension check will target, and raises any gap as a challenge first."""
+    text = read(EXT / f"speckit.eil.{stage}.md")
+    scan = text.find(f"eil comprehension plan --stage {stage}")
+    assert scan != -1, "the drafting pass does not run the plan"
+    assert scan < text.index("--kind inferred"), "the scan comes before the first inferred list"
+    assert (
+        re.search(r"silent", text, re.I)
+        and re.search(r"ambiguous", text, re.I)
+        and re.search(r"contradict", text, re.I)
+    )
+    assert re.search(r"raise (each|every|any) gap as a challenge (first|before)", text, re.I)
+
+
+PROFILE_PROPOSERS = [
+    WRAPS / "speckit.specify.md",
+    EXT / "speckit.eil.requirements.md",
+    EXT / "speckit.eil.abbreviate.md",
+]
+
+
+@pytest.mark.parametrize("path", PROFILE_PROPOSERS, ids=lambda p: p.stem)
+def test_profile_proposed_not_authorised(path: Path) -> None:
+    """FR-019, FR-020, FR-045 (probe P-23): the AI may propose the small-story profile, naming the signals
+    and labelling it as its own assessment; only a person authorises it, in their own words; the AI says
+    when the story outgrows it."""
+    text = read(path)
+    assert re.search(r"small-story profile", text, re.I)
+    assert "AI assessment:" in text and re.search(r"nam(e|ing) the signals", text, re.I)
+    assert re.search(r"ask who authorises (it )?and why", text, re.I)
+    assert re.search(r"never run `(eil )?profile set` without the person'?s own words", text, re.I)
+    assert re.search(r"outgrows the profile", text, re.I) and "profile withdraw" in text
+
+
+DERIVED_PRESENTERS = [EXT / "speckit.eil.ai-spec.md", WRAPS / "speckit.plan.md", WRAPS / "speckit.tasks.md"]
+
+
+@pytest.mark.parametrize("path", DERIVED_PRESENTERS, ids=lambda p: p.stem)
+def test_profile_presents_one_derived_list(path: Path) -> None:
+    """FR-021: under the profile, the AI Specification, plan and tasks are reviewed as one list after tasks."""
+    text = read(path)
+    assert re.search(r"under the small-story profile", text, re.I)
+    assert "--stage derived" in text
+
+
+APPROVERS = [EXT / f"speckit.eil.{n}.md" for n in ("approve", "complete", "accept")]
+
+
+@pytest.mark.parametrize("path", APPROVERS, ids=lambda p: p.stem)
+def test_short_approval_accepted(path: Path) -> None:
+    """FR-047 to FR-049 (probe P-31): ask the helper's question; a one-word reply is a complete answer;
+    the name is asked once per session; the AI never supplies the reply."""
+    text = read(path)
+    assert "next_action.question" in text or "question" in text and "helper" in text
+    assert re.search(r"\"ok\", \"yes\" or \"approved\"", text)
+    assert re.search(r"(do not|never) ask for a longer statement", text, re.I)
+    assert re.search(r"name once per session|reuse it for every `--by`", text, re.I)
+    assert not re.search(r"\*\"Yes, this is", text), "a full-sentence example reads as required wording"
+
+
+# ---- 004 Browser Review Page: Tier 2 rules (contracts/commands.md, last table)
+
+PAGE_PROMPTS = [EXT / f"speckit.eil.{n}.md" for n in ("requirements", "functional", "technical", "accept")]
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_review_surface_asked_once(path: Path) -> None:
+    """FR-021 (probe P-32): the surface is asked once per session, with its purpose, and not again unless
+    the person asks."""
+    text = read(path)
+    assert "Review on a page in your browser, or here in chat?" in text
+    assert re.search(r"ask (this|it) once per session", text, re.I)
+    assert re.search(r"how they review, not what they approve", text, re.I)
+    assert re.search(r"ask again only if the person asks", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_review_waits_for_done(path: Path) -> None:
+    """FR-015, FR-022 (probe P-33): the page is found or started, its address given with what it shows,
+    the list is not printed, and nothing is done with the review before the person says "done"."""
+    text = read(path)
+    assert "review serve --status --json" in text and 'review serve --by "<name>" --json' in text
+    assert re.search(r"give (them )?the address", text, re.I) and re.search(
+        r"which stage and list", text, re.I
+    )
+    assert re.search(r"do not print the list in chat", text, re.I)
+    assert re.search(r"until they say \"?done\"?", text, re.I)
+    assert re.search(r"ask (them|the person) to reload", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_and_chat_review_paths_are_mutually_exclusive(path: Path) -> None:
+    """FR-015, FR-022: a stage step presents and records the list in chat only when chat is the
+    selected surface; choosing the page must not fall through to the old chat instructions."""
+    text = read(path)
+    assert re.search(r"if chat is the chosen surface", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_agent_never_uses_page(path: Path) -> None:
+    """R-29 (probe P-33, extended): the agent never opens, fetches or posts to the page address; it only
+    gives it to the person, and passes `--host` only when the person asks."""
+    text = read(path)
+    assert re.search(r"never open, fetch or post to the page address", text, re.I)
+    assert re.search(r"give it to the person only", text, re.I)
+    assert re.search(r"pass `--host` only when the person asks", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_fallback_to_chat(path: Path) -> None:
+    """FR-022 (probe P-35): when the page cannot start, say why in one line and review in chat as before."""
+    text = read(path)
+    assert re.search(r"cannot start", text, re.I)
+    assert re.search(r"say why in one line", text, re.I)
+    assert re.search(r"review in chat", text, re.I)
+    assert re.search(r"never pass the AI'?s (own )?name", text, re.I)
+
+
+@pytest.mark.parametrize("path", [*PAGE_PROMPTS, EXT / "speckit.eil.approve.md"], ids=lambda p: p.stem)
+def test_approval_stays_in_chat(path: Path) -> None:
+    """FR-020: approval, overrides, waivers and the comprehension check stay in chat; no prompt sends
+    the person to the page for them."""
+    text = read(path)
+    assert re.search(r"approval, overrides, waivers and the comprehension check stay in chat", text, re.I)
+    assert re.search(r"never send the person to the page (for|to) (approve|approval)", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_answers_acted_on(path: Path) -> None:
+    """FR-014, FR-016 (probe P-34): after "done", the stored answers come from the helper; each send-back
+    is reworked with what changed, each question answered in chat; the person reloads and answers on
+    the page; no answer to a page-surface entry is recorded in chat; a reopened block is a send-back."""
+    text = read(path)
+    assert "review list --current --json" in text and "last_answers" in text
+    assert re.search(r"rework the block,? and say what changed", text, re.I)
+    assert re.search(r"answer (it|each question) in chat, or raise a challenge", text, re.I)
+    assert re.search(r"never record a page-surface entry'?s answer in chat", text, re.I)
+    assert re.search(r"a comment on a settled block", text, re.I) and re.search(
+        r"as (on|you would) a send-back", text, re.I
+    )
+    assert re.search(r"comprehension check, then approval in chat", text, re.I)
+
+
+@pytest.mark.parametrize(
+    "path", [EXT / "speckit.eil.status.md", EXT / "speckit.eil.next.md"], ids=lambda p: p.stem
+)
+def test_status_mentions_a_running_page(path: Path) -> None:
+    """004 contracts/commands.md: when a review page is running, its address is mentioned in one line."""
+    text = read(path)
+    assert "review serve --status --json" in text and re.search(
+        r"address, in one line|address in one line", text, re.I
+    )
+    assert re.search(r"never open, fetch or post to it", text, re.I)

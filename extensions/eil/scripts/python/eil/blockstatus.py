@@ -24,6 +24,28 @@ SETTLED, NEEDS_REVIEW, SOURCE_CHANGED, UNKNOWN_CURRENCY = (
     "source-changed",
     "unknown-currency",
 )
+# A block covered by an approval older than section-level records, on a document changed since (D-56).
+# It does not need review and is on no inferred list; one reply to the stage's ``legacy:<stage>`` change
+# entry re-signs the stage and turns it into ``adopted``.
+SETTLED_PENDING = "settled-pending"
+ADOPTED_PENDING = "adopted-pending"
+
+
+def _approval(package: Package, stage: str) -> dict[str, Any] | None:
+    """The stage's recorded approval, read directly: never through ``Package.state``, which derives a
+    derived stage's ``reviewed`` state from these block statuses (D-58)."""
+    if package.approval_line_without_record(stage) is not None:
+        return None
+    obj = package.record(stage, "approval")
+    return obj if isinstance(obj, dict) and isinstance(obj.get("fingerprint"), str) else None
+
+
+def legacy_approval(package: Package, stage: str) -> dict[str, Any] | None:
+    """The stage's approval when it predates section-level records and the document changed since."""
+    approval = _approval(package, stage)
+    if approval is None or approval.get("fingerprint") == package.fingerprint(stage):
+        return None
+    return approval if not isinstance(approval.get("section_fingerprints"), dict) else None
 
 
 @dataclass
@@ -49,17 +71,17 @@ def adopt(package: Package, stage: str) -> dict[str, Any] | None:
     if not package.exists(stage):
         return None
     doc = package.doc(stage)
-    if "provenance" in doc.regions or doc.read_provenance().error:
+    if "provenance" in doc.regions or package.record_read(stage, "provenance").error:
         return None
-    state = package.state(stage)
-    approval = state.approval
+    approval = _approval(package, stage)
+    fingerprint = package.fingerprint(stage)
     blocks = blocks_of(doc)
     entries: dict[str, Any] = {}
 
     def adopted(block: Block, basis: str) -> dict[str, Any]:
         return {"hash": block.hash, "class": "adopted", "basis": basis}
 
-    if approval is not None and approval.get("fingerprint") == state.fingerprint:
+    if approval is not None and approval.get("fingerprint") == fingerprint:
         basis = f"approval {approval.get('by')} {approval.get('at')}"
         entries = {b.key: adopted(b, basis) for b in blocks}
     elif approval is not None:
@@ -69,6 +91,7 @@ def adopt(package: Package, stage: str) -> dict[str, Any] | None:
         now = section_fingerprints(doc, parsed.items)
         then = approval.get("section_fingerprints")
         then = then if isinstance(then, dict) else {}
+        legacy = not isinstance(approval.get("section_fingerprints"), dict)
         for b in blocks:
             if b.numbered:
                 covered = recorded.get(b.key) == b.hash if b.kind != "plan" else False
@@ -76,6 +99,9 @@ def adopt(package: Package, stage: str) -> dict[str, Any] | None:
                 covered = b.section in then and then[b.section] == now.get(b.section)
             if covered:
                 entries[b.key] = adopted(b, basis)
+            elif legacy:
+                # Nothing to compare it with: covered by the legacy approval until one reply re-signs it.
+                entries[b.key] = {"hash": b.hash, "class": ADOPTED_PENDING, "basis": f"legacy {basis}"}
     else:
         for b in blocks:
             if _tagged(b):
@@ -83,6 +109,15 @@ def adopt(package: Package, stage: str) -> dict[str, Any] | None:
             else:
                 entries[b.key] = adopted(b, "untagged before upgrade")
     return {"version": 1, "currency": "unknown" if stage in DERIVED else "known", "blocks": entries}
+
+
+def persist_adoption(package: Package) -> None:
+    """D-42: the first writing command records the provenance an upgrade adopts, once per document.
+    Shared by the command line and the review page, so both write the same records (004 D-63)."""
+    for stage in package.existing_stages():
+        record = adopt(package, stage)
+        if record is not None:
+            package.write_record(stage, "provenance", record)
 
 
 def approved_ids(package: Package) -> set[str]:
@@ -138,8 +173,7 @@ class _Computer:
         return self.done[stage]
 
     def _record(self, stage: str) -> tuple[dict[str, Any], str]:
-        doc = self.package.doc(stage)
-        read = doc.read_provenance()
+        read = self.package.record_read(stage, "provenance")
         if read.error:
             return {}, "known"
         if read.obj is None:
@@ -172,6 +206,12 @@ class _Computer:
             return BlockInfo(stage, block, NEEDS_REVIEW)
         klass = entry.get("class")
         info = BlockInfo(stage, block, NEEDS_REVIEW, klass)
+        if isinstance(entry.get("reopened"), dict):
+            return info  # 004 D-65: a person commented on it; it needs review again, whatever its class
+        if klass == ADOPTED_PENDING:
+            if entry.get("hash") == block.hash:
+                info.status = SETTLED_PENDING
+            return info
         if klass == "decided":
             info.status = SETTLED
             return info
@@ -233,8 +273,10 @@ def unreviewed(package: Package, stage: str) -> list[BlockInfo]:
 
 def counts(package: Package, stage: str) -> dict[str, int]:
     """``{settled, needs_review, stale, unknown}`` for ``stage`` (``source-changed`` counts as stale)."""
-    out = {"settled": 0, "needs_review": 0, "stale": 0, "unknown": 0}
+    out = {"settled": 0, "needs_review": 0, "stale": 0, "unknown": 0, "pending": 0}
     for info in block_statuses(package).get(stage, {}).values():
+        if info.status == SETTLED_PENDING:
+            out["pending"] += 1
         if info.status == SETTLED:
             out["settled"] += 1
         elif info.status == NEEDS_REVIEW:
@@ -250,7 +292,7 @@ def stale_sources(package: Package, stage: str) -> dict[str, list[str]]:
     """``{block key: source ids whose hash no longer matches}`` from the recorded ``sources`` and ``cites``."""
     if not package.exists(stage):
         return {}
-    obj = package.doc(stage).read_provenance().obj
+    obj = package.record(stage, "provenance")
     blocks = (obj or {}).get("blocks")
     hashes = package.current_item_hashes()
     out: dict[str, list[str]] = {}

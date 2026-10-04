@@ -297,10 +297,14 @@ def test_an_artefact_on_neither_an_untouched_line_nor_its_own_line_is_missing(st
     assert "ART-007 has no line under Diagram Currency" in crit(gate(package), "CMP-G05").reason
 
 
-def test_a_touched_artefact_cannot_hide_on_the_untouched_line(story_dir: Story, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_touched_artefact_cannot_hide_on_the_untouched_line(
+    story_dir: Story, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from eil import staleness
 
-    monkeypatch.setattr(staleness, "touched_artifacts", lambda pkg: {"ART-004": "T001 carries code that reaches it"})
+    monkeypatch.setattr(
+        staleness, "touched_artifacts", lambda pkg: {"ART-004": "T001 carries code that reaches it"}
+    )
     package = ready(story_dir, sections={"Diagram Currency": "- untouched: " + ", ".join(ALL_ARTS)})
     result = crit(gate(package), "CMP-G05")
     assert result.status == "not-met"
@@ -312,5 +316,13 @@ def test_a_touched_artefact_needs_its_own_line(story_dir: Story, monkeypatch: py
 
     monkeypatch.setattr(staleness, "touched_artifacts", lambda pkg: {"ART-004": "changed"})
     lines = "- untouched: " + ", ".join(a for a in ALL_ARTS if a != "ART-004")
-    assert "ART-004 has no line under Diagram Currency" in crit(gate(ready(story_dir, sections={"Diagram Currency": lines})), "CMP-G05").reason
-    assert crit(gate(ready(story_dir, sections={"Diagram Currency": lines + "\n- ART-004: current"})), "CMP-G05").status == "met"
+    assert (
+        "ART-004 has no line under Diagram Currency"
+        in crit(gate(ready(story_dir, sections={"Diagram Currency": lines})), "CMP-G05").reason
+    )
+    assert (
+        crit(
+            gate(ready(story_dir, sections={"Diagram Currency": lines + "\n- ART-004: current"})), "CMP-G05"
+        ).status
+        == "met"
+    )

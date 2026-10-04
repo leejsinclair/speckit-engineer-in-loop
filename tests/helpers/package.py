@@ -755,17 +755,25 @@ def changelog_region(rows: list[str] | None = None) -> str:
     return f"<!-- eil:begin changelog -->\n{body}<!-- eil:end changelog -->\n"
 
 
-def with_record_sections(text: str, provenance: dict[str, Any] | None = None, changelog: list[str] | None = None) -> str:
+def with_record_sections(
+    text: str, provenance: dict[str, Any] | None = None, changelog: list[str] | None = None
+) -> str:
     """Insert ``## Change Log`` and ``## Record`` (with their regions) before the first
     ``## Comprehension Check`` or ``## Quality Assessment``, or at the end."""
     block = (
         "## Change Log\n\n"
         + changelog_region(changelog)
         + "\n## Record\n\n"
-        + (provenance_region(provenance) if provenance is not None else "<!-- eil:begin provenance -->\n<!-- eil:end provenance -->\n")
+        + (
+            provenance_region(provenance)
+            if provenance is not None
+            else "<!-- eil:begin provenance -->\n<!-- eil:end provenance -->\n"
+        )
         + "\n"
     )
-    positions = [p for p in (text.find("## Comprehension Check"), text.find("## Quality Assessment")) if p >= 0]
+    positions = [
+        p for p in (text.find("## Comprehension Check"), text.find("## Quality Assessment")) if p >= 0
+    ]
     if not positions:
         return text.rstrip("\n") + "\n\n" + block
     at = min(positions)
@@ -794,3 +802,16 @@ def rf_row(
     if reason is not None:
         lines.append(f"Reason: {reason}")
     return "\n".join(lines)
+
+
+# ---- 003: a project the helper can start stories in, without Spec Kit (T004)
+
+
+def install_templates(project: Path) -> None:
+    """Copy the preset's templates into ``project/.specify/templates``, where ``load_template`` finds them."""
+    import shutil
+
+    target = project / ".specify" / "templates"
+    target.mkdir(parents=True, exist_ok=True)
+    for path in (Path(__file__).resolve().parents[2] / "templates").glob("*.md"):
+        shutil.copy(path, target / path.name)

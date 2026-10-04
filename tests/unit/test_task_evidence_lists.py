@@ -34,7 +34,7 @@ def story(reference_story: Story) -> Story:
 
 
 def record(story: Story, stage: str = "tasks") -> dict[str, Any]:
-    obj = package_of(story).doc(stage).read_provenance().obj
+    obj = package_of(story).record(stage, "provenance")
     assert obj is not None
     return obj["blocks"]
 
@@ -173,7 +173,12 @@ def test_the_task_refusal_can_be_overridden_like_other_completion_criteria(story
 def test_completion_refuses_an_unreviewed_inferred_evidence_row(story: Story) -> None:
     assert "unreviewed-ai-content" not in approve_completion(story)
     text = story.read("verification")
-    story.write("verification", text.replace("## Manual Evidence\n", "## Manual Evidence\n\n" + evidence_row(10, "REQ-003") + "\n", 1))
+    story.write(
+        "verification",
+        text.replace(
+            "## Manual Evidence\n", "## Manual Evidence\n\n" + evidence_row(10, "REQ-003") + "\n", 1
+        ),
+    )
     assert "unreviewed-ai-content" in approve_completion(story)
     override = record_block(
         "override",

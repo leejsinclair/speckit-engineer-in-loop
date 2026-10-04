@@ -20,7 +20,7 @@ from typing import Any
 
 from . import changelog, comprehension, corrections, impact, verification
 from .artifacts import scan_document
-from .blocks import Doc, RegionError, append_record, write_provenance, write_region
+from .blocks import Doc, RegionError, append_record
 from .blockstatus import adopt, source_settled, unreviewed
 from .clock import utc_now
 from .content import blocks_of
@@ -28,8 +28,17 @@ from .fingerprint import fingerprint_text
 from .identity import Config, confirmer_refusal, is_ai_actor
 from .package import APPROVABLE, STAGES, Package
 from .records import DEFINITION_STAGES, approvers_for
-from .results import Finding, Refusal, refuse, usage_error
-from .trace import Item, ParseResult, item_hash, parse_document, section_fingerprints
+from .results import EXIT_USAGE, EilExit, Finding, Refusal, refuse, usage_error
+from .trace import (
+    Item,
+    ParseResult,
+    ai_decided_ids,
+    decision_fields,
+    is_ai_decided,
+    item_hash,
+    parse_document,
+    section_fingerprints,
+)
 
 DECIDED_KINDS = ("CH", "OQ", "AIS", "RVW", "CR")
 REVIEW_HEADING = "Reviews"
@@ -232,7 +241,7 @@ def _ensure_comprehension_current(
     if stage not in comprehension.ELIGIBLE_STAGES:
         return
     fingerprint = fingerprint_text(text)
-    state = comprehension.summarise(doc.read_region("comprehension").obj, fingerprint)
+    state = comprehension.summarise(pkg.record(stage, "comprehension"), fingerprint)
     if state["state"] == "complete":
         return
     plan = comprehension.plan(pkg, stage)
@@ -260,6 +269,7 @@ def _re_sign(
     extra: dict[str, Any],
     answered: set[str] | None = None,
     extra_refusals: list[Refusal] | None = None,
+    legacy: bool = False,
 ) -> dict[str, Any]:
     """The shared core of ``amend``, ``eil review finish`` and ``review confirm``: refuse unless every
     change since the last approval is covered by a cited decision (or, for ``confirm``, an accepted
@@ -299,8 +309,6 @@ def _re_sign(
             )
         )
 
-
-
     for decided_id in from_ids:
         problem = decided_eligible(pkg, decided_id, all_parsed)
         if problem:
@@ -314,12 +322,14 @@ def _re_sign(
             )
 
     uncovered_sections = _uncovered_sections(doc, parsed, state.approval, from_ids, all_reviews)
-    if uncovered_sections is None:
+    if uncovered_sections is None and legacy:
+        pass  # the legacy entry's answer covers what cannot be compared (D-56, FR-025)
+    elif uncovered_sections is None:
         refusals.append(
             Refusal(
                 "amend-not-covered",
                 "the last approval predates section_fingerprints and carries nothing to compare",
-                "Approve the stage fully once with /speckit-eil-approve to enable this after it",
+                "Answer the stage's legacy entry on its changes list (/speckit-eil-accept) and confirm",
             )
         )
     elif uncovered_sections:
@@ -343,15 +353,22 @@ def _re_sign(
             )
         )
     if stage == "completion":
-        open_findings = [p for f in verification.review_findings(pkg) for p in verification.finding_problems(f)]
+        open_findings = [
+            p for f in verification.review_findings(pkg) for p in verification.finding_problems(f)
+        ]
         if open_findings:
             refusals.append(
-                Refusal("review-finding-open", "; ".join(open_findings[:5]), "Resolve or except each review finding in the Verification document")
+                Refusal(
+                    "review-finding-open",
+                    "; ".join(open_findings[:5]),
+                    "Resolve or except each review finding in the Verification document",
+                )
             )
     if refusals:
         raise refuse(*refusals)
 
-    _ensure_comprehension_current(pkg, config, stage, doc, text, by)
+    if not legacy:
+        _ensure_comprehension_current(pkg, config, stage, doc, text, by)
     # Re-read: comprehension.record() only touches the comprehension region, but re-read the doc
     # object so its cache reflects the just-written region before section_fingerprints reads it.
     doc = pkg.doc(stage)
@@ -370,6 +387,9 @@ def _re_sign(
     }
     if record.get("reached") == "carried-forward":
         record["sign_off"] = record.pop("attestation")
+    from .records import CONFIRM_QUESTIONS
+
+    record["question"] = CONFIRM_QUESTIONS.get(stage, f"Re-approve {stage}?")
     record["upstream"] = {
         earlier: fp
         for earlier in DEFINITION_STAGES
@@ -379,12 +399,36 @@ def _re_sign(
     record["section_fingerprints"] = section_fingerprints(doc, parsed.items)
     record["upstream_items"] = impact.upstream_item_hashes(pkg, stage, all_parsed)
     record["overrides_used"] = list(state.approval.get("overrides_used") or [])
+    if decided_by_ai := ai_decided_ids(parsed.items):
+        record["ai_decided"] = decided_by_ai
+    from .profile import active as profile_active
+
+    if (in_force := profile_active(pkg)) is not None:
+        record["profile"] = in_force["name"]
     if stage == "completion":
         record["review_findings"] = verification.finding_hashes(pkg)
     if stage in comprehension.ELIGIBLE_STAGES:
-        record["comprehension"] = comprehension.counts(doc.read_region("comprehension").obj or {})
-    pkg.doc_path(stage).write_bytes(write_region(text, "approval", record).encode("utf-8"))
+        record["comprehension"] = comprehension.counts(pkg.record(stage, "comprehension") or {})
+    pkg.write_record(stage, "approval", record, text=text)
+    if legacy:
+        _settle_pending(
+            Package(pkg.root), stage, f"re-signed without comparison by {record['by']} {record['at']}"
+        )
     return {"ok": True, "stage": stage, "approval": record}
+
+
+def _settle_pending(pkg: Package, stage: str, basis: str) -> None:
+    """Turn every ``adopted-pending`` block of ``stage`` into ``adopted`` once the stage is re-signed."""
+    record = pkg.record(stage, "provenance")
+    if not record:
+        return
+    changed = False
+    for entry in (record.get("blocks") or {}).values():
+        if isinstance(entry, dict) and entry.get("class") == "adopted-pending":
+            entry["class"], entry["basis"] = "adopted", basis
+            changed = True
+    if changed:
+        pkg.write_record(stage, "provenance", record)
 
 
 @dataclass
@@ -465,7 +509,13 @@ def _confirm_unapproved(
         _require_reviewable(pkg, stage)
     refusals = _confirmer_refusals(pkg, config, stage, by, None)
     if not confirmation.strip():
-        refusals.append(Refusal("confirmation-required", "a confirmation needs the person's own words", "Ask the person and pass their words with --confirmation"))
+        refusals.append(
+            Refusal(
+                "confirmation-required",
+                "a confirmation needs the person's own words",
+                "Ask the person and pass their words with --confirmation",
+            )
+        )
     settled = [c for c in open_crs if corrections.item_settled(pkg, stage, str(c.get("item")))]
     if not settled and not refusals:
         waiting = ", ".join(f"{c['id']} ({c.get('item')})" for c in open_crs)
@@ -483,7 +533,8 @@ def _confirm_unapproved(
         raise refuse(*refusals)
     at = utc_now()
     entries = [
-        changelog.entry(at, str(c["item"]), summaries[str(c["item"])], str(c["id"]), by.strip()) for c in settled
+        changelog.entry(at, str(c["item"]), summaries[str(c["item"])], str(c["id"]), by.strip())
+        for c in settled
     ]
     _record_changes(pkg, stage, entries, [str(c["id"]) for c in settled], by, at, None)
     still = [str(c["id"]) for c in open_crs if c not in settled]
@@ -499,7 +550,12 @@ def _confirm_unapproved(
 
 
 def confirm_changes(
-    pkg: Package, config: Config, stage: str, by: str, confirmation: str, summaries: dict[str, str] | None = None
+    pkg: Package,
+    config: Config,
+    stage: str,
+    by: str,
+    confirmation: str,
+    summaries: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Re-sign ``stage`` on the person's confirmation: carried forward when every change is a verified
     human decision, reviewed when some were answered on the changes list. The AI never supplies the
@@ -513,21 +569,39 @@ def confirm_changes(
     refusals = _confirmer_refusals(pkg, config, stage, by, None)
     if not confirmation.strip():
         refusals.append(
-            Refusal("confirmation-required", "a confirmation needs the person's own words", "Ask the person and pass their words with --confirmation")
+            Refusal(
+                "confirmation-required",
+                "a confirmation needs the person's own words",
+                "Ask the person and pass their words with --confirmation",
+            )
         )
     rows = change_rows(pkg, stage)
     answered = reviews.answered_changes(pkg, stage)
-    conflicts = sorted(reviews.conflicted_keys(pkg, stage, {r.id: r.hash for r in rows}) & {r.id for r in rows})
+    conflicts = sorted(
+        reviews.conflicted_keys(pkg, stage, {r.id: r.hash for r in rows}) & {r.id for r in rows}
+    )
     if conflicts:
         refusals.append(
-            Refusal("acceptance-conflict", f"recorded answers disagree about: {', '.join(conflicts)}", "A configured confirmer answers the changes list again")
+            Refusal(
+                "acceptance-conflict",
+                f"recorded answers disagree about: {', '.join(conflicts)}",
+                "A configured confirmer answers the changes list again",
+            )
         )
     unanswered = [r.id for r in rows if r.covered_by is None and r.id not in answered]
+    legacy_key = reviews.legacy_entry(pkg, stage)
+    legacy_id = reviews.legacy_answered(pkg, stage) if legacy_key is not None else None
+    if legacy_key is not None and legacy_id is None:
+        unanswered.insert(0, legacy_key.key)
     if unanswered:
         refusals.append(
-            Refusal("changes-unanswered", f"changes with no recorded decision or answer: {', '.join(unanswered)}", f"Show `review list --kind changes` for {stage} and record the person's reply")
+            Refusal(
+                "changes-unanswered",
+                f"changes with no recorded decision or answer: {', '.join(unanswered)}",
+                f"Show `review list --kind changes` for {stage} and record the person's reply",
+            )
         )
-    stored = _load_record(pkg, stage) if pkg.doc(stage).read_provenance().error is None else {}
+    stored = _load_record(pkg, stage) if pkg.record_read(stage, "provenance").error is None else {}
     texts: dict[str, str] = {}
     for row in rows:
         text = (summaries.get(row.id) or "").strip() or changelog.stored_summary(stored, row.id, row.hash)
@@ -540,21 +614,28 @@ def confirm_changes(
         raise refuse(*refusals)
     covered = {r.covered_by for r in rows if r.covered_by}
     taken = {answered[r.id][1] for r in rows if r.covered_by is None and r.id in answered}
-    reached = "reviewed" if taken else "carried-forward"
+    if legacy_id is not None:
+        taken.add(legacy_id)
+    reached = "re-signed-without-comparison" if legacy_id else ("reviewed" if taken else "carried-forward")
     rests_on = sorted(covered | taken)
     origins = {r.id: _origin(pkg, stage, r) for r in rows}
-    closing = [str(c["id"]) for c in corrections.open_for(pkg, stage) if c.get("item") in {r.id for r in rows}]
+    closing = [
+        str(c["id"]) for c in corrections.open_for(pkg, stage) if c.get("item") in {r.id for r in rows}
+    ]
     result = _re_sign(
         pkg, config, stage, rests_on, by, confirmation,
         {"reached": reached, "rests_on": rests_on},
         answered={r.id for r in rows if r.covered_by is None},
+        legacy=legacy_id is not None,
     )  # fmt: skip
     at = result["approval"]["at"]
     entries = [changelog.entry(at, r.id, texts[r.id], origins[r.id], by.strip()) for r in rows]
     _record_changes(pkg, stage, entries, closing, by, at, at)
     if closing:
         result["closed"] = closing
-    result["text"] = f"Confirmed {stage} as {result['approval']['by']} ({reached}), resting on {', '.join(rests_on) or 'no change'}."
+    result["text"] = (
+        f"Confirmed {stage} as {result['approval']['by']} ({reached}), resting on {', '.join(rests_on) or 'no change'}."
+    )
     return result
 
 
@@ -575,7 +656,9 @@ def amend(
         raise usage_error("at least one covering id is required")
     _require_reviewable(pkg, stage)
     covering = {r.covered_by for r in change_rows(pkg, stage) if r.covered_by} | {
-        str(r.obj["id"]) for r in _review_records(pkg) if r.obj.get("stage") == stage and r.obj.get("unit") == "section"
+        str(r.obj["id"])
+        for r in _review_records(pkg)
+        if r.obj.get("stage") == stage and r.obj.get("unit") == "section"
     }
     all_parsed = _all_parsed(pkg)
     outside = [i for i in from_ids if i not in covering and decided_eligible(pkg, i, all_parsed) is None]
@@ -610,7 +693,7 @@ def acceptance_ids(pkg: Package) -> set[str]:
     found: set[str] = set()
     for stage in pkg.existing_stages():
         try:
-            obj = pkg.doc(stage).read_provenance().obj
+            obj = pkg.record(stage, "provenance")
         except UnicodeDecodeError:
             continue
         for row in (obj or {}).get("acceptances", []):
@@ -817,7 +900,12 @@ def finish(pkg: Package, config: Config, stage: str, by: str, attestation: str) 
         from_ids,
         by,
         attestation,
-        {"reviewed_change_by_change": True, "reviewed_ids": from_ids, "reached": "reviewed", "rests_on": from_ids},
+        {
+            "reviewed_change_by_change": True,
+            "reviewed_ids": from_ids,
+            "reached": "reviewed",
+            "rests_on": from_ids,
+        },
     )
     result["text"] = (
         f"Reviewed and re-approved {stage} as {result['approval']['by']} at {result['approval']['at']}, "
@@ -826,7 +914,8 @@ def finish(pkg: Package, config: Config, stage: str, by: str, attestation: str) 
     return result
 
 
-# ---- classification of content blocks (research D-32) and the [ai-draft] cue (D-33)
+# ---- classification of content blocks (research D-32). The [ai-draft] cue is never written into a
+# document (003 D-50): `eil show` and the review lists show it.
 
 _ID = re.compile(r"^[A-Z]+-\d+$")
 _CUE = " [ai-draft]"
@@ -834,8 +923,11 @@ _CLASSIFY_KEYS = frozenset({"stage", "blocks"})
 _VERDICT_KEYS = frozenset({"block", "adds"})
 
 
-def _check_classification(pkg: Package, stage: str, data: Any) -> dict[str, str | None]:
-    """``{block key: adds}`` from a classification file, or a usage error."""
+def _check_classification(
+    pkg: Package, stage: str, data: Any
+) -> tuple[dict[str, str | None], list[dict[str, Any]]]:
+    """``({block key: adds}, skipped)`` from a classification file, or a usage error. A key that is not
+    a block of the stage is skipped with its section's current keys, never fatal (D-57)."""
     if not isinstance(data, dict) or set(data) != _CLASSIFY_KEYS:
         raise usage_error('a classification needs exactly "stage" and "blocks"')
     if data["stage"] != stage:
@@ -843,24 +935,54 @@ def _check_classification(pkg: Package, stage: str, data: Any) -> dict[str, str 
     rows = data["blocks"]
     if not isinstance(rows, list):
         raise usage_error('"blocks" must be a list')
-    known = {b.key for b in blocks_of(pkg.doc(stage))}
+    blocks = blocks_of(pkg.doc(stage))
+    known = {b.key for b in blocks}
     out: dict[str, str | None] = {}
+    skipped: list[dict[str, Any]] = []
     for row in rows:
-        if not isinstance(row, dict) or not set(row) <= _VERDICT_KEYS or not isinstance(row.get("block"), str):
+        if (
+            not isinstance(row, dict)
+            or not set(row) <= _VERDICT_KEYS
+            or not isinstance(row.get("block"), str)
+        ):
             raise usage_error('each verdict is {"block": KEY, "adds": TEXT or null}')
         adds = row.get("adds")
         if adds is not None and not isinstance(adds, str):
             raise usage_error(f'"adds" of {row["block"]} must be text or null')
         if row["block"] not in known:
-            raise usage_error(f"{row['block']} is not a block of {stage}")
+            section = row["block"].split("#", 1)[0] if "#" in row["block"] else ""
+            keys = (
+                [b.key for b in blocks if b.section == section]
+                if section
+                else [b.key for b in blocks if b.numbered]
+            )
+            skipped.append({"key": row["block"], "section": section, "current_keys": keys})
+            continue
         out[row["block"]] = adds.strip() or None if adds is not None else None
-    return out
+    if skipped and not out:
+        listing = ", ".join(s["key"] for s in skipped)
+        raise EilExit(
+            EXIT_USAGE,
+            {
+                "ok": False,
+                "error": f"nothing-classified: no key is a block of {stage} ({listing})",
+                "skipped": skipped,
+            },
+            f"nothing-classified: no key is a block of {stage} ({listing})",
+        )
+    return out, skipped
 
 
 def _load_record(pkg: Package, stage: str) -> dict[str, Any]:
-    read = pkg.doc(stage).read_provenance()
+    read = pkg.record_read(stage, "provenance")
     if read.error:
-        raise refuse(Refusal("not-amendable", f"{stage} has a malformed provenance region: {read.error}", "Repair or remove it first"))
+        raise refuse(
+            Refusal(
+                "not-amendable",
+                f"{stage} has a malformed provenance region: {read.error}",
+                "Repair or remove it first",
+            )
+        )
     record = read.obj if read.obj is not None else (adopt(pkg, stage) or {"version": 1, "blocks": {}})
     record.setdefault("blocks", {})
     return record
@@ -868,27 +990,56 @@ def _load_record(pkg: Package, stage: str) -> dict[str, Any]:
 
 def _save_record(pkg: Package, stage: str, record: dict[str, Any]) -> None:
     try:
-        text = write_provenance(pkg.read(stage), record)
+        pkg.write_record(stage, "provenance", record)
     except RegionError as exc:
-        raise refuse(Refusal("not-amendable", f"cannot record in {stage}: {exc}", "Repair the document")) from exc
-    pkg.doc_path(stage).write_bytes(text.encode("utf-8"))
+        raise refuse(
+            Refusal("not-amendable", f"cannot record in {stage}: {exc}", "Repair the document")
+        ) from exc
 
 
 def classify(pkg: Package, stage: str, data: Any) -> dict[str, Any]:
     """Record, for each block of ``stage``, whether it restates settled sources, was decided by a person,
     or is inferred (and what it adds). The AI supplies only ``adds``; every other fact is decided here."""
-    verdicts = _check_classification(pkg, stage, data)
+    verdicts, skipped = _check_classification(pkg, stage, data)
+    # Additive (D-57) keeps what an earlier classification recorded, not an upgrade adoption of
+    # untagged text, which a classification has always decided afresh.
+    recorded = {
+        key
+        for key, entry in ((pkg.record(stage, "provenance") or {}).get("blocks") or {}).items()
+        if isinstance(entry, dict) and entry.get("class") != "adopted"
+    }
     record = _load_record(pkg, stage)
     hashes = pkg.current_item_hashes()
     parsed = _all_parsed(pkg)
     entries = record["blocks"]
     for block in blocks_of(pkg.doc(stage)):
         old = entries.get(block.key) if isinstance(entries.get(block.key), dict) else None
-        if stage in APPROVABLE and old is not None and old.get("class") == "adopted" and old.get("hash") == block.hash:
-            continue
-        if block.key not in verdicts and not block.numbered:
+        if (
+            stage in APPROVABLE
+            and old is not None
+            and old.get("class") in ("adopted", "adopted-pending")
+            and old.get("hash") == block.hash
+        ):
             continue
         same = old is not None and old.get("hash") == block.hash
+        if block.key not in verdicts and (not block.numbered or (same and block.key in recorded)):
+            continue  # additive: what is left out keeps its classification while it is unchanged (D-57)
+        if (
+            block.item is not None
+            and block.item.kind == "DEC"
+            and is_ai_decided(decision_fields(block.item).get("owner"))
+        ):
+            # Always inferred, so a person settles it on the review list (D-53).
+            reason = decision_fields(block.item).get("reason", "").strip()
+            entry = {
+                "hash": block.hash,
+                "class": "inferred",
+                "adds": f"AI-decided: {reason or 'no reason given'}",
+            }
+            if same and old.get("class") == "inferred" and "reviewed" in old:
+                entry["reviewed"] = old["reviewed"]
+            entries[block.key] = entry
+            continue
         decided = block.item.decided if block.item is not None else None
         if decided and decided_eligible(pkg, decided, parsed, block.item) is None:
             entries[block.key] = {"hash": block.hash, "class": "decided", "basis": f"decided: {decided}"}
@@ -898,7 +1049,11 @@ def classify(pkg: Package, stage: str, data: Any) -> dict[str, Any]:
             adds = old.get("adds")
         cited = [t for t in block.traces if _ID.match(t)]
         if block.key in verdicts and not adds and cited and all(source_settled(pkg, t) for t in cited):
-            entries[block.key] = {"hash": block.hash, "class": "restated", "cites": {t: hashes[t] for t in cited if t in hashes}}
+            entries[block.key] = {
+                "hash": block.hash,
+                "class": "restated",
+                "cites": {t: hashes[t] for t in cited if t in hashes},
+            }
             continue
         entry: dict[str, Any] = {"hash": block.hash, "class": "inferred"}
         if adds:
@@ -909,71 +1064,42 @@ def classify(pkg: Package, stage: str, data: Any) -> dict[str, Any]:
                     entry[name] = old[name]
         entries[block.key] = entry
     _save_record(pkg, stage, record)
-    fresh = Package(pkg.root)
-    render_stage_cues(fresh, stage)
     counts: dict[str, int] = {}
     for entry in entries.values():
         counts[entry["class"]] = counts.get(entry["class"], 0) + 1
     listing = ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
-    return {"ok": True, "stage": stage, "classes": counts, "text": f"Classified {stage}: {listing}."}
+    text = f"Classified {stage}: {listing}."
+    if skipped:
+        text += " Skipped, not a block of this stage: " + "; ".join(
+            f"{s['key']} (current keys{' of ' + s['section'] if s['section'] else ''}: {', '.join(s['current_keys'][:8])})"
+            for s in skipped
+        )
+    return {"ok": True, "stage": stage, "classes": counts, "skipped": skipped, "text": text}
 
 
 def reclassify(pkg: Package, stage: str, key: str, by: str, reason: str | None = None) -> dict[str, Any]:
     """Anyone may add scrutiny: turn a restated block into an inferred one, recorded with their name."""
     if not any(b.key == key for b in blocks_of(pkg.doc(stage))):
-        raise refuse(Refusal("unknown-item", f"{key} is not a block of {stage}", "Use a key from `eil blocks list`"))
+        raise refuse(
+            Refusal("unknown-item", f"{key} is not a block of {stage}", "Use a key from `eil blocks list`")
+        )
     record = _load_record(pkg, stage)
     entry = record["blocks"].get(key)
     if not isinstance(entry, dict) or entry.get("class") != "restated":
-        raise refuse(Refusal("not-restated", f"{key} is not a restated block of {stage}", "Only restated blocks can be reclassified"))
+        raise refuse(
+            Refusal(
+                "not-restated",
+                f"{key} is not a restated block of {stage}",
+                "Only restated blocks can be reclassified",
+            )
+        )
     note = f"reclassified by {by.strip()}" + (f": {reason.strip()}" if reason and reason.strip() else "")
     record["blocks"][key] = {"hash": entry["hash"], "class": "inferred", "adds": note}
     _save_record(pkg, stage, record)
-    render_stage_cues(Package(pkg.root), stage)
     return {"ok": True, "stage": stage, "block": key, "text": f"{key} is now inferred and needs review."}
-
-
-def render_cues(text: str, blocks: list[Any], unreviewed_keys: set[str]) -> str:
-    """Put ``[ai-draft]`` on the first line of each block in ``unreviewed_keys`` and nowhere else in a
-    block (code fences are left alone). The tag is a cue only; status never reads it."""
-    lines = text.split("\n")
-    for block in blocks:
-        if block.kind == "fence":
-            continue
-        for number in range(block.first_line, block.last_line + 1):
-            raw = lines[number - 1]
-            cr = "\r" if raw.endswith("\r") else ""
-            body = raw[: -len(cr)] if cr else raw
-            body = _AI_DRAFT_TAG.sub("", body)
-            if number == block.first_line and block.key in unreviewed_keys:
-                body = body.rstrip() + _CUE
-            lines[number - 1] = body + cr
-    return "\n".join(lines)
-
-
-def render_stage_cues(pkg: Package, stage: str) -> bool:
-    """Bring the tags of ``stage`` in line with block status. Returns whether the document changed."""
-    if not pkg.exists(stage):
-        return False
-    pending = {i.key for i in unreviewed(pkg, stage)}
-    text = pkg.read(stage)
-    out = render_cues(text, blocks_of(pkg.doc(stage)), pending)
-    if out == text:
-        return False
-    pkg.doc_path(stage).write_bytes(out.encode("utf-8"))
-    return True
-
-
-def refresh_cues(pkg: Package, stages: list[str] | None = None) -> list[str]:
-    """Render the cues of every stage (or ``stages``); returns the stages whose document changed."""
-    changed = []
-    for stage in stages or pkg.existing_stages():
-        if render_stage_cues(Package(pkg.root), stage):
-            changed.append(stage)
-    return changed
 
 
 __all__ = [
     "decided_eligible", "decided_findings", "amend", "start", "accept", "finish",
-    "classify", "reclassify", "render_cues", "refresh_cues",
+    "classify", "reclassify",
 ]  # fmt: skip

@@ -184,7 +184,9 @@ def test_the_same_list_governs_who_answers_a_challenge(package: Package) -> None
     config = Config(
         default_developer="Ada Dev", approvers={"functional": ["Grace Lead"]}, abbreviation_authorisers=[]
     )
-    records.add_challenge(package, "functional", "FR-001", "What about duplicates arriving together?", None, "medium")
+    records.add_challenge(
+        package, "functional", "FR-001", "What about duplicates arriving together?", None, "medium"
+    )
     with pytest.raises(EilExit) as exc:
         records.answer_challenge(package, config, "CH-001", "accepted", "Ada Dev")
     assert codes(exc) == ["not-a-confirmer"]
