@@ -276,7 +276,17 @@ def test_post_section_accepts_the_rest_of_one_section(tmp_path: Path, monkeypatc
     page = start_page(built.root)
     try:
         page.post("/answer", body(built.root, "FR-001"))
-        status, payload = page.post("/section", {"stage": "functional", "kind": "inferred", "section": "Functional Requirements"})
+        listed = reviews.build_list(Package(built.root), "functional", "inferred", session_view=False)
+        shown = {entry.key: entry.hash for entry in listed.entries if entry.section == "Functional Requirements"}
+        status, payload = page.post(
+            "/section",
+            {
+                "stage": "functional",
+                "kind": "inferred",
+                "section": "Functional Requirements",
+                "shown": shown,
+            },
+        )
         assert payload["ok"] is True, payload
         answers = session(built.root)["answers"]
         assert set(answers) == {"FR-001", "FR-002", "FR-003", "FR-004"}
@@ -284,6 +294,37 @@ def test_post_section_accepts_the_rest_of_one_section(tmp_path: Path, monkeypatc
         assert answers["FR-002"]["seen"] is True and answers["FR-002"]["reply"] == "Accept"
         status, payload = page.post("/section", {"stage": "functional", "kind": "changes", "section": "Validation"})
         assert refusals(payload) == ["not-current"]
+    finally:
+        page.stop()
+
+
+def test_post_section_refuses_when_an_entry_changed_since_the_page_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    built = review_page.build(tmp_path / "specs" / "001-story", entries=12)
+    listed = reviews.build_list(Package(built.root), "functional", "inferred", session_view=False)
+    shown = {entry.key: entry.hash for entry in listed.entries if entry.section == "Functional Requirements"}
+    text = built.story.read("functional")
+    built.story.write("functional", text.replace("handles case 2.", "handles case 2 safely."))
+    before = files_snapshot(built.root)
+    page = start_page(built.root)
+    try:
+        status, payload = page.post(
+            "/section",
+            {
+                "stage": "functional",
+                "kind": "inferred",
+                "section": "Functional Requirements",
+                "shown": shown,
+            },
+        )
+        assert status == 200
+        assert refusals(payload) == ["entry-changed"]
+        assert payload["refusals"][0]["current"]["key"] == "FR-002"
+        assert files_snapshot(built.root) == before
     finally:
         page.stop()
 

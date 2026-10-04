@@ -23,7 +23,7 @@ This contract covers what the person sees and can do on the page. The routes beh
   - Send back and Question open a comment box. The answer is sent only when the comment is not empty.
 - After a stored answer: the disposition, the name and the time. A Change button answers again, storing a new answer as in chat.
 - After a refusal: the helper's message and fix, verbatim, as text. For `entry-changed`, the current text replaces the shown text in this control only, with "This block changed; read it again before answering". The rest of the page stays as loaded.
-- Section headings with unanswered entries carry **Accept the rest of this section**. It asks "Accept the N unanswered blocks under SECTION?" and needs a second click to confirm.
+- Section headings with unanswered entries carry **Accept the rest of this section**. It asks "Accept the N unanswered blocks under SECTION?" and needs a second click to confirm. The request carries the shown hash of every unanswered entry in that section; if any changed or was not shown, nothing is stored and the person must reload or read the changed entry again.
 
 ## Comment on a settled block
 

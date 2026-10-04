@@ -16,8 +16,8 @@ This is a delta to 001 `contracts/cli.md`, as amended by 002 and 003. Anything n
 | Subcommand | Kind | Behaviour |
 |---|---|---|
 | `review serve --by NAME [--host H] [--port P] [--public-name N] [--idle-minutes M]` | writes (through the page only) | Starts the page for the story and prints `{story, address, pid}` as one JSON line, then serves until stopped. Starting writes nothing to the project. It refuses with `ai-approval` for an AI name, `ambiguous-story` (003), `page-running` (with the running address) when a live runtime file exists for the story, and `port-unavailable`. |
-| `review serve --status` | read-only | `{running: bool, address, pid, started_at}` from the runtime file. A file whose pid is not running reports `running: false` and is removed (the file is outside the project). |
-| `review serve --stop` | read-only for the project | Ends the page process and removes the runtime file. Answers already stored remain. |
+| `review serve --status` | read-only | `{running: bool, address, pid, started_at}` from the runtime file after authenticating to its `GET /state`. An unverifiable file reports `running: false` and is removed (the file is outside the project). |
+| `review serve --stop` | read-only for the project | Authenticates to `POST /stop`, ends the page process and removes the runtime file. It never signals the recorded pid. Answers already stored remain. |
 
 ## Page routes (served by `review serve`)
 
@@ -33,9 +33,10 @@ A failed check returns `403`, gives a short plain message and writes nothing. Ev
 | `GET /doc/<stage>?t=` | read | Another stage document of the story, read-only. `<stage>` is one of the nine stage names. Anything else returns `404`. |
 | `GET /state` | read | `{current, doc, entries, answers}` (D-68). Does not count as use for the idle stop. |
 | `POST /answer` | write | `{stage, kind, entry, disposition, shown, question, comment}`. Calls `reviews.answer(entry=…, via="page")` under the lock. Refused with `not-current` when stage and kind are not the current review. Returns the helper's result or refusals unchanged. |
-| `POST /section` | write | `{stage, kind, section}`. Calls `reviews.answer(rest=True, section=…, via="page")`. |
+| `POST /section` | write | `{stage, kind, section, shown: {entry: hash}}`. Under the record lock, refuses with `entry-changed` if any unanswered target is absent or no longer has its shown hash; otherwise calls `reviews.answer(rest=True, section=…, via="page")`. |
 | `POST /reopen` | write | `{stage, key, shown, comment}`. Calls `reviews.answer(reopen=[key], …, via="page")`. A comment is required (`comment-required`). Allowed only on the current review's stage. |
 | `POST /name` | process | `{name}`. Changes the in-memory name. An AI name is refused with `ai-approval`. Nothing is written to the project. |
+| `POST /stop` | process | Authenticated lifecycle request used by `review serve --stop`. Schedules a clean server shutdown and writes nothing to the project. |
 
 No other path is served. No static file is read from disk: the CSS and script are constants. Every response carries the Content-Security-Policy of D-69, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
 

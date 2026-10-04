@@ -70,6 +70,15 @@ def test_the_script_never_changes_rendered_content_on_a_notice() -> None:
     assert json.dumps(pagerender.CHANGED) in pagerender.SCRIPT
 
 
+def test_successful_writes_do_not_hide_unrelated_changes() -> None:
+    script = pagerender.SCRIPT
+    assert "function adopt(result, keys)" in script
+    assert "differences(result.state, new Set(keys))" in script
+    assert "adopt(result, [control.dataset.entry])" in script
+    assert "adopt(result, Object.keys(shown))" in script
+    assert "adopt(result, [block.dataset.key])" in script
+
+
 def test_state_after_an_answer_on_the_page(page_server: Page, review_page_story: Any) -> None:
     root = review_page_story.root
     entry = next(e for e in reviews.build_list(Package(root), "functional", "inferred").entries if e.key == "FR-001")

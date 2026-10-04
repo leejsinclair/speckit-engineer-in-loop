@@ -16,6 +16,7 @@ Each answer in `story.review_sessions[<key>].answers[<entry>]`:
 
 Rules:
 - The answer is stored only if the `shown` hash it carries equals the entry's current hash (`entry-changed` otherwise).
+- A section action carries `{entry: shown hash}` for every unanswered target; every target is validated under the same record lock before any answer is stored.
 - `reply` is the comment, or the chosen answer's label ("Accept") when there is no comment.
 - An answer from another person with a different disposition is moved to `superseded`, as in 003.
 
@@ -79,7 +80,8 @@ Held in memory by `eil review serve`. Nothing here is a record.
 ```
 
 - It is written at start and removed on a clean stop.
-- `review serve --status` treats it as absent when `pid` is not running, and removes it.
+- `review serve --status` proves the record still names the page by calling its token-protected `GET /state`; an unreachable or unauthenticated record is removed.
+- `review serve --stop` uses the same proof and token-protected `POST /stop`. The recorded `pid` is informational and is never signalled.
 - It is never in the project and never read by anything but `review serve`.
 
 ## Record lock — new (D-67)

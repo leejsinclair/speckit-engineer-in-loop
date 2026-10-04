@@ -8,12 +8,13 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["playwright", "pytest", "ruff"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["extensions/eil/scripts/python", "."]
 markers = [
+    "browser: executes the review page in a real browser (requires Playwright Chromium)",
     "contract: installs the preset and extension into a scratch Spec Kit project",
     "scenario: replays a quickstart scenario end to end",
     "slow: takes more than a few seconds",

@@ -892,7 +892,17 @@ SCRIPT = r"""
     if (together) line += ", with the rest of " + together;
     return line + (comment ? ": " + comment : ".");
   }
-  function adopt(result) { if (result && result.state) baseline = result.state; }
+    function adopt(result, keys) {
+        if (!result || !result.state) return;
+        const found = differences(result.state, new Set(keys));
+        if (found.length) showNotice(found.join("; "), true);
+        ["entries", "answers"].forEach((field) => {
+            const before = Object.assign({}, baseline[field] || {}), after = result.state[field] || {};
+            keys.forEach((key) => { if (key in after) before[key] = after[key]; else delete before[key]; });
+            baseline[field] = before;
+        });
+        baseline.current = result.state.current;
+    }
   function updateCounter(result) {
     if (!counter || !result) return;
     const total = Number(counter.dataset.total);
@@ -933,7 +943,7 @@ SCRIPT = r"""
     const result = await post("/answer", body);
     busy(control, false);
     if (!result) return;
-    if (result.ok) { markAnswered(control, disposition, comment); updateCounter(result); adopt(result); return; }
+    if (result.ok) { markAnswered(control, disposition, comment); updateCounter(result); adopt(result, [control.dataset.entry]); return; }
     control.querySelector(".result").textContent = refusalText(result);
     const changed = (result.refusals || []).find((r) => r.code === "entry-changed" && r.current);
     if (changed) showChanged(control, changed.current);
@@ -974,7 +984,7 @@ SCRIPT = r"""
     if (!result) return;
     if (!result.ok) { result_.textContent = refusalText(result); return; }
     block.querySelector(".reopen").textContent = "Reopened by " + name() + ": " + text + " (reload to answer it here)";
-    adopt(result);
+    adopt(result, [block.dataset.key]);
   }
 
   async function onSection(button) {
@@ -986,7 +996,11 @@ SCRIPT = r"""
     }
     delete button.dataset.armed;
     busy(button.parentElement, true);
-    const result = await post("/section", {stage: STAGE, kind: KIND, section: button.dataset.section});
+        const shown = {};
+        document.querySelectorAll(".control:not(.answered)").forEach((control) => {
+            if (control.dataset.section === button.dataset.section) shown[control.dataset.entry] = control.dataset.entryHash;
+        });
+        const result = await post("/section", {stage: STAGE, kind: KIND, section: button.dataset.section, shown: shown});
     busy(button.parentElement, false);
     button.textContent = button.dataset.label;
     if (!result) return;
@@ -996,7 +1010,7 @@ SCRIPT = r"""
     });
     button.hidden = true;
     updateCounter(result);
-    adopt(result);
+    adopt(result, Object.keys(shown));
   }
 
   document.addEventListener("click", (event) => {
@@ -1034,19 +1048,20 @@ SCRIPT = r"""
     if (button) { button.focus(); button.scrollIntoView({block: "center"}); event.preventDefault(); }
   });
 
-  function differences(now) {
+    function differences(now, ignored = new Set()) {
     const key = (s) => (s && s.current ? s.current.stage + "/" + s.current.kind : "");
-    if (key(now) !== key(baseline)) return [now.current ? "A new review is current: " + now.current.label : "No review is current now"];
+        if (!ignored.size && key(now) !== key(baseline)) return [now.current ? "A new review is current: " + now.current.label : "No review is current now"];
     const out = [];
     const before = baseline.entries || {}, after = now.entries || {};
     const answersBefore = baseline.answers || {}, answersAfter = now.answers || {};
     Object.keys(before).forEach((k) => {
+            if (ignored.has(k)) return;
       if (k in after && after[k] !== before[k]) out.push(k + " changed");
       else if (!(k in after)) out.push(k + " was answered elsewhere");
     });
-    Object.keys(after).forEach((k) => { if (!(k in before)) out.push(k + " is now on the list"); });
+        Object.keys(after).forEach((k) => { if (!ignored.has(k) && !(k in before)) out.push(k + " is now on the list"); });
     Object.keys(answersAfter).forEach((k) => {
-      if (JSON.stringify(answersAfter[k]) !== JSON.stringify(answersBefore[k]) && !out.includes(k + " changed")) out.push(k + " was answered elsewhere");
+            if (!ignored.has(k) && JSON.stringify(answersAfter[k]) !== JSON.stringify(answersBefore[k]) && !out.includes(k + " changed")) out.push(k + " was answered elsewhere");
     });
     if (!out.length && now.doc !== baseline.doc) out.push("The document changed outside the review blocks");
     return out;

@@ -114,6 +114,34 @@ def test_status_removes_a_runtime_file_whose_process_is_gone(serve: Any, built: 
     assert runtime_files(runtime_dir) == []
 
 
+def test_stop_never_signals_a_live_pid_without_verifying_the_page(
+    built: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eil import reviewpage
+    from eil.package import Package
+
+    runtime = tmp_path / "forged-runtime.json"
+    runtime.write_text(
+        json.dumps(
+            {
+                "story": "001-story",
+                "address": "http://127.0.0.1:1/?t=not-a-running-page",
+                "pid": os.getpid(),
+                "started_at": "2025-01-01T00:00:00Z",
+            }
+        )
+    )
+    monkeypatch.setattr(reviewpage, "runtime_path", lambda package: runtime)
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: signals.append((pid, sig)))
+
+    result = reviewpage.stop(Package(built.root), wait=0)
+
+    assert result["stopped"] is False
+    assert signals == []
+    assert not runtime.exists()
+
+
 def test_a_second_start_is_refused_page_running(serve: Any, built: Any, runtime_dir: Path) -> None:
     _, line = serve("--by", "Ada Dev")
     proc, second = serve("--by", "Ada Dev")

@@ -361,16 +361,34 @@ def _section(handler: Handler, body: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "name the section to accept"}
     server = handler.server
     stage, kind = body.get("stage"), body.get("kind")
+    shown = body.get("shown")
+    shown_entries = (
+        {str(key): value for key, value in shown.items() if isinstance(value, str)}
+        if isinstance(shown, dict)
+        else None
+    )
     return _write(
         handler, stage, kind,
         lambda package: answer(
             package, server.config, str(stage), str(kind), digest=None, by=server.name, reply="", rest=True,
-            section=section, threshold=server.config.one_at_a_time_max, via="page",
+            section=section, threshold=server.config.one_at_a_time_max, shown=shown_entries, via="page",
         ),
     )  # fmt: skip
 
 
-POST_ROUTES: dict[str, Route] = {"/answer": _answer, "/name": _name, "/reopen": _reopen, "/section": _section}
+def _stop(handler: Handler, body: dict[str, Any]) -> dict[str, Any]:
+    """``POST /stop``: authenticated local lifecycle control; never relies on a recorded PID."""
+    threading.Thread(target=handler.server.shutdown, daemon=True).start()
+    return {"ok": True, "stopped": True}
+
+
+POST_ROUTES: dict[str, Route] = {
+    "/answer": _answer,
+    "/name": _name,
+    "/reopen": _reopen,
+    "/section": _section,
+    "/stop": _stop,
+}
 
 
 # ---- starting the server
@@ -448,18 +466,40 @@ def _read_runtime(path: Path) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def status(package: Package) -> dict[str, Any]:
-    """``review serve --status``: the running page's address, from the runtime file. A file whose process
-    is not running is reported as not running and removed."""
-    from .recordfile import pid_running
+def _runtime_request(data: dict[str, Any], path: str, *, post: bool = False) -> dict[str, Any] | None:
+    """Call a runtime's token-protected endpoint, proving the record still names this page process."""
+    from urllib.request import Request, urlopen
 
+    address = data.get("address")
+    if not isinstance(address, str):
+        return None
+    parsed = urlsplit(address)
+    token = (parse_qs(parsed.query).get("t") or [""])[0]
+    if parsed.scheme != "http" or not parsed.netloc or not token:
+        return None
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    headers = {"X-EIL-Token": token}
+    body = None
+    if post:
+        headers.update({"Content-Type": "application/json", "Origin": origin})
+        body = b"{}"
+    try:
+        with urlopen(Request(origin + path, data=body, headers=headers), timeout=1.0) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return result if isinstance(result, dict) else None
+
+
+def status(package: Package) -> dict[str, Any]:
+    """``review serve --status``: verify the runtime through its authenticated state endpoint."""
     path = runtime_path(package)
     data = _read_runtime(path)
     if data is None:
         path.unlink(missing_ok=True)
         return {"ok": True, "running": False, "address": None, "pid": None, "started_at": None, "text": "No review page is running for this story."}
     pid = int(data.get("pid") or 0)
-    if not pid_running(pid):
+    if _runtime_request(data, "/state") is None:
         path.unlink(missing_ok=True)
         return {"ok": True, "running": False, "address": None, "pid": None, "started_at": None, "text": "No review page is running for this story."}
     return {
@@ -469,24 +509,20 @@ def status(package: Package) -> dict[str, Any]:
 
 
 def stop(package: Package, wait: float = 5.0) -> dict[str, Any]:
-    """``review serve --stop``: end the page's process and remove the runtime file. Stored answers stay."""
-    import os
-    import signal
-
-    found = status(package)
-    if not found["running"]:
+    """``review serve --stop``: authenticate to the page and ask it to stop. Stored answers stay."""
+    path = runtime_path(package)
+    data = _read_runtime(path)
+    if data is None or _runtime_request(data, "/state") is None:
+        path.unlink(missing_ok=True)
         return {"ok": True, "stopped": False, "text": "No review page was running for this story."}
-    from .recordfile import pid_running
-
-    pid = int(found["pid"])
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        pass
+    pid = int(data.get("pid") or 0)
+    if _runtime_request(data, "/stop", post=True) is None:
+        path.unlink(missing_ok=True)
+        return {"ok": True, "stopped": False, "text": "No review page was running for this story."}
     deadline = time.monotonic() + wait
-    while pid_running(pid) and time.monotonic() < deadline:
+    while path.exists() and time.monotonic() < deadline:
         time.sleep(0.05)
-    runtime_path(package).unlink(missing_ok=True)
+    path.unlink(missing_ok=True)
     return {"ok": True, "stopped": True, "pid": pid, "text": "Stopped the review page. Every answer given on it is stored."}
 
 

@@ -1208,7 +1208,7 @@ def answer(
     disposition: str = "accept",
     rest: bool = False,
     threshold: int | None = None,
-    shown: str | None = None,
+    shown: str | dict[str, str] | None = None,
     via: str | None = None,
     asked: str | None = None,
     comment: str | None = None,
@@ -1363,7 +1363,7 @@ def _answer_session(
     rest: bool,
     defer_reason: str | None,
     summaries: dict[str, str] | None,
-    shown: str | None = None,
+    shown: str | dict[str, str] | None = None,
     via: str | None = None,
     asked: str | None = None,
     comment: str | None = None,
@@ -1378,7 +1378,7 @@ def _answer_session(
             refusals.append(Refusal("unknown-entry", f"{entry} is not on the {kind} list for {stage}", "Name an entry from `review list`"))
     elif entry is not None:
         now = on_list[entry]
-        if shown is not None and shown != now.hash:
+        if isinstance(shown, str) and shown != now.hash:
             refusals.append(
                 Refusal(
                     "entry-changed", f"{entry} changed since it was shown; nothing was stored",
@@ -1413,6 +1413,19 @@ def _answer_session(
         targets = [k for k in targets if on_list[k].section.casefold() == section.casefold()]
         if not targets:
             raise refuse(Refusal("unknown-entry", f"no unanswered entry of the {kind} list for {stage} is in {section!r}", "Name a section from `review list`"))
+        if via == "page":
+            shown_entries = shown if isinstance(shown, dict) else {}
+            changed = next((key for key in targets if shown_entries.get(key) != on_list[key].hash), None)
+            if changed is not None:
+                current_entry = on_list[changed]
+                raise refuse(
+                    Refusal(
+                        "entry-changed",
+                        f"{changed} changed since it was shown; nothing was stored",
+                        "Reload and read the section again before answering",
+                        current={"key": changed, "hash": current_entry.hash, "what": current_entry.what},
+                    )
+                )
     for target in targets:
         record = {"by": by, "at": stamp, "disposition": "accept" if rest else disposition, "reply": reply, "hash": current[target], "seen": not rest or section is not None}
         if via is not None:

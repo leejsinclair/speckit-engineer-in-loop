@@ -620,6 +620,14 @@ def test_page_review_waits_for_done(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_and_chat_review_paths_are_mutually_exclusive(path: Path) -> None:
+    """FR-015, FR-022: a stage step presents and records the list in chat only when chat is the
+    selected surface; choosing the page must not fall through to the old chat instructions."""
+    text = read(path)
+    assert re.search(r"if chat is the chosen surface", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
 def test_agent_never_uses_page(path: Path) -> None:
     """R-29 (probe P-33, extended): the agent never opens, fetches or posts to the page address; it only
     gives it to the person, and passes `--host` only when the person asks."""

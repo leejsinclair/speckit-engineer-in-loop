@@ -133,9 +133,9 @@ The block's fingerprint, class and traces do not change. A reopened block in an 
 - The address carries the per-session token: `http://127.0.0.1:8100/?t=<token>`. The token is 32 bytes from `secrets.token_urlsafe`.
 - A GET without the token is answered with a short page saying to open the address the agent gave. It never returns the token or the document.
 - The page puts the token in a `<meta>` element. The script sends it in an `X-EIL-Token` header on every state-changing request and on `/state`.
-- A runtime file holds `{story, address, pid, started_at}` with mode `0600`, in the user's temporary directory (`tempfile.gettempdir()/eil-review-<sha256(project root)[:12]>-<story>.json`). It is not in the project. It is removed on a clean stop, and ignored when its pid is not running.
-- `eil review serve --status` (read-only) reads the runtime file and returns the address if the page is running. This is how the agent knows whether to start the page or ask for a reload, even after a compaction.
-- `eil review serve --stop` ends it.
+- A runtime file holds `{story, address, pid, started_at}` with mode `0600`, in the user's temporary directory (`tempfile.gettempdir()/eil-review-<sha256(project root)[:12]>-<story>.json`). It is not in the project. It is removed on a clean stop. The pid is informational, not process identity.
+- `eil review serve --status` (read-only) reads the runtime file and authenticates to its `GET /state` before returning the address. An unreachable or unauthenticated record is stale and removed. This is how the agent knows whether to start the page or ask for a reload, even after a compaction.
+- `eil review serve --stop` authenticates to `POST /stop`; it never sends a signal to the recorded pid.
 - The idle stop (default 60 minutes, configuration key `review.page_idle_minutes`) counts every request except `GET /state`.
 
 **Rationale**:
@@ -202,6 +202,7 @@ Diagrams:
 ### D-70 Section acceptance (FR-011)
 
 **Decision**: `answer(rest=True, section=<name>)`:
+- receives the shown hash of every unanswered entry in the named section and validates all of them under the record lock before writing any answer;
 - stores `accept` for each unanswered entry whose `section` is `<name>`;
 - marks each with `together: <name>` and `seen: true`, because the page showed every entry in full;
 - leaves answered entries and other sections untouched.
