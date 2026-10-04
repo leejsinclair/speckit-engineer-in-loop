@@ -264,3 +264,46 @@ def pagerender_unescape(text: str) -> str:
 
     return html_module.unescape(text)
 
+
+# ---- T059: accept the rest of a section on the page (D-70)
+
+
+def test_post_section_accepts_the_rest_of_one_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    built = review_page.build(tmp_path / "specs" / "001-story", entries=12)
+    page = start_page(built.root)
+    try:
+        page.post("/answer", body(built.root, "FR-001"))
+        status, payload = page.post("/section", {"stage": "functional", "kind": "inferred", "section": "Functional Requirements"})
+        assert payload["ok"] is True, payload
+        answers = session(built.root)["answers"]
+        assert set(answers) == {"FR-001", "FR-002", "FR-003", "FR-004"}
+        assert answers["FR-002"]["via"] == "page" and answers["FR-002"]["together"] == "Functional Requirements"
+        assert answers["FR-002"]["seen"] is True and answers["FR-002"]["reply"] == "Accept"
+        status, payload = page.post("/section", {"stage": "functional", "kind": "changes", "section": "Validation"})
+        assert refusals(payload) == ["not-current"]
+    finally:
+        page.stop()
+
+
+def test_the_section_button_only_on_headings_with_unanswered_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import re
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    built = review_page.build(tmp_path / "specs" / "001-story", entries=12)
+    page = start_page(built.root)
+    try:
+        for key in ("FR-005", "FR-006", "FR-007", "FR-008"):
+            page.post("/answer", body(built.root, key))
+        _, _, html = page.get("/")
+        buttons = re.findall(r'<button type="button" data-act="section" data-section="([^"]+)" data-count="(\d+)"[^>]*>Accept the rest of this section</button>', html)
+        assert buttons == [("Functional Requirements", "4"), ("Validation", "4")]
+        from eil import pagerender
+
+        assert '"Accept the " + button.dataset.count + " unanswered blocks under " + button.dataset.section + "?"' in pagerender.SCRIPT
+        assert "button.dataset.armed" in pagerender.SCRIPT
+    finally:
+        page.stop()

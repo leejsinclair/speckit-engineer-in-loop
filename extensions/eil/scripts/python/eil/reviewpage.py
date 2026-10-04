@@ -352,7 +352,25 @@ def _reopen(handler: Handler, body: dict[str, Any]) -> dict[str, Any]:
     )  # fmt: skip
 
 
-POST_ROUTES: dict[str, Route] = {"/answer": _answer, "/name": _name, "/reopen": _reopen}
+def _section(handler: Handler, body: dict[str, Any]) -> dict[str, Any]:
+    """``POST /section``: accept the unanswered entries of one section together (D-70)."""
+    from .reviews import answer
+
+    section = _text(body, "section")
+    if not section:
+        return {"ok": False, "error": "name the section to accept"}
+    server = handler.server
+    stage, kind = body.get("stage"), body.get("kind")
+    return _write(
+        handler, stage, kind,
+        lambda package: answer(
+            package, server.config, str(stage), str(kind), digest=None, by=server.name, reply="", rest=True,
+            section=section, threshold=server.config.one_at_a_time_max, via="page",
+        ),
+    )  # fmt: skip
+
+
+POST_ROUTES: dict[str, Route] = {"/answer": _answer, "/name": _name, "/reopen": _reopen, "/section": _section}
 
 
 # ---- starting the server

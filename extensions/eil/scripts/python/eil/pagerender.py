@@ -607,6 +607,10 @@ def _document(package: Any, stage: str, review: _Review | None, ctx: RenderConte
             out.append(body)
             title = _section_title(lines[0]) if len(lines) == 1 else None
             group = groups.get(title.casefold()) if title else None
+            if title and review is not None and review.listed is not None and review.stage == stage:
+                waiting = [e for e in review.listed.entries if e.section.casefold() == title.casefold() and not e.key.startswith("§")]
+                if waiting:
+                    out.append(_section_rest(title, len(waiting), disabled))
             if group is not None and review is not None:
                 placed.add(group.key)
                 out.append(
@@ -687,6 +691,16 @@ def _diagram_credit(document: str, url: str | None) -> str:
     end = document.index("</pre>", document.index('<pre class="mermaid-src">')) + len("</pre>")
     credit = f'<p class="diagram-credit">Diagrams drawn by {esc(url)}</p>'
     return document[:end] + credit + document[end:]
+
+
+def _section_rest(section: str, count: int, disabled: bool) -> str:
+    """"Accept the rest of this section" on a heading with unanswered entries; the script asks to
+    confirm on the first click and sends on the second (contracts/page.md, D-70)."""
+    off = " disabled" if disabled else ""
+    return (
+        f'<div class="section-rest"><button type="button" data-act="section" data-section="{esc(section)}" data-count="{count}"{off}>'
+        'Accept the rest of this section</button><p class="result" role="status"></p></div>'
+    )
 
 
 def _reopen_control(key: str, disabled: bool) -> str:
