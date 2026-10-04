@@ -119,6 +119,32 @@ def files_snapshot(root: Path) -> dict[str, bytes]:
 
 
 @pytest.fixture
+def review_page_story(tmp_path: Path) -> Any:
+    """The browser review page's story: Requirements approved, five Functional blocks listed (004 T002)."""
+    from tests.fixtures import review_page
+
+    built = review_page.build(tmp_path / "specs" / "001-story")
+    yield built
+    assert not (built.root / "eil-record.json.lock").exists(), "a record lock outlived its write"
+
+
+@pytest.fixture
+def page_server(review_page_story: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
+    """The page for ``review_page_story``, served in a thread; stopped after the test (004 T004)."""
+    import tempfile
+
+    from tests.helpers.page import start_page
+
+    runtime = tmp_path / "tmp"
+    runtime.mkdir(exist_ok=True)
+    monkeypatch.setattr(tempfile, "tempdir", str(runtime))
+    page = start_page(review_page_story.root)
+    yield page
+    page.stop()
+    assert not (review_page_story.root / "eil-record.json.lock").exists(), "a record lock outlived its write"
+
+
+@pytest.fixture
 def eil_json(run_eil: Callable[..., EilResult]) -> Callable[..., tuple[int, Any]]:
     """``eil_json(args, cwd, env=None)`` runs the helper with ``--json``; returns ``(exit code, parsed JSON)``."""
 

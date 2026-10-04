@@ -87,9 +87,12 @@ class ListEntry:
     section: str = ""
     summary: str = ""
     members: dict[str, str] = field(default_factory=dict)  # a scaffolding entry's blocks: key to hash
+    question: str = ""  # the helper's fixed question for this entry (004 D-64)
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {"key": self.key, "what": self.what, "why": self.why, "summary": self.summary}
+        if self.question:
+            out["question"] = self.question
         if self.section:
             out["section"] = self.section
         if self.members:
@@ -117,6 +120,8 @@ class ReviewList:
     all_entries: list[ListEntry] | None = None
     session_mode: str | None = None
     session: dict[str, int] | None = None
+    answers: list[dict[str, Any]] | None = None  # the open session's stored answers (004 D-72)
+    last_answers: list[dict[str, Any]] | None = None  # send-backs and questions once it closed (D-72)
 
     @property
     def full(self) -> list[ListEntry]:
@@ -151,6 +156,10 @@ class ReviewList:
         }
         if self.session is not None:
             out["session"] = self.session
+        if self.answers is not None:
+            out["answers"] = self.answers
+        if self.last_answers:
+            out["last_answers"] = self.last_answers
         return out
 
 
@@ -491,6 +500,24 @@ def legacy_answered(package: Package, stage: str) -> str | None:
     return found[1] if found and found[0] else None
 
 
+def entry_question(kind: str, entry: ListEntry) -> str:
+    """The fixed question a person answers for ``entry`` (004 D-64). A page answer stores it, so the
+    record shows what an "Accept" confirmed; chat may show it too."""
+    if entry.key.startswith("legacy:"):
+        return f"{LEGACY_STATEMENT} Accept?"
+    if kind == "inferred":
+        if entry.key.startswith("§") and entry.members:
+            return f"Accept every block under {entry.key[1:]} as written?"
+        return f"Accept {entry.key} as written?"
+    if kind == "changes":
+        if entry.why.startswith("removed"):
+            return f"Accept the removal of {entry.key}?"
+        if entry.why.startswith("new"):
+            return f"Accept the new {entry.key} as written?"
+        return f"Accept {entry.key} as it now reads?"
+    return f"Accept {entry.key}?"
+
+
 def _build_changes(package: Package, stage: str) -> list[ListEntry]:
     from .provenance import change_rows
 
@@ -785,6 +812,7 @@ def build_list(
         entries = _scaffolding(entries)
     for entry in entries:
         entry.summary = entry.summary or summarise(entry.what)
+        entry.question = entry_question(kind, entry)
     if spec.rework_first:
         entries.sort(key=lambda e: bool(e.ai_view) and _looks_valid(e.ai_view))
     limits = [*spec.limits, REPLY_LIMIT]
@@ -806,7 +834,43 @@ def _with_session(package: Package, listed: ReviewList, session_view: bool) -> R
             listed.entries = [e for e in entries if e.key not in answered]
             listed.session_mode = str(session.get("mode") or listed.mode)
             listed.session = {"answered": len(answered), "remaining": len(listed.entries)}
+            listed.answers = [_answer_row(e.key, answered[e.key]) for e in entries if e.key in answered]
+        else:
+            listed.last_answers = _last_answers(package, stage, kind, entries)
     return listed
+
+
+def _last_answers(package: Package, stage: str, kind: str, entries: list[ListEntry]) -> list[dict[str, Any]]:
+    """The latest send-back or question still standing on each listed entry, with its comment, from the
+    recorded acceptances (004 D-72): what the agent acts on after the person says "done"."""
+    if stage == DERIVED_LIST:
+        return []
+    group_of = {member: e.key for e in entries for member in e.members}
+    latest: dict[str, dict[str, Any]] = {}
+    for acc in (package.record(stage, "provenance") or {}).get("acceptances") or []:
+        if not isinstance(acc, dict) or acc.get("kind") != kind:
+            continue
+        comments, questions = acc.get("comments") or {}, acc.get("questions") or {}
+        for disposition, keys in (("accept", acc.get("accepted")), ("except", acc.get("except")), ("question", acc.get("questioned"))):
+            for raw in keys or []:
+                key = group_of.get(raw, raw)
+                if disposition == "accept":
+                    latest.pop(key, None)
+                    continue
+                comment = comments.get(key) or comments.get(raw) or (None if acc.get("via") else acc.get("reply"))
+                latest[key] = {
+                    "key": key, "disposition": disposition, "by": acc.get("by"), "at": acc.get("at"), "via": acc.get("via"),
+                    "comment": comment, "question": questions.get(key) or questions.get(raw),
+                }  # fmt: skip
+    return [latest[e.key] for e in entries if e.key in latest]
+
+
+def _answer_row(key: str, answer_: dict[str, Any]) -> dict[str, Any]:
+    """One stored answer as ``review list`` returns it (004 D-72)."""
+    return {
+        "key": key, "disposition": answer_.get("disposition"), "by": answer_.get("by"), "at": answer_.get("at"),
+        "via": answer_.get("via"), "comment": answer_.get("comment"), "question": answer_.get("question"),
+    }  # fmt: skip
 
 
 def _build_derived(
@@ -829,6 +893,26 @@ def _build_derived(
         limits += [limit for limit in sub.limits if limit not in limits]
     listed = ReviewList(kind, DERIVED_LIST, KINDS[kind].purpose, entries, limits or [REPLY_LIMIT], threshold)
     return _with_session(package, listed, session_view)
+
+
+REVIEWED_ON_PAGE = ("requirements", "functional", "technical")
+
+
+def current_review(package: Package, threshold: int = DEFAULT_THRESHOLD) -> dict[str, Any]:
+    """The review the page shows (004 D-61): the current stage if it is Requirements, Functional or
+    Technical and has a document, on its ``changes`` list once it has an approval record and on its
+    ``inferred`` list before. ``document`` is that stage, or, with none, the latest of the three that
+    exists. Derived on every call; never stored."""
+    stage = package.current_stage()
+    if stage not in REVIEWED_ON_PAGE or not package.exists(stage):
+        stage = None
+    existing = [s for s in REVIEWED_ON_PAGE if package.exists(s)]
+    document = stage or (existing[-1] if existing else None)
+    if stage is None:
+        return {"stage": None, "kind": None, "entries": [], "document": document, "list": None}
+    kind = "changes" if package.record(stage, "approval") else "inferred"
+    listed = build_list(package, stage, kind, threshold=threshold)
+    return {"stage": stage, "kind": kind, "entries": listed.entries, "document": document, "list": listed}
 
 
 def show_entries(
@@ -990,8 +1074,10 @@ def _apply(
     summaries: dict[str, str] | None,
     mode: str,
     unseen: list[str] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
-    """Record one acceptance and let the kind settle or reopen what it names (the one answer path)."""
+    """Record one acceptance and let the kind settle or reopen what it names (the one answer path).
+    ``extra`` carries 004's ``via``, ``questions``, ``comments`` and ``together`` when they apply."""
     read = package.record_read(stage, "provenance")
     if read.error:
         raise _refuse("not-amendable", f"{stage} has a malformed provenance region: {read.error}", "Repair or remove it first")
@@ -1010,6 +1096,7 @@ def _apply(
         acc["unseen"] = unseen
     if summaries:
         acc["summaries"] = {k: v.strip() for k, v in summaries.items() if k in hashes and v.strip()}
+    acc.update({k: v for k, v in (extra or {}).items() if v})
     if spec.settle and accepted:
         spec.settle(package, stage, record, {k: hashes[k] for k in accepted}, act)
     undone = {k: hashes[k] for k in (*excepted, *reopened)}
@@ -1053,8 +1140,15 @@ def _apply_split(
             continue
         hashes = {k: h for k, h in kwargs["hashes"].items() if owner.get(k) == member}
         unseen = [k for k in kwargs.get("unseen") or [] if owner.get(k) == member]
+        extra = {
+            name: ({k: v for k, v in value.items() if owner.get(k) == member} if isinstance(value, dict) else value)
+            for name, value in (kwargs.get("extra") or {}).items()
+        }
         results.append(
-            _apply(type(package)(package.root), spec, member, kind, **{**kwargs, **part, "hashes": hashes, "unseen": unseen})
+            _apply(
+                type(package)(package.root), spec, member, kind,
+                **{**kwargs, **part, "hashes": hashes, "unseen": unseen, "extra": extra},
+            )  # fmt: skip
         )
     if not results:
         return {"id": None, "accepted": [], "questioned": [], "reopened": []}, [], False
@@ -1088,10 +1182,21 @@ def answer(
     disposition: str = "accept",
     rest: bool = False,
     threshold: int | None = None,
+    shown: str | None = None,
+    via: str | None = None,
+    asked: str | None = None,
+    comment: str | None = None,
+    section: str | None = None,
 ) -> dict[str, Any]:
     """Record a person's reply to a list: to the whole list in one reply (``all_``, ``all_except``,
     ``question``, ``reopen``), or to one entry (``entry``) or to every remaining one (``rest``), which are
-    stored in a review session and applied together when the last entry is answered (D-51)."""
+    stored in a review session and applied together when the last entry is answered (D-51).
+
+    004 (D-63, D-70): ``shown`` is the version of the entry the person saw (``entry-changed`` when it is
+    not the current one); ``asked`` is the fixed question they answered (``question-mismatch`` unless it
+    is the helper's); ``comment`` is stored verbatim; ``via="page"`` marks an answer given on the review
+    page, whose reply is its comment or "Accept", and whose send-back, question or reopen needs a comment
+    (``comment-required``). ``section`` narrows ``rest`` to one section, accepted together and seen."""
     from .records import approvers_for
 
     spec = _spec(kind)
@@ -1102,6 +1207,10 @@ def answer(
         raise usage_error("give exactly one of --all, --all-except, --question, --reopen, --entry, --rest")
     if disposition not in DISPOSITIONS:
         raise usage_error(f"--disposition is one of {', '.join(DISPOSITIONS)}")
+    if via not in (None, "page"):
+        raise usage_error("via is the page or nothing")
+    if section is not None and not rest:
+        raise usage_error("--section is given with --rest")
     listed = build_list(package, stage, kind, threshold=threshold, session_view=False)
     on_list = {e.key: e for e in listed.entries}
     settled = _settled_for(spec, package, stage)
@@ -1115,12 +1224,19 @@ def answer(
 
     if is_ai_actor(by):
         add("ai-approval", f"{by!r} is the AI; only a person may answer a review list", "Ask the developer to reply")
-    if not reply.strip():
+    if via == "page":
+        words = (comment or "").strip()
+        if (entry is not None and disposition != "accept") or reopen:
+            if not words:
+                add("comment-required", "a send-back, a question or a reopen on the page needs a comment", "Write what should change, or what you want to know")
+        reply = words or ("Accept" if not reopen and (rest or disposition == "accept") else "")
+    if not reply.strip() and not any(r.code == "comment-required" for r in refusals):
         add("reply-required", "a reply needs the person's own words", "Ask the person and pass their words with --reply")
     if entry is not None or rest:
         return _answer_session(
             package, spec, stage, kind, listed, on_list, session, refusals, confirmer=confirmer, by=by, reply=reply,
             entry=entry, disposition=disposition, rest=rest, defer_reason=defer_reason, summaries=summaries,
+            shown=shown, via=via, asked=asked, comment=comment, section=section,
         )  # fmt: skip
     settling = all_ or all_except is not None
     if settling and not digest:
@@ -1214,11 +1330,30 @@ def _answer_session(
     rest: bool,
     defer_reason: str | None,
     summaries: dict[str, str] | None,
+    shown: str | None = None,
+    via: str | None = None,
+    asked: str | None = None,
+    comment: str | None = None,
+    section: str | None = None,
 ) -> dict[str, Any]:
     """Store one entry's answer (or "ok to the rest") in the review session; apply it when complete."""
     settling = rest or disposition == "accept"
     if entry is not None and entry not in on_list:
-        refusals.append(Refusal("unknown-entry", f"{entry} is not on the {kind} list for {stage}", "Name an entry from `review list`"))
+        if shown is not None:
+            refusals.append(Refusal("entry-changed", f"{entry} changed since it was shown and is no longer on the list as shown", "Reload and read the list again"))
+        else:
+            refusals.append(Refusal("unknown-entry", f"{entry} is not on the {kind} list for {stage}", "Name an entry from `review list`"))
+    elif entry is not None:
+        now = on_list[entry]
+        if shown is not None and shown != now.hash:
+            refusals.append(
+                Refusal(
+                    "entry-changed", f"{entry} changed since it was shown; nothing was stored",
+                    "Read it again before answering", current={"key": entry, "hash": now.hash, "what": now.what},
+                )  # fmt: skip
+            )
+        if asked is not None and asked != entry_question(kind, now):
+            refusals.append(Refusal("question-mismatch", f"that is not the helper's question for {entry}", f'Ask: "{entry_question(kind, now)}"'))
     if settling and not confirmer and not is_ai_actor(by):
         refusals.append(Refusal("not-a-confirmer", f"{by!r} is not configured to confirm {stage}", "Ask a configured confirmer"))
     if settling and spec.defers and not (defer_reason or "").strip():
@@ -1241,8 +1376,20 @@ def _answer_session(
     stamp = clock.utc_now()
     reason = (defer_reason or "").strip() or None
     targets = [entry] if entry is not None else [k for k in on_list if k not in answers]
+    if section is not None:
+        targets = [k for k in targets if on_list[k].section.casefold() == section.casefold()]
+        if not targets:
+            raise refuse(Refusal("unknown-entry", f"no unanswered entry of the {kind} list for {stage} is in {section!r}", "Name a section from `review list`"))
     for target in targets:
-        record = {"by": by, "at": stamp, "disposition": "accept" if rest else disposition, "reply": reply, "hash": current[target], "seen": not rest}
+        record = {"by": by, "at": stamp, "disposition": "accept" if rest else disposition, "reply": reply, "hash": current[target], "seen": not rest or section is not None}
+        if via is not None:
+            record["via"] = via
+        if asked is not None or via == "page":
+            record["question"] = asked if asked is not None and entry is not None else entry_question(kind, on_list[target])
+        if comment is not None and comment.strip():
+            record["comment"] = comment
+        if section is not None:
+            record["together"] = section
         earlier = answers.get(target)
         if earlier is not None and normalise_person(earlier["by"]) != normalise_person(by) and earlier["disposition"] != record["disposition"]:
             held.setdefault("superseded", []).append({"key": target, **earlier})
@@ -1277,18 +1424,22 @@ def _close_or_keep(
             "answered": len(answers), "remaining": remaining,
             "text": f"Stored. {len(answers)} answered, {len(remaining)} to go: {', '.join(remaining)}.",
         }  # fmt: skip
-    groups: dict[tuple[str, str, bool, str], dict[str, list[str]]] = {}
+    groups: dict[tuple[str, str, bool, str, str], dict[str, Any]] = {}
     ordered = [(a.get("key"), a) for a in held.get("superseded", [])] + sorted(answers.items(), key=lambda kv: kv[1]["at"])
     ids: list[str] = []
     for entry_key, answer_ in ordered:
         if entry_key not in on_list:
             continue
         reason = (held.get("reasons") or {}).get(entry_key, "")
-        slot = groups.setdefault((answer_["by"], answer_["reply"], bool(answer_["seen"]), reason), {"accept": [], "except": [], "question": []})
+        group_key = (answer_["by"], answer_["reply"], bool(answer_["seen"]), reason, answer_.get("via") or "")
+        slot = groups.setdefault(group_key, {"accept": [], "except": [], "question": [], "questions": {}, "comments": {}, "together": {}})
         slot[answer_["disposition"]].append(entry_key)
+        for field_name, stored in (("questions", "question"), ("comments", "comment"), ("together", "together")):
+            if answer_.get(stored):
+                slot[field_name][entry_key] = answer_[stored]
     stored_summaries = {**(held.get("summaries") or {}), **(summaries or {})}
     settled = _settled_for(spec, package, stage)
-    for (by, reply, seen, reason), slot in groups.items():
+    for (by, reply, seen, reason, via), slot in groups.items():
         accepted_x, excepted_x = _expand(slot["accept"], on_list), _expand(slot["except"], on_list)
         questioned_x = _expand(slot["question"], on_list)
         hashes = _hashes([*excepted_x, *questioned_x, *accepted_x], on_list, settled)
@@ -1297,6 +1448,7 @@ def _close_or_keep(
             accepted=accepted_x, excepted=excepted_x, questioned=questioned_x, reopened=[], hashes=hashes,
             resolving=confirmer and bool(accepted_x), defer_reason=reason or defer_reason,
             summaries=stored_summaries, mode=held["mode"], unseen=[] if seen else accepted_x,
+            extra={"via": via or None, "questions": slot["questions"], "comments": slot["comments"], "together": slot["together"]},
         )  # fmt: skip
         ids.append(acc["id"])
     _save_session(type(package)(package.root), key, None)

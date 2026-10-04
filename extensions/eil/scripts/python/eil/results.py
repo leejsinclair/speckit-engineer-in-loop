@@ -82,6 +82,14 @@ REFUSAL_CODES = frozenset(
         "nothing-classified",
         "approval-record-missing",
         "malformed-record-file",
+        # 004 Browser Review Page (contracts/cli.md delta)
+        "entry-changed",
+        "question-mismatch",
+        "comment-required",
+        "not-current",
+        "record-busy",
+        "page-running",
+        "port-unavailable",
     }
 )
 
@@ -144,14 +152,15 @@ class Refusal:
     fix: str = ""
     existing: str = ""
     question: str = ""  # the helper's fixed question a person answers to get past it (D-59)
+    current: dict[str, Any] | None = None  # an entry's current version, on ``entry-changed`` (004 D-63)
 
     def __post_init__(self) -> None:
         if self.code not in REFUSAL_CODES:
             raise ValueError(f"unregistered refusal code: {self.code!r}")
 
-    def to_json(self) -> dict[str, str]:
+    def to_json(self) -> dict[str, Any]:
         out = asdict(self)
-        for optional in ("existing", "question"):
+        for optional in ("existing", "question", "current"):
             if not out[optional]:
                 del out[optional]
         return out

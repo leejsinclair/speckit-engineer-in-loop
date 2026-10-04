@@ -589,3 +589,61 @@ def test_short_approval_accepted(path: Path) -> None:
     assert re.search(r"(do not|never) ask for a longer statement", text, re.I)
     assert re.search(r"name once per session|reuse it for every `--by`", text, re.I)
     assert not re.search(r"\*\"Yes, this is", text), "a full-sentence example reads as required wording"
+
+
+# ---- 004 Browser Review Page: Tier 2 rules (contracts/commands.md, last table)
+
+PAGE_PROMPTS = [EXT / f"speckit.eil.{n}.md" for n in ("requirements", "functional", "technical", "accept")]
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_review_surface_asked_once(path: Path) -> None:
+    """FR-021 (probe P-32): the surface is asked once per session, with its purpose, and not again unless
+    the person asks."""
+    text = read(path)
+    assert "Review on a page in your browser, or here in chat?" in text
+    assert re.search(r"ask (this|it) once per session", text, re.I)
+    assert re.search(r"how they review, not what they approve", text, re.I)
+    assert re.search(r"ask again only if the person asks", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_review_waits_for_done(path: Path) -> None:
+    """FR-015, FR-022 (probe P-33): the page is found or started, its address given with what it shows,
+    the list is not printed, and nothing is done with the review before the person says "done"."""
+    text = read(path)
+    assert "review serve --status --json" in text and 'review serve --by "<name>" --json' in text
+    assert re.search(r"give (them )?the address", text, re.I) and re.search(r"which stage and list", text, re.I)
+    assert re.search(r"do not print the list in chat", text, re.I)
+    assert re.search(r"until they say \"?done\"?", text, re.I)
+    assert re.search(r"ask (them|the person) to reload", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_agent_never_uses_page(path: Path) -> None:
+    """R-29 (probe P-33, extended): the agent never opens, fetches or posts to the page address; it only
+    gives it to the person, and passes `--host` only when the person asks."""
+    text = read(path)
+    assert re.search(r"never open, fetch or post to the page address", text, re.I)
+    assert re.search(r"give it to the person only", text, re.I)
+    assert re.search(r"pass `--host` only when the person asks", text, re.I)
+
+
+@pytest.mark.parametrize("path", PAGE_PROMPTS, ids=lambda p: p.stem)
+def test_page_fallback_to_chat(path: Path) -> None:
+    """FR-022 (probe P-35): when the page cannot start, say why in one line and review in chat as before."""
+    text = read(path)
+    assert re.search(r"cannot start", text, re.I)
+    assert re.search(r"say why in one line", text, re.I)
+    assert re.search(r"review in chat", text, re.I)
+    assert re.search(r"never pass the AI'?s (own )?name", text, re.I)
+
+
+@pytest.mark.parametrize("path", [*PAGE_PROMPTS, EXT / "speckit.eil.approve.md"], ids=lambda p: p.stem)
+def test_approval_stays_in_chat(path: Path) -> None:
+    """FR-020: approval, overrides, waivers and the comprehension check stay in chat; no prompt sends
+    the person to the page for them."""
+    text = read(path)
+    assert re.search(r"approval, overrides, waivers and the comprehension check stay in chat", text, re.I)
+    assert re.search(r"never send the person to the page (for|to) (approve|approval)", text, re.I)
+

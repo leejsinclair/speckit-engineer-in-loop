@@ -176,6 +176,10 @@ class Config:
     main_branches: list[str] = field(default_factory=lambda: ["main", "master"])
     # The longest review list presented one entry at a time (D-51).
     one_at_a_time_max: int = 8
+    # The review page stops after this many minutes without use (004 D-66).
+    page_idle_minutes: int = 60
+    # The one script a browser may load to draw diagrams on the review page; ``None`` shows source (D-69).
+    diagram_script: str | None = None
 
 
 def _names(value: Any, where: str) -> list[str]:

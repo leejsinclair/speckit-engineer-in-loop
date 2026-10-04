@@ -63,3 +63,4 @@ Ask the helper's question and nothing more: `eil status --json` gives it as `nex
 - **Never approve as yourself or on anyone's behalf.** The helper refuses an approval by the AI, but do not attempt one.
 - Do not edit the `approval` region by hand.
 - Once you know the confirming person's name in this conversation, reuse it for every `--by` this session without asking again, unless the human names someone else.
+- Approval, overrides, waivers and the comprehension check stay in chat. Never send the person to the page for approval: the review page (`eil review serve`) only answers review lists, and no page route reaches an approval.

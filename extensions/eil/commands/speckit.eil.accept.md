@@ -28,6 +28,25 @@ Present every review list exactly as the helper returns it, in the helper's `mod
 
 The helper stores each answer as it is given. **Never keep a tally of answers in chat**: after a pause or a compaction, run `review list` again; it returns only what is still unanswered. **Never list a block the helper did not return**, and never ask again about one it settled. A `§<Section>` entry stands for every block of that section, answered together.
 
+### Reviewing on the page
+
+The person may review the Requirements, Functional and Technical lists on a page in their browser instead of here. The page shows the whole document, highlights exactly the entries the helper lists, asks each one's fixed question, and stores each answer through the helper as it is given, the same way an answer in chat is stored.
+
+1. **Choose the surface once per session.** At the first review step of a session, ask: "Review on a page in your browser, or here in chat?" Say that this is about how they review, not what they approve. Ask this once per session and use the answer for every later review; ask again only if the person asks to change it.
+2. **Page chosen:**
+   - run `eil review serve --status --json`;
+   - if no page is running, start it in the background with `eil review serve --by "<name>" --json` and read the address from its first line; if one is running, ask the person to reload it;
+   - give them the address, say which stage and list it shows, and ask them to answer there and say "done";
+   - **do not print the list in chat**, and do nothing with the review until they say "done";
+   - **never open, fetch or post to the page address yourself**: give it to the person only. You never answer on the page;
+   - pass `--host` only when the person asks for another address (in a container, for example: `--host 0.0.0.0 --public-name <name>`).
+3. **The page cannot start** (any refusal, such as `page-running`, `port-unavailable` or `ambiguous-story`), or the person cannot reach the address: say why in one line and review in chat exactly as above. If the person asks to switch to chat in the middle of a list, run `review list` and continue here: the helper already holds what was answered on the page.
+4. **Name**: pass the name the person gave in chat (asked at most once per session). Never pass the AI's name. The page shows "Answering as <name>" and lets the person change it there.
+
+Approval, overrides, waivers and the comprehension check stay in chat. Never send the person to the page for approval.
+
+The page reviews only the Requirements, Functional and Technical stages: when the stage is one of them and the person chose the page, hand its `changes` review to the page as above. For any other stage, review in chat.
+
 ## What this command is for
 
 A stage that was approved and has since changed is `needs-re-review`. This command brings it back without repeating the whole approval. The helper works out what changed and which changes are **covered** by a decision the person already recorded (an accepted challenge, a resolved question, a clarify answer or an earlier review). It carries the approval forward on a short sign-off only when every change is covered; otherwise the person answers the uncovered changes once, in one reply. It is not a lighter approval: the helper records who confirmed, in their own words, and how the approval was reached.

@@ -57,7 +57,7 @@ def record_line(kind: str, obj: dict[str, Any] | None) -> str:
     return f"(eil:{kind} record {get('id', '')})".replace(" )", ")")
 
 
-def _view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: set[int]) -> list[tuple[int, str]]:
+def view_lines(pkg: Package, stage: str, doc: Doc, cues: set[int], fence_cues: set[int]) -> list[tuple[int, str]]:
     """``[(document line number, text)]`` of the clean view (region bodies rendered, comments gone)."""
     region_at = {r.begin_no: r for r in doc.regions.values()}
     record_at = {r.open_no: r for r in doc.records()}
@@ -149,7 +149,7 @@ def view(pkg: Package, stage: str, items: list[str] | None = None, section: str 
     blocks = blocks_of(doc)
     statuses = statuses_all.get(stage, {})
     cues, fence_cues = _cues(blocks, statuses)
-    lines = _view_lines(pkg, stage, doc, cues, fence_cues)
+    lines = view_lines(pkg, stage, doc, cues, fence_cues)
     rows = [_row(b, statuses) for b in blocks]
     if section is not None:
         lines, rows = _section(doc, lines, rows, section, stage)
@@ -195,7 +195,7 @@ def _items(pkg: Package, stage: str, items: list[str], statuses_all: dict[str, A
         statuses = statuses_all.get(owner, {})
         doc = pkg.doc(owner)
         cues, fence_cues = _cues([block], statuses)
-        view_lines = _view_lines(pkg, owner, doc, cues, fence_cues)
+        shown = view_lines(pkg, owner, doc, cues, fence_cues)
         heading = (owner, block.section)
         if heading != last_heading:
             if out:
@@ -205,9 +205,9 @@ def _items(pkg: Package, stage: str, items: list[str], statuses_all: dict[str, A
             last_heading = heading
         else:
             out.append("")
-        out += [t for n, t in view_lines if block.first_line <= n <= block.last_line]
+        out += [t for n, t in shown if block.first_line <= n <= block.last_line]
         rows.append(_row(block, statuses))
     return {"ok": True, "stage": stage, "text": "\n".join(out).rstrip("\n"), "blocks": rows}
 
 
-__all__ = ["CUE", "view"]
+__all__ = ["CUE", "view", "view_lines"]

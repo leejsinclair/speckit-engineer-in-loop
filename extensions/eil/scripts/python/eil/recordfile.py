@@ -15,6 +15,12 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import tempfile
+import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +32,10 @@ TOP_KEYS = frozenset({"version", "story", "stages"})
 STORY_KEYS = frozenset({"start", "profile", "review_sessions"})
 START_KEYS = frozenset(
     {"at", "branch", "branch_confirmed_by", "previous_pointer", "reply", "question", "note"}
+)
+# One stored answer of a review session (003 D-51; 004 D-63 and D-70 add ``via`` to ``together``).
+SESSION_ANSWER_KEYS = frozenset(
+    {"key", "by", "at", "disposition", "reply", "hash", "seen", "via", "question", "comment", "together"}
 )
 
 
@@ -87,6 +97,7 @@ def problems(data: Any) -> list[str]:
         for key in ("profile", "review_sessions"):
             if key in story and not isinstance(story[key], dict):
                 found.append(f"story.{key} must be an object")
+        found += _session_problems(story.get("review_sessions"))
     stages = data.get("stages", {})
     if not isinstance(stages, dict):
         found.append("stages must be an object")
@@ -103,6 +114,20 @@ def problems(data: Any) -> list[str]:
                 found.append(f"stages.{stage} has unknown record {name!r}")
             else:
                 found += stage_problems(stage, name, obj)
+    return found
+
+
+def _session_problems(sessions: Any) -> list[str]:
+    """Each stored answer of each review session holds only the known fields."""
+    found: list[str] = []
+    for name, session in (sessions or {}).items() if isinstance(sessions, dict) else ():
+        if not isinstance(session, dict):
+            continue
+        rows = [(f"answers.{k}", a) for k, a in (session.get("answers") or {}).items()]
+        rows += [(f"superseded[{i}]", a) for i, a in enumerate(session.get("superseded") or [])]
+        for where, row in rows:
+            if isinstance(row, dict):
+                found += [f"story.review_sessions.{name}.{where} has unknown key {k!r}" for k in row if k not in SESSION_ANSWER_KEYS]
     return found
 
 
@@ -146,7 +171,10 @@ def dumps(data: dict[str, Any]) -> str:
 
 
 def save(root: Path, data: dict[str, Any]) -> bool:
-    """Write ``data`` (refusing a non-conforming one). Returns whether the file changed."""
+    """Write ``data`` (refusing a non-conforming one). Returns whether the file changed.
+
+    The new text goes to a temporary file beside the record, which then replaces it in one step, so a
+    failure part-way leaves the old file and no temporary (D-67)."""
     found = problems(_pruned(data))
     if found:
         raise ValueError("; ".join(found[:3]))
@@ -154,8 +182,131 @@ def save(root: Path, data: dict[str, Any]) -> bool:
     target = path(root)
     if target.is_file() and target.read_bytes() == text:
         return False
-    target.write_bytes(text)
+    handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=f".{FILE}.", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(text)
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
     return True
+
+
+# ---- the record lock (D-67): one read-modify-write at a time, across processes
+
+LOCK_SUFFIX = ".lock"
+WAIT_SECONDS = 5.0
+STALE_SECONDS = 60.0
+_monotonic = time.monotonic
+_sleep = time.sleep
+_now = time.time
+_held = threading.local()
+
+
+@dataclass
+class Held:
+    """A held record lock. ``broken`` says when a stale lock of a process that died was removed."""
+
+    path: Path
+    broken: str | None = None
+
+
+def lock_path(root: Path) -> Path:
+    return Path(root) / (FILE + LOCK_SUFFIX)
+
+
+def pid_running(pid: int) -> bool:
+    """Whether a process with ``pid`` exists. Never signals it (``os.kill`` ends a process on Windows)."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":  # pragma: no cover - exercised on Windows only
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel32.CloseHandle(handle)
+        return code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _holder(lock: Path) -> int | None:
+    try:
+        return int(json.loads(lock.read_text(encoding="utf-8")).get("pid"))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _stale(lock: Path) -> bool:
+    try:
+        age = _now() - lock.stat().st_mtime
+    except OSError:
+        return False
+    pid = _holder(lock)
+    return age > STALE_SECONDS and (pid is None or not pid_running(pid))
+
+
+@contextmanager
+def record_lock(root: Path, wait: float = WAIT_SECONDS) -> Iterator[Held]:
+    """Hold ``eil-record.json.lock`` for one read-modify-write (D-67).
+
+    Created with ``O_CREAT | O_EXCL``, so it works the same on every platform. A second holder retries
+    for ``wait`` seconds and then refuses ``record-busy``, writing nothing. A lock older than 60 seconds
+    whose process is not running is removed, and ``Held.broken`` says so. Re-entrant within a thread."""
+    lock = lock_path(root)
+    key = str(lock.resolve())
+    depth: dict[str, int] = _held.__dict__.setdefault("depth", {})
+    if depth.get(key):
+        depth[key] += 1
+        try:
+            yield Held(lock)
+        finally:
+            depth[key] -= 1
+        return
+    held = Held(lock)
+    deadline = _monotonic() + wait
+    while True:
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            if _stale(lock):
+                pid = _holder(lock)
+                lock.unlink(missing_ok=True)
+                held.broken = f"removed a stale record lock left by process {pid} that is no longer running"
+                continue
+            if _monotonic() >= deadline:
+                from .results import Refusal, refuse
+
+                raise refuse(
+                    Refusal(
+                        "record-busy",
+                        f"another write to {FILE} is in progress (process {_holder(lock)}); nothing was written",
+                        "Try again in a moment",
+                    )
+                ) from None
+            _sleep(0.05)
+            continue
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(json.dumps({"pid": os.getpid(), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+        break
+    depth[key] = 1
+    try:
+        yield held
+    finally:
+        depth.pop(key, None)
+        lock.unlink(missing_ok=True)
 
 
 # ---- the rendered line each region keeps (data-model §Marked regions)
@@ -252,4 +403,4 @@ def render(name: str, record: dict[str, Any] | None) -> list[str]:
     return RENDERERS[name](record)
 
 
-__all__ = ["FILE", "Loaded", "RECORD_NAMES", "dumps", "empty", "load", "path", "problems", "save"]
+__all__ = ["FILE", "Held", "Loaded", "RECORD_NAMES", "dumps", "empty", "load", "lock_path", "path", "problems", "record_lock", "save"]

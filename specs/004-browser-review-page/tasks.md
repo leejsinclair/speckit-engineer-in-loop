@@ -38,12 +38,12 @@ description: "Task list for the Browser Review Page"
 
 **Purpose**: A clean baseline and the shared test fixtures.
 
-- [ ] T001 Ask the repository owner two things:
+- [X] T001 Ask the repository owner two things:
   - whether to create a `004-browser-review-page` branch from `003-proportionate-effort` now;
   - whether to commit the constitution 1.3.0 amendment and `specs/004-browser-review-page/` (spec, plan, research, data model, contracts, quickstart, this file) as "docs: add 004 browser-review-page spec, plan and tasks".
 
   Run `pytest` before anything else changes, and record the pass count as the baseline.
-- [ ] T002 [P] Create `tests/fixtures/review_page.py`, built on `tests/helpers/package.py`. It holds:
+- [X] T002 [P] Create `tests/fixtures/review_page.py`, built on `tests/helpers/package.py`. It holds:
   - a story with Requirements approved and a Functional draft listing five blocks across two sections (one prose paragraph, two items, one table, one `§Section` scaffolding entry);
   - one restated block that is settled;
   - one `mermaid` fence;
@@ -54,13 +54,13 @@ description: "Task list for the Browser Review Page"
   - a 38-entry Functional list (SC-003);
   - a 9-or-more-entry summary-mode list (det 69);
   - an approved Functional stage with two changed items, one removed item and the `legacy:functional` entry (US6).
-- [ ] T003 [P] Create `tests/helpers/page.py`:
+- [X] T003 [P] Create `tests/helpers/page.py`:
   - `start_page(root, story, by, **opts)` runs `reviewpage` in a thread on a free port and returns `(address, token, stop)`;
   - `call(method, path, body=None, headers=None)` uses `urllib.request` and returns `(status, headers, text)`;
   - a `same_origin(address)` header builder.
 
   No browser is used.
-- [ ] T004 Add the pytest fixtures `review_page_story` and `page_server` to `tests/conftest.py`. They reuse `files_snapshot(root)` for byte-identity checks and assert after each test that no `eil-record.json.lock` remains.
+- [X] T004 Add the pytest fixtures `review_page_story` and `page_server` to `tests/conftest.py`. They reuse `files_snapshot(root)` for byte-identity checks and assert after each test that no `eil-record.json.lock` remains.
 
 ---
 
@@ -76,24 +76,24 @@ description: "Task list for the Browser Review Page"
 
 ### Tests (write first, see them fail)
 
-- [ ] T005 [P] Write `tests/unit/test_record_lock.py` (D-67):
+- [X] T005 [P] Write `tests/unit/test_record_lock.py` (D-67):
   - `recordfile.save` replaces the file atomically, and a failure mid-write leaves the old file intact and no temporary file behind;
   - `recordfile.record_lock(root)` is exclusive;
   - a second holder waits, then refuses with `record-busy` after 5 s (patched clock) and writes nothing;
   - a lock older than 60 s whose pid is not running is broken, and the result says so;
   - no lock file outlives a call;
   - **determinism 67, CLI half**: twenty concurrent `review answer --entry` subprocesses, each to a different entry, all stored. The record is valid JSON, and no lock remains.
-- [ ] T006 [P] Write `tests/unit/test_current_review.py`:
+- [X] T006 [P] Write `tests/unit/test_current_review.py`:
   - **determinism 62**: `requirements/inferred` on a fresh story, `functional/inferred` after Requirements approval, `requirements/changes` after an approved Requirements block is edited, and `null` once Technical is approved;
   - `review list --current --json` returns `current: null` and exits `0` when there is none;
   - the `document` field names the latest of the three stages that exists (data-model "Current review").
-- [ ] T007 [P] Copy `rich-specification-viewer/tests/unit/test_markdown.py` to `tests/unit/test_page_markdown.py`, adapted to import `eil.pagerender`. Add cases:
+- [X] T007 [P] Copy `rich-specification-viewer/tests/unit/test_markdown.py` to `tests/unit/test_page_markdown.py`, adapted to import `eil.pagerender`. Add cases:
   - raw HTML in Markdown is rendered as text;
   - `eil:` regions are dropped;
   - `safe_href` refuses `javascript:` and `data:` links.
 
   Record the source path and commit at the top of the file.
-- [ ] T008 [P] Write `tests/unit/test_page_security.py` against the server skeleton:
+- [X] T008 [P] Write `tests/unit/test_page_security.py` against the server skeleton:
   - **determinism 54**: a `POST /answer` with no token, a wrong token, `Origin: http://evil.example`, no `Origin`, `Host: attacker.example`, or a non-JSON content type returns `403`, the record is byte-identical, and no lock file remains;
   - any method other than GET or POST returns `405`;
   - **determinism 55**: `GET /doc/../../etc/passwd`, `GET /doc/notastage`, `GET /eil-record.json` and `GET /static/x.js` return `404` or `403`. With `Path.read_bytes` patched to record paths, no file outside the story's stage documents is read;
@@ -102,20 +102,20 @@ description: "Task list for the Browser Review Page"
 
 ### Implementation
 
-- [ ] T009 Change `eil/recordfile.py` (D-67):
+- [X] T009 Change `eil/recordfile.py` (D-67):
   - `save` writes a sibling temporary file and calls `os.replace`;
   - add `record_lock(root)`, a context manager using `O_CREAT | O_EXCL` on `eil-record.json.lock`, holding `{pid, at}`, with a 5 s wait, `record-busy`, and stale-break after 60 s for a dead pid.
-- [ ] T010 In `eil/cli.py`, wrap every `writes` subcommand's read-modify-write in `record_lock`, and add `record-busy` to the refusal codes. Run T005, then the full suite: it must match the T001 baseline (plan step 1 checkpoint).
-- [ ] T011 Add `reviews.current_review(package)` to `eil/reviews.py` (D-61), returning `{stage, kind, entries, document}` or `stage: null`.
-- [ ] T012 Add `--current` to `review list` in `eil/cli.py`. It replaces `--stage` and `--kind`, and returns `current` and the list. Run T006.
-- [ ] T013 [P] In `eil/show.py`, rename `_view_lines` to the public `view_lines` and update its two callers. The output of `show` is unchanged (existing `tests/unit/test_show.py`).
-- [ ] T014 Create `eil/pagerender.py` with the viewer's `tokenize`, `render_markdown`, `esc` and `safe_href`, copied from `rich-specification-viewer/specview.py`:
+- [X] T010 In `eil/cli.py`, wrap every `writes` subcommand's read-modify-write in `record_lock`, and add `record-busy` to the refusal codes. Run T005, then the full suite: it must match the T001 baseline (plan step 1 checkpoint).
+- [X] T011 Add `reviews.current_review(package)` to `eil/reviews.py` (D-61), returning `{stage, kind, entries, document}` or `stage: null`.
+- [X] T012 Add `--current` to `review list` in `eil/cli.py`. It replaces `--stage` and `--kind`, and returns `current` and the list. Run T006.
+- [X] T013 [P] In `eil/show.py`, rename `_view_lines` to the public `view_lines` and update its two callers. The output of `show` is unchanged (existing `tests/unit/test_show.py`).
+- [X] T014 Create `eil/pagerender.py` with the viewer's `tokenize`, `render_markdown`, `esc` and `safe_href`, copied from `rich-specification-viewer/specview.py`:
   - a header comment names the source file and commit;
   - the Mermaid CDN script and anything else that fetches is removed;
   - add `csp(nonce, diagram_origin=None)`, returning the D-69 policy.
 
   Run T007.
-- [ ] T015 Create `eil/reviewpage.py`:
+- [X] T015 Create `eil/reviewpage.py`:
   - `make_server(root, story, by, host, port)` on `http.server.HTTPServer` (single-threaded, D-60), with a per-process `secrets.token_urlsafe(32)` token;
   - a request handler that checks the Host header (`127.0.0.1`, `localhost`, the bound host, `--public-name`), the token (`?t=` on GET pages, the `X-EIL-Token` header elsewhere), and Origin plus `Content-Type: application/json` on every POST;
   - `403` for a failed check, `405` for other methods, and the security headers on every response;
@@ -136,11 +136,11 @@ description: "Task list for the Browser Review Page"
 
 ### Tests for User Story 1 (write first, see them fail)
 
-- [ ] T016 [P] [US1] Write `tests/unit/test_entry_question.py`:
+- [X] T016 [P] [US1] Write `tests/unit/test_entry_question.py`:
   - **determinism 58**: `review list` returns exactly the D-64 table's question for an inferred block, an inferred `§Section`, and changed, added and removed `changes` entries, plus `legacy:<stage>`;
   - `review answer --question` with any other text is refused with `question-mismatch` and writes nothing.
-- [ ] T016a [P] [US1] Write `tests/unit/test_review_list_answers.py`, the open-session half (D-72, FR-014). While a session is open, `review list` returns `answers: [{key, disposition, by, at, via, comment, question}]` beside the unanswered `entries`, for answers given on the page and in chat.
-- [ ] T017 [P] [US1] Write `tests/unit/test_review_answer_page.py` (D-63):
+- [X] T016a [P] [US1] Write `tests/unit/test_review_list_answers.py`, the open-session half (D-72, FR-014). While a session is open, `review list` returns `answers: [{key, disposition, by, at, via, comment, question}]` beside the unanswered `entries`, for answers given on the page and in chat.
+- [X] T017 [P] [US1] Write `tests/unit/test_review_answer_page.py` (D-63):
   - `--shown` with a stale hash is refused with `entry-changed`, the record is byte-identical, and the refusal's `current` holds `{key, hash, what}` with the new hash (**determinism 56**, CLI half);
   - `--comment` is stored verbatim, including Markdown, HTML and 10 KB of text;
   - `via="page"` with `except` or `question` and no comment is refused with `comment-required`;
@@ -150,7 +150,7 @@ description: "Task list for the Browser Review Page"
   - `recordfile.problems` accepts the new fields and still rejects unknown ones;
   - **determinism 60**: a page accept from a person who is not a confirmer is refused with `not-a-confirmer`;
   - **determinism 69**: on a summary-mode list, a page answer opens a session in summary mode, `review list` returns the unanswered entries, and `review answer --all` answers the rest as in 003.
-- [ ] T018 [P] [US1] Write `tests/unit/test_page_render.py`:
+- [X] T018 [P] [US1] Write `tests/unit/test_page_render.py`:
   - the page wraps each block from `show.view_lines` in an element with `data-key` and `data-hash`;
   - exactly the `review list` entries carry answer controls (FR-002), and a `§Section` entry's control is on its heading;
   - each control shows its fixed question and three native buttons labelled with the key;
@@ -160,7 +160,7 @@ description: "Task list for the Browser Review Page"
   - the token is in a `<meta>` element;
   - with two entries already answered, the page shows each one's disposition, name and time with a Change button, the counter reads "2 of M answered", and the first unanswered control is the target of `n`;
   - **determinism 63**: block text `<script>alert(1)</script>`, a stored comment `<img src=x onerror=alert(1)>` and a name `"><b>x` appear only escaped. There is no inline event-handler attribute, and there is exactly one `<script>` without `src`, carrying the nonce.
-- [ ] T019 [P] [US1] Write `tests/unit/test_page_server.py`:
+- [X] T019 [P] [US1] Write `tests/unit/test_page_server.py`:
   - `GET /?t=` renders the current review (`review list --current`);
   - `POST /answer` stores through `reviews.answer` under the record lock, and returns the helper's result or refusals unchanged;
   - `POST /answer` naming a stage or kind that is not current is refused with `not-current` and writes nothing;
@@ -168,14 +168,14 @@ description: "Task list for the Browser Review Page"
   - two `POST /answer` calls for the same entry: the same person's later answer replaces the earlier one, and a different person's answer with another disposition goes to `superseded` as a conflict, matching 003 through the CLI;
   - with a malformed `eil-record.json`, `POST /answer` returns the same refusal and message as `review answer` and writes nothing, and `GET /` still renders the document, with the controls disabled and the refusal in the notice bar;
   - **determinism 57**: the same five answers through `POST /answer` and through `review answer --entry`, on identical copies of the fixture, give the same settled blocks, `questioned` and `except` keys and block statuses. The two records differ only in `via`, `questions`, `comments`, reply wording, ids and times.
-- [ ] T020 [P] [US1] Write `tests/unit/test_serve_runtime.py` (D-66):
+- [X] T020 [P] [US1] Write `tests/unit/test_serve_runtime.py` (D-66):
   - `review serve --by NAME` prints one JSON line `{story, address, pid}` with the token in the address, binds `127.0.0.1`, and uses the first free port from 8100;
   - it refuses with `ai-approval` for an AI name, `ambiguous-story` on 003's two-stories fixture, `page-running` (with the running address) when a live runtime file exists, and `port-unavailable`;
   - `--status` returns `{running, address, pid, started_at}`, and removes a runtime file whose pid is not running;
   - `--stop` ends the process and removes the file;
   - **determinism 68**: start, `--status` and `--stop` leave every project file byte-identical, and the runtime file is under `tempfile.gettempdir()` with mode `0600` on POSIX.
-- [ ] T021 [P] [US1] Write `tests/scenario/test_b38_page_review.py` (quickstart B-38, SC-001).
-- [ ] T022 [US1] Add to `tests/contract/test_prompt_guidance.py`:
+- [X] T021 [P] [US1] Write `tests/scenario/test_b38_page_review.py` (quickstart B-38, SC-001).
+- [X] T022 [US1] Add to `tests/contract/test_prompt_guidance.py`:
   - `test_review_surface_asked_once` (P-32);
   - `test_page_review_waits_for_done` (P-33);
   - `test_agent_never_uses_page` (P-33, extended);
@@ -186,22 +186,22 @@ description: "Task list for the Browser Review Page"
 
 ### Implementation for User Story 1
 
-- [ ] T023 [US1] In `eil/reviews.py`, add `entry_question(kind, entry)` with the D-64 table, and return `question` on every `review list` entry. Run T016's list half.
-- [ ] T023a [US1] In `eil/reviews.py`, return `answers` in the list result while a session is open (D-72), and output it from `review list` in `eil/cli.py`. Run T016a.
-- [ ] T024 [US1] Extend `reviews.answer` in `eil/reviews.py` with `shown`, `via`, `question` and `comment` (D-63):
+- [X] T023 [US1] In `eil/reviews.py`, add `entry_question(kind, entry)` with the D-64 table, and return `question` on every `review list` entry. Run T016's list half.
+- [X] T023a [US1] In `eil/reviews.py`, return `answers` in the list result while a session is open (D-72), and output it from `review list` in `eil/cli.py`. Run T016a.
+- [X] T024 [US1] Extend `reviews.answer` in `eil/reviews.py` with `shown`, `via`, `question` and `comment` (D-63):
   - refusals `entry-changed` (with `current`), `question-mismatch` and `comment-required`;
   - store `via`, `question` and `comment` on the session answer;
   - `reply` is the comment or "Accept";
   - `_close_or_keep` groups by `via`, and writes `via`, `questions` and `comments` on each acceptance.
-- [ ] T025 [US1] In `eil/recordfile.py`, make `problems()` accept the new session-answer and acceptance fields (data-model.md).
-- [ ] T026 [US1] Add `--shown`, `--question` and `--comment` to `review answer` in `eil/cli.py`, plus the refusal codes `entry-changed`, `question-mismatch` and `comment-required`. There is no `--via` flag. Run T016 and T017.
-- [ ] T027 [US1] Add `page_html(...)` to `eil/pagerender.py` (D-62, contracts/page.md layout):
+- [X] T025 [US1] In `eil/recordfile.py`, make `problems()` accept the new session-answer and acceptance fields (data-model.md).
+- [X] T026 [US1] Add `--shown`, `--question` and `--comment` to `review answer` in `eil/cli.py`, plus the refusal codes `entry-changed`, `question-mismatch` and `comment-required`. There is no `--via` flag. Run T016 and T017.
+- [X] T027 [US1] Add `page_html(...)` to `eil/pagerender.py` (D-62, contracts/page.md layout):
   - build the clean view from `show.view_lines`, group its lines by `Block.first_line..last_line`, and wrap each block with `data-key` and `data-hash`;
   - put an answer control on listed entries only, and the `§Section` control on its heading;
   - render entries already answered in the open session from `answers`, not only the unanswered `entries`, and count both in the counter;
   - render the header, an empty notice bar with `role="status"`, the footer, the embedded state and the token `<meta>`;
   - escape every value from a document or a person.
-- [ ] T028 [US1] Add the page's CSS and script to `eil/pagerender.py` as constants, served inline under the nonce:
+- [X] T028 [US1] Add the page's CSS and script to `eil/pagerender.py` as constants, served inline under the nonce:
   - Accept, Send back and Question; the comment box, sent only when non-empty;
   - the stored-answer display with Change;
   - refusal text shown verbatim in that control only;
@@ -210,15 +210,15 @@ description: "Task list for the Browser Review Page"
   - the "Answering as NAME" Change form, posting to `/name`.
 
   The script decides nothing: it renders, sends `{stage, kind, entry, disposition, shown, question, comment}` with `X-EIL-Token`, and shows the result. Run T018.
-- [ ] T029 [US1] In `eil/reviewpage.py`, add these routes:
+- [X] T029 [US1] In `eil/reviewpage.py`, add these routes:
   - `GET /` renders `current_review` with `page_html`;
   - `POST /answer` checks `not-current`, then calls `reviews.answer(entry=…, via="page", …)` under `record_lock`, and returns the result as JSON;
   - `POST /name` changes the in-memory name, refusing an AI name.
 
   Each request loads the `Package` fresh. A write loads it inside `record_lock`, so the read and the write happen under one lock. On a record refusal, `GET /` renders with every control disabled and the refusal shown. Run T019.
-- [ ] T030 [US1] In `eil/reviewpage.py`, add the runtime file (D-66): `<tempfile.gettempdir()>/eil-review-<sha256(root)[:12]>-<story>.json`, mode `0600`, written at start and removed on a clean stop. Add `serve`, `status` and `stop` functions.
-- [ ] T031 [US1] In `eil/cli.py`, add `review serve --by NAME [--host H] [--port P] [--public-name N] [--idle-minutes M]`, `--status` and `--stop`. Add the refusal codes `page-running`, `port-unavailable` and `not-current`. Story targeting follows 003's rules. Run T020 and T021.
-- [ ] T032 [US1] In `commands/speckit.eil.requirements.md`, `speckit.eil.functional.md`, `speckit.eil.technical.md` and `speckit.eil.accept.md`, add "Reviewing on the page" to the "Presenting a review list" section (contracts/commands.md items 1, 2, 5 and 6, and the approval rule):
+- [X] T030 [US1] In `eil/reviewpage.py`, add the runtime file (D-66): `<tempfile.gettempdir()>/eil-review-<sha256(root)[:12]>-<story>.json`, mode `0600`, written at start and removed on a clean stop. Add `serve`, `status` and `stop` functions.
+- [X] T031 [US1] In `eil/cli.py`, add `review serve --by NAME [--host H] [--port P] [--public-name N] [--idle-minutes M]`, `--status` and `--stop`. Add the refusal codes `page-running`, `port-unavailable` and `not-current`. Story targeting follows 003's rules. Run T020 and T021.
+- [X] T032 [US1] In `commands/speckit.eil.requirements.md`, `speckit.eil.functional.md`, `speckit.eil.technical.md` and `speckit.eil.accept.md`, add "Reviewing on the page" to the "Presenting a review list" section (contracts/commands.md items 1, 2, 5 and 6, and the approval rule):
   - ask once per session, stating the purpose;
   - check `review serve --status --json`, then start the page or ask for a reload;
   - give the address and which list it shows, never print the list, and wait for "done";
@@ -245,7 +245,7 @@ description: "Task list for the Browser Review Page"
 
 ### Tests for User Story 2 (write first, see them fail)
 
-- [ ] T033 [P] [US2] Extend `tests/unit/test_review_list_answers.py`, the closed-session half (D-72, FR-014):
+- [X] T033 [P] [US2] Extend `tests/unit/test_review_list_answers.py`, the closed-session half (D-72, FR-014):
   - after a session closes, `last_answers` holds the `except` and `questioned` entries of the latest acceptance, with their comments;
   - a questioned key stays on the list after the session closes.
 - [ ] T034 [P] [US2] Write `tests/unit/test_reopen_settled.py` (D-65), covering **determinism 61**:
@@ -264,7 +264,7 @@ description: "Task list for the Browser Review Page"
 
 ### Implementation for User Story 2
 
-- [ ] T039 [US2] In `eil/reviews.py`, return `last_answers` after a session closes, in the list result (D-72). Run T033.
+- [X] T039 [US2] In `eil/reviews.py`, return `last_answers` after a session closes, in the list result (D-72). Run T033.
 - [ ] T040 [US2] In `eil/reviews.py`, add `_reopenable_inferred` (every block of the stage whose status is `settled`, of any class) and use it for `reopen`. `_reopen_inferred` writes the `reopened` mark with the comment and `via`, and `_settle_inferred` removes it.
 - [ ] T041 [P] [US2] In `eil/blockstatus.py`, report a block with a `reopened` mark as `needs-review`, whatever its class.
 - [ ] T042 [P] [US2] In `eil/show.py`, add "(reopened by NAME: COMMENT)" after the block's review cue.

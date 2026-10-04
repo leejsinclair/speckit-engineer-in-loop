@@ -111,6 +111,15 @@ def adopt(package: Package, stage: str) -> dict[str, Any] | None:
     return {"version": 1, "currency": "unknown" if stage in DERIVED else "known", "blocks": entries}
 
 
+def persist_adoption(package: Package) -> None:
+    """D-42: the first writing command records the provenance an upgrade adopts, once per document.
+    Shared by the command line and the review page, so both write the same records (004 D-63)."""
+    for stage in package.existing_stages():
+        record = adopt(package, stage)
+        if record is not None:
+            package.write_record(stage, "provenance", record)
+
+
 def approved_ids(package: Package) -> set[str]:
     """Ids of the definition items (s01 to s03) whose current text an approval covers and that no change
     upstream of them reaches. Item-level, so one edited decision does not unsettle its neighbours (D-35)."""

@@ -28,3 +28,8 @@ extend-exclude = [".venv", "specs"]
 select = ["E", "F", "I", "B", "UP"]
 # Long message strings are fine; `ruff format` owns code layout.
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# The renderer is copied from the rich specification viewer and keeps its formatting, so the two stay
+# comparable line by line (004 research D-60, R-32).
+"extensions/eil/scripts/python/eil/pagerender.py" = ["UP031"]

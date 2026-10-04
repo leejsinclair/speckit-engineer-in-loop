@@ -102,7 +102,15 @@ COMMAND_KINDS: dict[str, str] = {
     "profile set": WRITES,
     "profile withdraw": WRITES,
     "overview": WRITES,
+    # 004: starting the page writes nothing itself; its answers are written one at a time, under the
+    # lock, by ``reviews.answer``. It is refused ``ambiguous-story`` like any write (D-66).
+    "review serve": WRITES,
+    "review serve --status": READ_ONLY,
+    "review serve --stop": READ_ONLY,
 }
+# 004: the page process writes through ``reviews.answer`` under the lock, one answer at a time; it must
+# not hold the lock while it serves.
+UNLOCKED = frozenset({"review serve"})
 
 
 def command_key(args: argparse.Namespace) -> str:
@@ -110,6 +118,8 @@ def command_key(args: argparse.Namespace) -> str:
     if args.command == "check" and getattr(args, "judgments", None):
         return "check --judgments"
     action = getattr(args, "action", None)
+    if action == "serve" and (getattr(args, "status", False) or getattr(args, "stop", False)):
+        return f"review serve --{'status' if args.status else 'stop'}"
     return f"{args.command} {action}" if action else args.command
 ENTER_COMMANDS = handoff.ENTER_COMMANDS
 # Stages whose document has a compatibility alias, created only after the document (FR-049).
@@ -127,6 +137,7 @@ class Context:
     target: targeting.Target | None = None
     # A read-only call whose story is ambiguous runs, but writes nothing at all (not even s00).
     quiet: bool = False
+    stdout: TextIO | None = None  # for a subcommand that prints before it ends (``review serve``)
 
     def feature_dir(self) -> Path | None:
         if self.target is None:
@@ -268,8 +279,9 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--summaries", metavar="FILE")
     a = actions.add_parser("list", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
-    a.add_argument("--stage", required=True)
-    a.add_argument("--kind", required=True, choices=REVIEW_KINDS)
+    a.add_argument("--stage")
+    a.add_argument("--kind", choices=REVIEW_KINDS)
+    a.add_argument("--current", action="store_true", help="the review the page shows now (replaces --stage and --kind)")
     a.add_argument("--views", metavar="FILE")
     a = actions.add_parser("show", parents=[common])
     a.stream = stream  # type: ignore[attr-defined]
@@ -286,16 +298,31 @@ def build_parser(stream: TextIO) -> argparse.ArgumentParser:
     a.add_argument("--digest")
     a.add_argument("--by", required=True)
     a.add_argument("--reply", required=True)
-    mode = a.add_mutually_exclusive_group(required=True)
+    mode = a.add_mutually_exclusive_group()
     mode.add_argument("--all", dest="all_", action="store_true")
     mode.add_argument("--all-except", metavar="IDS")
-    mode.add_argument("--question", metavar="IDS")
     mode.add_argument("--reopen", metavar="IDS")
     mode.add_argument("--entry", metavar="KEY", help="answer one entry; stored until the list is complete")
     mode.add_argument("--rest", action="store_true", help='"ok to the rest": accept every remaining entry')
+    # Alone, --question names the entries a whole-list reply questions. With --entry or --rest it is the
+    # helper's fixed question the person answered (004 D-64), refused unless it is the helper's wording.
+    a.add_argument("--question", metavar="IDS|TEXT")
     a.add_argument("--disposition", choices=("accept", "except", "question"), default="accept")
     a.add_argument("--defer-reason")
     a.add_argument("--summaries", metavar="FILE")
+    a.add_argument("--shown", metavar="HASH", help="the version of the entry the person saw (refused if it changed)")
+    a.add_argument("--comment", metavar="TEXT", help="the person's comment, stored verbatim")
+    a.add_argument("--section", metavar="NAME", help="with --rest: accept the unanswered entries of this section only")
+    a = actions.add_parser("serve", parents=[common])
+    a.stream = stream  # type: ignore[attr-defined]
+    a.add_argument("--by", help="the person answering on the page (never the AI)")
+    a.add_argument("--host", default="127.0.0.1", help="the address to listen on; loopback unless the person asks")
+    a.add_argument("--port", type=int, help="the port (default: the first free one from 8100)")
+    a.add_argument("--public-name", metavar="NAME", help="another host name the page answers to, when not on loopback")
+    a.add_argument("--idle-minutes", type=int, metavar="M", help="stop after this many minutes unused")
+    which = a.add_mutually_exclusive_group()
+    which.add_argument("--status", action="store_true", help="is a page running for this story, and where")
+    which.add_argument("--stop", action="store_true", help="stop this story's page")
 
     p = add("correct", "propose or open a backwards correction")
     actions = p.add_subparsers(dest="action", metavar="ACTION", parser_class=_Parser)
@@ -724,8 +751,26 @@ def _ids(text: str | None) -> list[str] | None:
 
 def _review_list(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     package = ctx.package()
+    threshold = _config(ctx, package).one_at_a_time_max
+    if args.current:
+        if args.stage or args.kind or args.views:
+            raise usage_error("--current replaces --stage, --kind and --views")
+        found = reviews.current_review(package, threshold)
+        if found["list"] is None:
+            return {
+                "ok": True, "current": None, "document": found["document"], "entries": [],
+                "text": "No review is current." + (f" The latest document is {found['document']}." if found["document"] else ""),
+            }  # fmt: skip
+        payload = _list_payload(found["list"])
+        payload["current"] = {"stage": found["stage"], "kind": found["kind"], "document": found["document"]}
+        return payload
+    if not (args.stage and args.kind):
+        raise usage_error("give --stage and --kind, or --current")
     views = _read_keyed(args.views, args.stage, "views", "views", "view", args.kind) if args.views else None
-    listed = reviews.build_list(package, args.stage, args.kind, views, threshold=_config(ctx, package).one_at_a_time_max)
+    return _list_payload(reviews.build_list(package, args.stage, args.kind, views, threshold=threshold))
+
+
+def _list_payload(listed: reviews.ReviewList) -> dict[str, Any]:
     lines = [f"{listed.kind} list for {listed.stage} ({len(listed.entries)} entries, {listed.purpose}, {listed.mode})"]
     if listed.session:
         lines.append(f"  {listed.session['answered']} answered already; these remain:")
@@ -745,6 +790,13 @@ def _review_answer(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
     summaries = (
         _read_keyed(args.summaries, args.stage, "summaries", "summaries", "summary") if args.summaries else None
     )
+    per_entry = args.entry is not None or args.rest
+    if not (per_entry or args.all_ or args.all_except is not None or args.reopen is not None or args.question is not None):
+        raise usage_error("give one of --all, --all-except, --question, --reopen, --entry, --rest")
+    if args.question is not None and not per_entry and (args.all_ or args.all_except is not None or args.reopen is not None):
+        raise usage_error("--question names entries alone, or is the question text with --entry or --rest")
+    if args.section is not None and not args.rest:
+        raise usage_error("--section is given with --rest")
     result = reviews.answer(
         package,
         _config(ctx, package),
@@ -755,16 +807,54 @@ def _review_answer(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         reply=args.reply,
         all_=args.all_,
         all_except=_ids(args.all_except),
-        question=_ids(args.question),
+        question=None if per_entry else _ids(args.question),
         reopen=_ids(args.reopen),
         defer_reason=args.defer_reason,
         summaries=summaries,
         entry=args.entry,
         disposition=args.disposition,
         rest=args.rest,
+        shown=args.shown,
+        asked=args.question if per_entry else None,
+        comment=args.comment,
+        section=args.section,
     )
     _regenerate_overview(ctx, package)
     return result
+
+
+def _review_serve(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
+    """``review serve``: the browser review page (004 D-66). Starting prints one JSON line with the
+    address and serves until stopped; ``--status`` and ``--stop`` read and end it."""
+    from . import reviewpage
+
+    package = ctx.package()
+    if args.status:
+        return reviewpage.status(package)
+    if args.stop:
+        return reviewpage.stop(package)
+    if not args.by:
+        raise usage_error("review serve needs --by: the person answering on the page")
+    if args.idle_minutes is not None and args.idle_minutes < 1:
+        raise usage_error("--idle-minutes is a whole number of minutes, at least 1")
+    stream = ctx.stdout or sys.stdout
+
+    def emit(payload: dict[str, Any]) -> None:
+        line = {k: v for k, v in payload.items() if k != "ok"} if ctx.json_mode else payload
+        if ctx.json_mode:
+            emit_json(line, stream)
+        else:
+            stream.write(f"Review page for {payload['story']}: {payload['address']}\n")
+        stream.flush()
+
+    reviewpage.serve(
+        package.root, args.by, emit=emit, host=args.host, port=args.port, public_name=args.public_name,
+        idle_minutes=args.idle_minutes, config=_config(ctx, package),
+    )  # fmt: skip
+    return {EMITTED: True}
+
+
+EMITTED = "_emitted"  # a payload already printed (the page's one JSON line); nothing more is written
 
 
 def _blocks(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
@@ -805,6 +895,8 @@ def _review(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
         return _review_list(ctx, args)
     if args.action == "answer":
         return _review_answer(ctx, args)
+    if args.action == "serve":
+        return _review_serve(ctx, args)
     if args.action == "show":
         package = ctx.package()
         return reviews.show_entries(
@@ -880,10 +972,7 @@ def _migrate(package: Package) -> list[str]:
 
 def _persist_adoption(package: Package) -> None:
     """D-42: the first writing command records the provenance an upgrade adopts, once per document."""
-    for stage in package.existing_stages():
-        record = blockstatus.adopt(package, stage)
-        if record is not None:
-            package.write_record(stage, "provenance", record)
+    blockstatus.persist_adoption(package)
 
 
 def _sync(ctx: Context, args: argparse.Namespace) -> dict[str, Any]:
@@ -1172,6 +1261,24 @@ def _guard_target(ctx: Context, args: argparse.Namespace) -> None:
     )
 
 
+def _locked(ctx: Context, args: argparse.Namespace, handler: Handler) -> dict[str, Any]:
+    """Run a ``writes`` subcommand's read-modify-write under the record lock (004 D-67); a busy lock
+    refuses ``record-busy`` before anything is read for modification."""
+    key = command_key(args)
+    directory = ctx.target.directory if ctx.target is not None else None
+    if COMMAND_KINDS.get(key, WRITES) != WRITES or key in UNLOCKED or ctx.quiet or directory is None or not directory.is_dir():
+        return handler(ctx, args)
+    from .recordfile import record_lock
+
+    with record_lock(directory) as held:
+        payload = handler(ctx, args)
+    if held.broken:
+        payload = {**payload, "lock": held.broken}
+        if isinstance(payload.get("text"), str):
+            payload["text"] += f"\nNote: {held.broken}."
+    return payload
+
+
 def render_text(payload: Mapping[str, Any]) -> str:
     if isinstance(payload.get("text"), str):
         return payload["text"]
@@ -1221,6 +1328,7 @@ def main(
             env=environment,
             json_mode=json_mode,
             feature_dir_arg=getattr(args, "feature_dir", None),
+            stdout=stdout,
         )
         ctx.feature_dir()
         story = ctx.target.name if ctx.target is not None else None
@@ -1239,10 +1347,12 @@ def main(
                 f"not implemented: {args.command}",
             )
         try:
-            payload = handler(ctx, args)
+            payload = _locked(ctx, args, handler)
         except EilExit as exc:
             exc.payload.setdefault("story", story)
             raise
+        if payload.get(EMITTED):
+            return EXIT_OK
         payload = {**payload, "story": story}
         if json_mode:
             emit_json(payload, stdout)

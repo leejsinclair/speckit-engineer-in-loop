@@ -148,6 +148,9 @@ EXAMPLES: dict[str, tuple[list[str], int | None]] = {
     "profile set": (["profile", "set", "small", "--by", "Ada Dev", "--reason", "x"], 1),
     "profile withdraw": (["profile", "withdraw", "--by", "Ada Dev", "--reason", "x"], 1),
     "overview": (["overview"], 1),
+    "review serve": (["review", "serve", "--by", "Ada Dev"], 1),
+    "review serve --status": (["review", "serve", "--status"], 0),
+    "review serve --stop": (["review", "serve", "--stop"], 0),
 }
 
 

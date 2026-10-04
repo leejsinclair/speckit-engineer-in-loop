@@ -295,13 +295,19 @@ PROVENANCE_KEYS = frozenset(
     {"version", "currency", "blocks", "acceptances", "corrections", "changes", "conflicts"}
 )
 BLOCK_KEYS = frozenset(
-    {"hash", "class", "cites", "adds", "reviewed", "sources", "completed_against", "blocked_at_completion", "basis"}
-)
+    {
+        "hash", "class", "cites", "adds", "reviewed", "sources", "completed_against", "blocked_at_completion", "basis",
+        "reopened",  # 004 D-65: a person commented on the settled block; it needs review again
+    }
+)  # fmt: skip
 REVIEWED_KEYS = frozenset({"by", "at", "list", "reply"})
+REOPENED_KEYS = frozenset({"by", "at", "list", "comment", "via"})
 ACCEPTANCE_KEYS = frozenset(
     {
         "id", "stage", "kind", "digest", "by", "at", "reply", "accepted", "except", "questioned",
         "reopened", "deferred", "reason", "resolved_conflict", "hashes", "summaries", "mode", "unseen",
+        # 004 D-63, D-70: answered on the page, with the fixed questions, comments and sections accepted together
+        "via", "questions", "comments", "together",
     }
 )  # fmt: skip
 CORRECTION_KEYS = frozenset(
@@ -340,6 +346,8 @@ def provenance_problems(obj: Any) -> list[str]:
             problems.append(f"{where}.class {entry['class']!r} is not one of {', '.join(BLOCK_CLASSES)}")
         if entry.get("reviewed") is not None:
             problems += _extra(f"{where}.reviewed", entry["reviewed"], REVIEWED_KEYS)
+        if entry.get("reopened") is not None:
+            problems += _extra(f"{where}.reopened", entry["reopened"], REOPENED_KEYS)
     for name, allowed in (
         ("acceptances", ACCEPTANCE_KEYS),
         ("corrections", CORRECTION_KEYS),
