@@ -1,6 +1,8 @@
 ---
 description: Record a stage approval. The human's own confirmation is what approves; the AI never does.
 argument-hint: "Which stage to approve (requirements, functional, technical or completion)"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

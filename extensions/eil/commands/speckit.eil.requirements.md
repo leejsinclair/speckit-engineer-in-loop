@@ -1,6 +1,8 @@
 ---
 description: Start a story and draft, challenge and gate the Requirements stage (why are we doing this?).
 argument-hint: "Describe the problem or change the story is about"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

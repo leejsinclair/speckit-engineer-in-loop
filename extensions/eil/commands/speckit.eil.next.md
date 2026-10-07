@@ -1,6 +1,8 @@
 ---
 description: Do the next step the story is waiting for, and stop at every point where a person must decide.
 argument-hint: "Nothing, or 'show' to see the next step without running it"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

@@ -1,6 +1,8 @@
 ---
 description: Record an exported wireframe or diagram image, with the link to its source.
 argument-hint: "The ART id and the path of the exported file"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

@@ -1,6 +1,8 @@
 ---
 description: Close the story: summarise it, state that each approved diagram is current, and record the human's confirmation that the evidence was reviewed.
 argument-hint: "Anything the developer wants recorded, such as deployment status"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

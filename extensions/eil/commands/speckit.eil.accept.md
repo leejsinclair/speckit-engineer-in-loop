@@ -1,6 +1,8 @@
 ---
 description: Accept the changes made to a previously approved stage, with one short confirmation when every change is already a recorded decision.
 argument-hint: "The stage whose approval is out of date, for example: functional"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

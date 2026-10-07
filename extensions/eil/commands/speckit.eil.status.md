@@ -1,6 +1,8 @@
 ---
 description: Show where the story is, who approved what, what is outstanding, and the single next action.
 argument-hint: "No input needed"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

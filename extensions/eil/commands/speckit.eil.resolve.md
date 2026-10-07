@@ -1,6 +1,8 @@
 ---
 description: Carry a pending clarification answer to the earliest stage it affects, then clear its pending mark once that stage is approved again.
 argument-hint: "The pending item, for example AIS-007"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

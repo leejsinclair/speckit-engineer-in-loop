@@ -1,6 +1,8 @@
 ---
 description: Capture, challenge and gate the developer-owned Technical Specification (how will we build it, and why this way?).
 argument-hint: "Anything the developer wants emphasised, already decided or already ruled out"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

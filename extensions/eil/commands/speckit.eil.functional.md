@@ -1,6 +1,8 @@
 ---
 description: Draft, challenge and gate the Functional Specification (what must the system do?).
 argument-hint: "Anything the developer wants emphasised or already knows"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

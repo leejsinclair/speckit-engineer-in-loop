@@ -48,6 +48,15 @@ def test_c01_extension_commands_are_registered_as_skills(installed: Path) -> Non
     assert skills == {name.replace(".", "-") for name in EXTENSION_COMMANDS + EXTENSION_ALIASES}
 
 
+def test_c01_extension_skills_are_invocable_by_people_and_the_model(installed: Path) -> None:
+    skills = list((installed / ".claude" / "skills").glob("speckit-eil-*/SKILL.md"))
+    assert skills
+    for path in skills:
+        text = path.read_text(encoding="utf-8")
+        assert "user-invocable: true" in text, path
+        assert "disable-model-invocation: false" in text, path
+
+
 def test_the_numbered_names_cover_the_stages_in_order() -> None:
     """Every stage has a numbered name that matches its document number, and only those."""
     assert sorted(EXTENSION_ALIASES + [c for c in EXTENSION_COMMANDS if re.search(r"\.\d-", c)]) == [

@@ -1,6 +1,8 @@
 ---
 description: Record that a stage is abbreviated for a small story, who authorised it and why. A stage is shortened, never skipped.
 argument-hint: "The stage to abbreviate"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

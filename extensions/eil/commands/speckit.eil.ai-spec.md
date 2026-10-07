@@ -1,6 +1,8 @@
 ---
 description: Assemble the AI Specification from the approved stages (how should the AI execute the approved design?).
 argument-hint: "Anything the developer wants emphasised, such as files to reuse or patterns to follow"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

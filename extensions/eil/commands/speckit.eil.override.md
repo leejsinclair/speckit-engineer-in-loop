@@ -1,6 +1,8 @@
 ---
 description: Record a named, reasoned override of one unmet gate criterion.
 argument-hint: "The stage and the criterion to override, for example: requirements REQ-G06"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

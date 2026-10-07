@@ -1,6 +1,8 @@
 ---
 description: Raise specific challenges against a stage, or record a person's answer to one. AI challenges; humans decide.
 argument-hint: "A stage to challenge, or a challenge id (CH-001) to record an answer to"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

@@ -1,6 +1,8 @@
 ---
 description: Take the comprehension check on the Functional or Technical Specification before approving it.
 argument-hint: "functional or technical"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

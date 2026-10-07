@@ -14,6 +14,7 @@ dev = ["playwright", "pytest", "ruff==0.16.9"]
 testpaths = ["tests"]
 pythonpath = ["extensions/eil/scripts/python", "."]
 markers = [
+    "agent: executes a real AI coding agent in an isolated behavioural trial",
     "browser: executes the review page in a real browser (requires Playwright Chromium)",
     "contract: installs the preset and extension into a scratch Spec Kit project",
     "scenario: replays a quickstart scenario end to end",

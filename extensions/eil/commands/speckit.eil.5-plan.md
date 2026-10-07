@@ -1,6 +1,8 @@
 ---
 description: The numbered entry point for the Plan stage (s05). It runs /speckit-plan, which enforces the stage's entry rule.
 argument-hint: "Anything you would give /speckit-plan"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

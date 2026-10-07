@@ -1,6 +1,8 @@
 ---
 description: Trace the chain from a requirement to its evidence, or from a change back to its requirement, and list the gaps.
 argument-hint: "A requirement id, an item id, a commit, or a pull request (PR#n); or leave empty for the whole story"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

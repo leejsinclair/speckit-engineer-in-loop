@@ -1,6 +1,8 @@
 ---
 description: Record verification evidence for every requirement, functional requirement and approved artefact (did we achieve it?).
 argument-hint: "Anything the developer wants emphasised, such as where test results are kept"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

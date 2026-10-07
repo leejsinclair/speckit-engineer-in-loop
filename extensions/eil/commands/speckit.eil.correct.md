@@ -1,6 +1,8 @@
 ---
 description: Report a problem found in an earlier artefact from any later stage, show the fix and its impact, and apply it only after the person agrees.
 argument-hint: "The problem and the item, for example: REQ-003 says 24 hours, the customer needs 48"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input

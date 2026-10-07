@@ -27,6 +27,31 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="recapture tests/fixtures/baseline-001-counts.json from the eil-001-baseline tag (SC-001)",
     )
+    parser.addoption(
+        "--run-agent", action="store_true", default=False, help="run opt-in real-agent behavioural trials"
+    )
+    parser.addoption(
+        "--agent-results", default="trial-results", help="directory for real-agent trial evidence"
+    )
+    parser.addoption("--agent-model", default=None, help="model passed to the real-agent adapter")
+    parser.addoption(
+        "--agent-max-turns", type=int, default=60, help="maximum turns in a real-agent conversation"
+    )
+    parser.addoption(
+        "--keep-failed", action="store_true", default=False, help="retain failed agent workspaces"
+    )
+    parser.addoption(
+        "--keep-workspace", action="store_true", default=False, help="retain every agent workspace"
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if config.getoption("--run-agent"):
+        return
+    skip = pytest.mark.skip(reason="real-agent trial; pass --run-agent to execute")
+    for item in items:
+        if "agent" in item.keywords:
+            item.add_marker(skip)
 
 
 @dataclass

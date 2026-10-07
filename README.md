@@ -150,6 +150,36 @@ What that does, and does not do:
 
 The automated suite covers everything that code decides (over 2,000 tests: unit, contract against a real installed Spec Kit, and scenarios that drive the installed helper). It cannot show that an AI agent *follows* the prompts, or measure how long real stories take. Those are human trials, with protocols and blank recording sheets in [`docs/trials.md`](docs/trials.md), and **none has been run yet**. Until they are, treat the prompt behaviour as designed and unproven.
 
+Real-agent behavioural trials are a separate, opt-in suite. They install EIL into isolated scratch projects,
+run Claude Code inside Bubblewrap, and decide pass or fail from EIL state, records and files rather than the
+agent's claims. Prepare a dedicated test home and authenticate Claude there; do not copy your ordinary home
+or credentials into it:
+
+```bash
+mkdir -p /tmp/eil-agent-home
+HOME=/tmp/eil-agent-home claude
+EIL_AGENT_HOME=/tmp/eil-agent-home pytest -m agent --run-agent --keep-failed
+```
+
+Evidence is written under `trial-results/<trial-id>/`. Use `--agent-results DIR` to move it and
+`--keep-workspace` to retain successful workspaces too. Ordinary `pytest` always skips these trials, so fast
+local and CI verification incur no model cost. See [`docs/agent-behavioural-harness.md`](docs/agent-behavioural-harness.md)
+for the architecture, evidence and isolation limits.
+
+The complete happy-path trial drives one resumable agent conversation from Requirements through
+implementation and Completion. A deterministic test person supplies only predefined review,
+comprehension and approval replies; an unrecognised human decision stops the trial. Select the model and
+run that journey alone with:
+
+```bash
+EIL_AGENT_HOME=/tmp/eil-agent-home pytest --run-agent \
+  --agent-model haiku --keep-failed \
+  tests/agent/happy_path/test_complete_story.py
+```
+
+Use `--agent-max-turns N` to change its default 60-turn bound. Its evidence directory contains every
+prompt, transcript, reply and post-turn EIL status, followed by the final record and application-test output.
+
 Known limits, stated plainly:
 
 - The gates are **attestation-level, not tamper-proof**. They make a bypass detectable; they do not prevent one.

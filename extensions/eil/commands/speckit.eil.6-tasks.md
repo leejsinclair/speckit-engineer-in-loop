@@ -1,6 +1,8 @@
 ---
 description: The numbered entry point for the Tasks stage (s06). It runs /speckit-tasks, which enforces the stage's entry rule.
 argument-hint: "Anything you would give /speckit-tasks"
+user-invocable: true
+disable-model-invocation: false
 ---
 
 ## User Input
